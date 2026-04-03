@@ -1,6 +1,11 @@
 use crate::{collator::Collator, error::Result};
 use pyo3::{prelude::*, types::PyList};
 
+pub(crate) enum PyBatch {
+    Ready(Py<PyAny>),
+    Items(Vec<Py<PyAny>>),
+}
+
 pub(crate) struct PyCollator {
     collate_fn: Option<Py<PyAny>>,
 }
@@ -20,16 +25,18 @@ impl Clone for PyCollator {
 }
 
 impl Collator<Py<PyAny>> for PyCollator {
-    type Batch = Py<PyAny>;
+    type Batch = PyBatch;
 
     fn collate(&self, items: Vec<Py<PyAny>>) -> Result<Self::Batch> {
-        Python::attach(|py| {
-            let items = PyList::new(py, items)?;
-            match &self.collate_fn {
-                Some(f) => f.call1(py, (items,)),
-                None => Ok(items.unbind().into_any()),
-            }
-        })
-        .map_err(|e| e.into())
+        match &self.collate_fn {
+            // Fast path: keep raw items and convert to Python list in __next__,
+            // avoiding Python API work in the worker thread.
+            None => Ok(PyBatch::Items(items)),
+            Some(f) => Python::attach(|py| {
+                let items = PyList::new(py, items)?;
+                f.call1(py, (items,)).map(PyBatch::Ready)
+            })
+            .map_err(|e| e.into()),
+        }
     }
 }

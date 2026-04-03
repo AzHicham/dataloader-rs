@@ -1,8 +1,10 @@
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 use crate::python::dataloader::PyDataloader;
+use crate::python::collator::PyBatch;
 
-type CorePyDataloaderIter = crate::loader::OwnedDataLoaderIter<Py<PyAny>>;
+type CorePyDataloaderIter = crate::loader::OwnedDataLoaderIter<PyBatch>;
 
 #[pyclass(name = "PyDataloaderIter", module = "dataloader_rs", unsendable)]
 pub struct PyDataloaderIter {
@@ -27,8 +29,12 @@ impl PyDataloaderIter {
         let next_item = py.detach(|| inner.next());
         match next_item {
             Some(Ok(v)) => {
+                let out = match v {
+                    PyBatch::Ready(obj) => obj,
+                    PyBatch::Items(items) => PyList::new(py, items)?.unbind().into_any(),
+                };
                 self.inner = Some(inner);
-                Ok(Some(v))
+                Ok(Some(out))
             }
             Some(Err(e)) => {
                 py.detach(|| drop(inner));
