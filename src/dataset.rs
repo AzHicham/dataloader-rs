@@ -31,6 +31,15 @@ pub trait Dataset: Send + Sync + 'static {
     /// implementations must be re-entrant (shared `&self`).
     fn get(&self, index: usize) -> Result<Self::Item>;
 
+    /// Fetch a batch of samples by index slice.
+    ///
+    /// The default implementation calls [`get`](Self::get) sequentially.
+    /// Override this to amortize per-batch setup costs (e.g. acquiring a
+    /// Python GIL token once for all items in a batch rather than per item).
+    fn get_batch(&self, indices: &[usize]) -> Result<Vec<Self::Item>> {
+        indices.iter().map(|&i| self.get(i)).collect()
+    }
+
     /// Total number of samples in the dataset.
     fn len(&self) -> usize;
 

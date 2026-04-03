@@ -47,6 +47,24 @@ impl Dataset for PyDataset {
         Python::attach(|py| get_item_py(self, py, index).map_err(|e| e.into()))
     }
 
+    /// Acquire the Python thread state once for the entire batch rather than
+    /// once per item — reduces GIL attach/release overhead from O(batch_size)
+    /// to O(1) per batch in the threaded (num_workers>0) code path.
+    ///
+    /// Also caches the bound `__getitem__` method for the duration of the batch,
+    /// saving one attribute lookup per item (same trick used in the direct path).
+    fn get_batch(&self, indices: &[usize]) -> Result<Vec<Py<PyAny>>> {
+        Python::attach(|py| {
+            let getitem = self
+                .getattr(py, intern!(py, "__getitem__"))
+                .map_err(crate::error::Error::from)?;
+            indices
+                .iter()
+                .map(|&i| getitem.call1(py, (i,)).map_err(crate::error::Error::from))
+                .collect()
+        })
+    }
+
     fn len(&self) -> usize {
         Python::attach(|py| {
             len_py(self, py)

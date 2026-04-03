@@ -24,6 +24,19 @@ impl Clone for PyCollator {
     }
 }
 
+impl PyCollator {
+    /// Like `collate` but uses an already-held `py` token — no `Python::attach()` overhead.
+    pub(crate) fn collate_with_py(&self, py: Python<'_>, items: Vec<Py<PyAny>>) -> Result<PyBatch> {
+        match &self.collate_fn {
+            None => Ok(PyBatch::Items(items)),
+            Some(f) => {
+                let list = PyList::new(py, items)?;
+                f.call1(py, (list,)).map(PyBatch::Ready).map_err(crate::error::Error::from)
+            }
+        }
+    }
+}
+
 impl Collator<Py<PyAny>> for PyCollator {
     type Batch = PyBatch;
 
@@ -33,8 +46,8 @@ impl Collator<Py<PyAny>> for PyCollator {
             // avoiding Python API work in the worker thread.
             None => Ok(PyBatch::Items(items)),
             Some(f) => Python::attach(|py| {
-                let items = PyList::new(py, items)?;
-                f.call1(py, (items,)).map(PyBatch::Ready)
+                let list = PyList::new(py, items)?;
+                f.call1(py, (list,)).map(PyBatch::Ready)
             })
             .map_err(|e| e.into()),
         }

@@ -15,6 +15,19 @@ ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
 python = ["dep:pyo3"]
 
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+panic = 'unwind'
+lto = "thin"
+
+[profile.bench]
+opt-level = 3
+codegen-units = 1
+panic = 'unwind'
+lto = "thin"
+
 # ── Runtime dependencies ──────────────────────────────────────────────────────
 
 [dependencies.rayon]

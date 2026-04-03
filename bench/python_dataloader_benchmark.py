@@ -118,8 +118,8 @@ def time_case(case: BenchCase, warmup: int, repeats: int) -> tuple[float, float,
         durations.append(time.perf_counter() - t0)
     median_s = statistics.median(durations)
     items_per_s = case.elements / median_s if median_s > 0 else 0.0
-    ns_per_iter = (median_s / case.elements) * 1e9 if case.elements > 0 else 0.0
-    return median_s, items_per_s, ns_per_iter
+    us_per_iter = (median_s / case.elements) * 1e6 if case.elements > 0 else 0.0
+    return median_s, items_per_s, us_per_iter
 
 
 def build_cases() -> list[BenchCase]:
@@ -154,7 +154,7 @@ def build_cases() -> list[BenchCase]:
         seq_loader = PyDataloader(
             InMemoryDs(n),
             batch_size=bs,
-            collate_fn=sum_collate,
+            collate_fn=None,
             num_workers=0,
             prefetch_depth=4,
         )
@@ -170,7 +170,7 @@ def build_cases() -> list[BenchCase]:
         par_loader = PyDataloader(
             InMemoryDs(n),
             batch_size=bs,
-            collate_fn=sum_collate,
+            collate_fn=None,
             num_workers=4,
             prefetch_depth=4,
         )
@@ -317,9 +317,9 @@ def build_cases() -> list[BenchCase]:
 
 
 def print_results(rows: Iterable[tuple[str, str, str, float, float, float]]) -> None:
-    print("group,name,param,ns_per_iter,median_s,items_per_s")
-    for group, name, param, ns_per_iter, median_s, items_per_s in rows:
-        print(f"{group},{name},{param},{ns_per_iter:.2f},{median_s:.6f},{items_per_s:.2f}")
+    print("group,name,param,us_per_iter,items_per_s")
+    for group, name, param, us_per_iter, _median_s, items_per_s in rows:
+        print(f"{group},{name},{param},{us_per_iter:.2f},{items_per_s:.2f}")
 
 
 def main() -> None:
@@ -339,8 +339,8 @@ def main() -> None:
         key = f"{case.group}/{case.name}"
         if args.filter and args.filter not in key:
             continue
-        median_s, items_per_s, ns_per_iter = time_case(case, warmup=args.warmup, repeats=args.repeats)
-        rows.append((case.group, case.name, case.param, ns_per_iter, median_s, items_per_s))
+        median_s, items_per_s, us_per_iter = time_case(case, warmup=args.warmup, repeats=args.repeats)
+        rows.append((case.group, case.name, case.param, us_per_iter, median_s, items_per_s))
 
     print_results(rows)
 

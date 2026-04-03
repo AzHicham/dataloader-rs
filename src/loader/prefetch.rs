@@ -43,7 +43,7 @@ where
     let items: Result<Vec<D::Item>> = if parallel {
         indices.par_iter().map(|&i| dataset.get(i)).collect()
     } else {
-        indices.iter().map(|&i| dataset.get(i)).collect()
+        dataset.get_batch(indices)
     };
 
     items.and_then(|v| collator.collate(v))
