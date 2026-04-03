@@ -50,6 +50,21 @@ where
         &self.dataset
     }
 
+    /// Reference to the collator.
+    pub fn collator(&self) -> &C {
+        &self.collator
+    }
+
+    /// Returns `true` when a rayon worker pool is active (num_workers > 0).
+    pub(crate) fn has_workers(&self) -> bool {
+        self.pool.is_some()
+    }
+
+    /// Generate batch index chunks for one epoch, advancing the sampler.
+    pub(crate) fn epoch_chunks(&mut self) -> Vec<Vec<usize>> {
+        self.batch_sampler.batch_indices(self.dataset.len())
+    }
+
     /// Total number of samples in the dataset.
     pub fn len(&self) -> usize {
         self.dataset.len()

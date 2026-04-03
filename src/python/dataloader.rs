@@ -3,9 +3,11 @@ use crate::sampler::{RandomSampler, SequentialSampler};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use pyo3::intern;
+
 use crate::python::collator::PyCollator;
 use crate::python::dataset::PyDataset;
-use crate::python::iterator::PyDataloaderIter;
+use crate::python::iterator::{PyDataloaderIter, PyIterInner};
 use crate::python::sampler::{validate_python_sampler, PySampler, SharedPySampler};
 
 type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollator>;
@@ -75,14 +77,37 @@ impl PyDataloader {
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
-        let inner = {
-            let mut loader = slf.borrow_mut(py);
-            loader.inner.iter_owned()
-        };
-        Ok(PyDataloaderIter {
-            _owner: slf,
-            inner: Some(inner),
-        })
+        let mut loader = slf.borrow_mut(py);
+
+        if !loader.inner.has_workers() {
+            // Direct path: no thread, no channel.
+            // Cache __getitem__ once so __next__ skips one attribute lookup per item.
+            let chunks = loader.inner.epoch_chunks();
+            let remaining = chunks.len();
+            let getitem = loader
+                .inner
+                .dataset()
+                .getattr(py, intern!(py, "__getitem__"))?;
+            let collator = loader.inner.collator().clone();
+            drop(loader);
+            Ok(PyDataloaderIter {
+                _owner: slf,
+                inner: PyIterInner::Direct {
+                    chunks: chunks.into_iter(),
+                    remaining,
+                    getitem,
+                    collator,
+                },
+            })
+        } else {
+            // Threaded path: rayon workers + crossbeam channel.
+            let inner = loader.inner.iter_owned();
+            drop(loader);
+            Ok(PyDataloaderIter {
+                _owner: slf,
+                inner: PyIterInner::Threaded(Some(inner)),
+            })
+        }
     }
 
     fn __len__(&self) -> usize {
