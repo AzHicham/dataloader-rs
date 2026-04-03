@@ -72,6 +72,8 @@ pub mod dataset;
 pub mod error;
 pub mod loader;
 pub mod sampler;
+#[cfg(feature = "python")]
+pub mod python;
 
 // ── Top-level re-exports ──────────────────────────────────────────────────────
 

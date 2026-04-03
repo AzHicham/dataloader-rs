@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use crossbeam_channel::Sender;
 use rayon::prelude::*;
@@ -11,11 +14,15 @@ pub(super) fn prefetch_loop<D, C>(
     collator: &C,
     tx: Sender<Result<C::Batch>>,
     pool: Option<Arc<rayon::ThreadPool>>,
+    cancel: Arc<AtomicBool>,
 ) where
     D: Dataset,
     C: Collator<D::Item>,
 {
     for batch_indices in chunks {
+        if cancel.load(Ordering::Acquire) {
+            break;
+        }
         let result = if let Some(ref p) = pool {
             p.install(|| fetch_batch(dataset, &batch_indices, collator, true))
         } else {
