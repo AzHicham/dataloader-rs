@@ -10,3 +10,5 @@ mod prefetch;
 pub use builder::DataLoaderBuilder;
 pub use core::DataLoader;
 pub use iter::DataLoaderIter;
+#[cfg(feature = "python")]
+pub(crate) use iter::OwnedDataLoaderIter;

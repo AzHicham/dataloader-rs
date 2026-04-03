@@ -1,14 +1,14 @@
-use std::{marker::PhantomData, sync::Arc};
-
-use crossbeam_channel::bounded;
+use std::sync::Arc;
 
 use crate::{
     collator::{Collator, VecCollator},
     dataset::Dataset,
     error::Result,
-    loader::{builder::DataLoaderBuilder, iter::DataLoaderIter, prefetch::prefetch_loop},
+    loader::{builder::DataLoaderBuilder, iter::DataLoaderIter},
     sampler::{BatchSampler, Sampler, SequentialSampler},
 };
+#[cfg(feature = "python")]
+use crate::loader::iter::OwnedDataLoaderIter;
 
 /// High-performance DataLoader with a PyTorch-like interface.
 pub struct DataLoader<D, S: Sampler, C> {
@@ -35,32 +35,14 @@ where
 {
     /// Start one epoch of iteration.
     pub fn iter(&mut self) -> DataLoaderIter<'_, C::Batch> {
-        let chunks = self.batch_sampler.batch_indices(self.dataset.len());
+        DataLoaderIter::new(self)
+    }
 
-        let n_batches = chunks.len();
-        let (tx, rx) = bounded::<Result<C::Batch>>(self.prefetch_depth);
-
-        // SAFETY: references are kept valid for prefetch thread lifetime by the
-        // borrow held by DataLoaderIter and the join in DataLoaderIter::drop.
-        let dataset_ptr = &self.dataset as *const D as usize;
-        let collator_ptr = &self.collator as *const C as usize;
-        let pool = self.pool.clone();
-
-        let handle = std::thread::spawn(move || {
-            // SAFETY: see comment above.
-            let dataset: &D = unsafe { &*(dataset_ptr as *const D) };
-            // SAFETY: see comment above.
-            let collator: &C = unsafe { &*(collator_ptr as *const C) };
-
-            prefetch_loop(dataset, chunks, collator, tx, pool);
-        });
-
-        DataLoaderIter {
-            rx: Some(rx),
-            remaining: n_batches,
-            handle: Some(handle),
-            _borrow: PhantomData,
-        }
+    /// Start one epoch of iteration without borrowing `self` in the returned
+    /// iterator.
+    #[cfg(feature = "python")]
+    pub(crate) fn iter_owned(&mut self) -> OwnedDataLoaderIter<C::Batch> {
+        OwnedDataLoaderIter::new(self)
     }
 
     /// Reference to the underlying dataset.
@@ -71,6 +53,17 @@ where
     /// Total number of samples in the dataset.
     pub fn len(&self) -> usize {
         self.dataset.len()
+    }
+
+    /// Total number of batches for one epoch with current batch settings.
+    pub fn batch_len(&self) -> usize {
+        let n = self.dataset.len();
+        let bs = self.batch_sampler.batch_size();
+        if self.batch_sampler.drop_last() {
+            n / bs
+        } else {
+            n.div_ceil(bs)
+        }
     }
 
     /// Returns `true` when the dataset is empty.

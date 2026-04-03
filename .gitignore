@@ -45,3 +45,13 @@ Thumbs.db
 *.log
 *.tmp
 *.temp
+
+# -----------------------------
+# Python bindings (uv + maturin)
+# -----------------------------
+/python/.venv/
+/python/target/
+/.venv/
+/dataloader_rs/*.so
+/dataloader_rs/*.pyd
+*.pyc

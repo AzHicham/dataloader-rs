@@ -11,7 +11,6 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use dataloader_rs::{
     collator::Collator, error::Result, sampler::RandomSampler, DataLoader, Dataset,
 };
-use std::{thread, time::Duration};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Benchmark datasets
@@ -23,20 +22,6 @@ struct InMemoryDs(usize);
 impl Dataset for InMemoryDs {
     type Item = u64;
     fn get(&self, index: usize) -> Result<u64> {
-        Ok(index as u64)
-    }
-    fn len(&self) -> usize {
-        self.0
-    }
-}
-
-/// Simulates light I/O (e.g. a fast SSD read).
-struct LightIoDs(usize);
-
-impl Dataset for LightIoDs {
-    type Item = u64;
-    fn get(&self, index: usize) -> Result<u64> {
-        thread::sleep(Duration::from_micros(50));
         Ok(index as u64)
     }
     fn len(&self) -> usize {
@@ -182,9 +167,10 @@ fn bench_throughput_cpu_bound(c: &mut Criterion) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn bench_prefetch_depth(c: &mut Criterion) {
-    // Use the light-I/O dataset so prefetch depth has visible impact.
-    let n = 64;
-    let bs = 8;
+    // Use a CPU-bound dataset so queue depth can matter under producer/consumer
+    // overlap. This is closer to realistic transform-heavy pipelines.
+    let n = 128;
+    let bs = 16;
 
     let mut group = c.benchmark_group("prefetch_depth");
     group.throughput(Throughput::Elements(n as u64));
@@ -194,14 +180,14 @@ fn bench_prefetch_depth(c: &mut Criterion) {
             BenchmarkId::new("depth", depth),
             &depth,
             |b, &d| {
+                let mut loader = DataLoader::builder(HeavyCpuDs(n))
+                    .batch_size(bs)
+                    .collator(CatCollator)
+                    .num_workers(4)
+                    .prefetch_depth(d)
+                    .build();
                 b.iter(|| {
-                    let mut loader = DataLoader::builder(LightIoDs(n))
-                        .batch_size(bs)
-                        .collator(SumCollator)
-                        .num_workers(2)
-                        .prefetch_depth(d)
-                        .build();
-                    for batch in &mut loader {
+                    for batch in loader.iter() {
                         black_box(batch.unwrap());
                     }
                 });

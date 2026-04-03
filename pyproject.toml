@@ -1,0 +1,31 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "dataloader-rs"
+version = "0.1.0"
+description = "PyO3 bindings for dataloader-rs with a PyTorch-like DataLoader API"
+requires-python = ">=3.13,<3.14"
+#readme = "python/README.md"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest==9",
+    "torch==2.11",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+module-name = "dataloader_rs"
+python-source = "."
+features = ["python", "pyo3/extension-module"]

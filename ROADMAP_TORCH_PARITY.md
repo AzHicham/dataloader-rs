@@ -159,6 +159,8 @@ Torch workflows rely on easy per-epoch reseeding for distributed samplers.
 
 ## Case 8 - Python/PyO3 Compatibility Layer
 
+Status: In Progress
+
 ### Why
 Torch parity includes interoperability and easy adoption from Python stacks.
 
@@ -166,6 +168,14 @@ Torch parity includes interoperability and easy adoption from Python stacks.
 - Add type-erased Python-facing loader wrapper.
 - Provide Python callback-based dataset and collator adapters.
 - Keep Rust-native generic API untouched.
+
+### Implemented in this iteration
+- Added separate `python/` binding crate (`dataloader-rs-py`) so the core Rust crate has no `pyo3` dependency.
+- Added a Torch-like `DataLoader` Python API surface with compatible constructor options and validation behavior for unsupported knobs.
+- Added map-style dataset adapter (`__len__` + `__getitem__`) and Python `collate_fn` support.
+- Added Python sampler adapter (`sampler=` iterable of indices), plus built-in sequential/shuffle batching behavior.
+- Enabled free-threaded CPython compatibility in the module declaration (`#[pymodule(gil_used = false)]`) and protected mutable iterator state with `Mutex`.
+- Added uv+maturin project wiring and Python unit/integration tests.
 
 ### Design direction
 - Separate crate/module for bindings (`dataloader-rs-py`).
