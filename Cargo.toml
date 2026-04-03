@@ -1,0 +1,57 @@
+[package]
+name        = "dataloader-rs"
+version     = "0.1.0"
+edition     = "2024"
+description = "High-performance DataLoader for Rust with a PyTorch-like interface"
+license     = "MIT"
+rust-version = "1.91"
+
+[features]
+default = []
+ndarray = ["dep:ndarray"]
+torch-rs = ["dep:tch"]
+
+# ── Runtime dependencies ──────────────────────────────────────────────────────
+
+[dependencies.rayon]
+version          = "1"
+default-features = false
+
+[dependencies.crossbeam-channel]
+version          = "0.5"
+default-features = false
+features         = ["std"]
+
+[dependencies.rand]
+version          = "0.8"
+default-features = false
+features         = ["small_rng", "alloc", "getrandom"]
+
+# ── Optional Runtime dependencies ──────────────────────────────────────────────────────
+
+[dependencies.ndarray]
+version          = "0.17"
+default-features = false
+features         = ["std"]
+optional         = true
+
+[dependencies.tch]
+version          = "0.24"
+default-features = false
+optional         = true
+
+# ── Dev / benchmark dependencies ──────────────────────────────────────────────
+
+[dev-dependencies.criterion]
+version          = "0.5"
+default-features = false
+features         = ["cargo_bench_support", "html_reports", "plotters"]
+
+[dev-dependencies.tch]
+version          = "0.24"
+default-features = false
+features         = ["download-libtorch"]
+
+[[bench]]
+name    = "dataloader"
+harness = false

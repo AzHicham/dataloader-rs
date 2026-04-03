@@ -1,0 +1,47 @@
+# -----------------------------
+# Rust
+# -----------------------------
+/target/
+**/*.rs.bk
+
+# Keep Cargo.lock for binaries, ignore for libraries by default.
+# Remove this line if you want to track Cargo.lock.
+/Cargo.lock
+
+# -----------------------------
+# Bench / profiling artifacts
+# -----------------------------
+criterion/
+perf.data
+perf.data.old
+flamegraph.svg
+
+# -----------------------------
+# IDE / editor
+# -----------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# -----------------------------
+# OS-generated files
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+# Environment / local config
+# -----------------------------
+.env
+.env.*
+!.env.example
+*.local.*
+
+# -----------------------------
+# Logs / temp
+# -----------------------------
+*.log
+*.tmp
+*.temp
