@@ -1,7 +1,10 @@
 use crate::{dataset::Dataset, error::Result};
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
+use std::time::Instant;
+use pyo3::intern;
 
 #[pyclass(frozen, subclass)]
 pub struct PyDatasetBase;
@@ -30,11 +33,11 @@ impl PyDatasetBase {
 pub(crate) type PyDataset = Py<PyDatasetBase>;
 
 pub(crate) fn len_py(dataset: &PyDataset, py: Python<'_>) -> PyResult<usize> {
-    dataset.call_method0(py, "__len__")?.extract(py)
+    dataset.call_method0(py, intern!(py, "__len__"))?.extract(py)
 }
 
 pub(crate) fn get_item_py(dataset: &PyDataset, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
-    dataset.call_method1(py, "__getitem__", (index,))
+    dataset.call_method1(py, intern!(py, "__getitem__"), (index,))
 }
 
 impl Dataset for PyDataset {
@@ -50,4 +53,22 @@ impl Dataset for PyDataset {
                 .unwrap_or_else(|e| panic!("PyDataset.__len__ failed: {e}"))
         })
     }
+}
+
+#[pyfunction]
+pub(crate) fn bench_dataset_get_dispatch(dataset: PyDataset, iters: usize) -> PyResult<f64> {
+    if iters == 0 {
+        return Err(PyValueError::new_err("iters must be > 0"));
+    }
+    let n = Python::attach(|py| len_py(&dataset, py))?;
+    if n == 0 {
+        return Err(PyValueError::new_err("dataset length must be > 0"));
+    }
+
+    let start = Instant::now();
+    for i in 0..iters {
+        <PyDataset as Dataset>::get(&dataset, i % n)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    }
+    Ok(start.elapsed().as_secs_f64())
 }

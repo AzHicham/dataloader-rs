@@ -39,7 +39,7 @@ class BenchCase:
     run_once: Callable[[], None]
 
 
-def time_case(case: BenchCase, warmup: int, repeats: int) -> tuple[float, float]:
+def time_case(case: BenchCase, warmup: int, repeats: int) -> tuple[float, float, float]:
     for _ in range(warmup):
         case.run_once()
     durations: list[float] = []
@@ -49,13 +49,14 @@ def time_case(case: BenchCase, warmup: int, repeats: int) -> tuple[float, float]
         durations.append(time.perf_counter() - t0)
     median_s = statistics.median(durations)
     items_per_s = case.elements / median_s if median_s > 0 else 0.0
-    return median_s, items_per_s
+    ns_per_iter = (median_s / case.elements) * 1e9 if case.elements > 0 else 0.0
+    return median_s, items_per_s, ns_per_iter
 
 
-def print_results(rows: Iterable[tuple[str, str, str, float, float]]) -> None:
-    print("group,name,param,median_s,items_per_s")
-    for group, name, param, median_s, items_per_s in rows:
-        print(f"{group},{name},{param},{median_s:.6f},{items_per_s:.2f}")
+def print_results(rows: Iterable[tuple[str, str, str, float, float, float]]) -> None:
+    print("group,name,param,ns_per_iter,median_s,items_per_s")
+    for group, name, param, ns_per_iter, median_s, items_per_s in rows:
+        print(f"{group},{name},{param},{ns_per_iter:.2f},{median_s:.6f},{items_per_s:.2f}")
 
 
 def build_cases() -> list[BenchCase]:
@@ -303,8 +304,8 @@ def main() -> None:
         key = f"{case.group}/{case.name}"
         if args.filter and args.filter not in key:
             continue
-        median_s, items_per_s = time_case(case, warmup=args.warmup, repeats=args.repeats)
-        rows.append((case.group, case.name, case.param, median_s, items_per_s))
+        median_s, items_per_s, ns_per_iter = time_case(case, warmup=args.warmup, repeats=args.repeats)
+        rows.append((case.group, case.name, case.param, ns_per_iter, median_s, items_per_s))
 
     print_results(rows)
 
