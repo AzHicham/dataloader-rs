@@ -101,12 +101,6 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --group dev
 
-      # pyproject.toml pins requires-python = ">=3.13,<3.14"; relax the upper
-      # bound for 3.14t so maturin does not reject the interpreter.
-      - name: Relax requires-python for 3.14t
-        if: matrix.python == '3.14t'
-        run: sed -i 's/requires-python.*/requires-python = ">=3.13"/' pyproject.toml
-
       - name: Build & install wheel
         run: uv run maturin develop --features python
 

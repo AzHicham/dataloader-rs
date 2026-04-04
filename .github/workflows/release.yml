@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - rc
-      - dev
 
 # Only one release at a time — prevents race conditions on shared resources
 # (git tags, crates.io, PyPI).
