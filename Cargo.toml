@@ -39,7 +39,7 @@ default-features = false
 features         = ["std"]
 
 [dependencies.hashbrown]
-version          = "0.15"
+version          = "0.16"
 default-features = false
 features         = ["default-hasher"]
 
@@ -68,7 +68,7 @@ optional         = true
 # ── Dev / benchmark dependencies ──────────────────────────────────────────────
 
 [dev-dependencies.criterion]
-version          = "0.5"
+version          = "0.8"
 default-features = false
 features         = ["cargo_bench_support", "html_reports", "plotters"]
 
