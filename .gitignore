@@ -4,9 +4,6 @@
 /target/
 **/*.rs.bk
 
-# Keep Cargo.lock for binaries, ignore for libraries by default.
-# Remove this line if you want to track Cargo.lock.
-/Cargo.lock
 
 # -----------------------------
 # Bench / profiling artifacts
