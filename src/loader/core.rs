@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+#[cfg(feature = "python")]
+use crate::loader::iter::OwnedDataLoaderIter;
 use crate::{
     collator::{Collator, VecCollator},
     dataset::Dataset,
@@ -7,8 +9,6 @@ use crate::{
     loader::{builder::DataLoaderBuilder, iter::DataLoaderIter},
     sampler::{BatchSampler, Sampler, SequentialSampler},
 };
-#[cfg(feature = "python")]
-use crate::loader::iter::OwnedDataLoaderIter;
 
 /// High-performance DataLoader with a PyTorch-like interface.
 pub struct DataLoader<D, S: Sampler, C> {
@@ -65,11 +65,6 @@ where
         self.inter_workers > 0
     }
 
-    /// Maximum number of batches to buffer ahead of the consumer.
-    pub(crate) fn prefetch_depth(&self) -> usize {
-        self.prefetch_depth
-    }
-
     /// Generate batch index chunks for one epoch, advancing the sampler.
     pub(crate) fn epoch_chunks(&mut self) -> Vec<Vec<usize>> {
         self.batch_sampler.batch_indices(self.dataset.len())
@@ -116,8 +111,8 @@ where
 mod tests {
     use std::{
         collections::HashSet,
-        sync::atomic::{AtomicUsize, Ordering},
         sync::Arc as StdArc,
+        sync::atomic::{AtomicUsize, Ordering},
         thread,
         time::Duration,
     };
@@ -456,7 +451,10 @@ mod tests {
             .build();
 
         let first = loader.iter().next().expect("missing first batch");
-        assert!(first.is_err(), "first batch should surface dataset get() error");
+        assert!(
+            first.is_err(),
+            "first batch should surface dataset get() error"
+        );
     }
 
     #[test]
@@ -606,5 +604,4 @@ mod tests {
             assert_eq!(batch.size(), vec![2, 2, 3]);
         }
     }
-
 }

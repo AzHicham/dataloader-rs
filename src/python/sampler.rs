@@ -1,6 +1,9 @@
 use std::sync::{Arc, Mutex};
 
-use crate::{error::Error, sampler::{RandomSampler, Sampler, SequentialSampler}};
+use crate::{
+    error::Error,
+    sampler::{RandomSampler, Sampler, SequentialSampler},
+};
 use pyo3::{prelude::*, types::PyIterator};
 
 pub(crate) enum PySampler {

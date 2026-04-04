@@ -3,16 +3,14 @@
 These tests hammer the shutdown path to ensure there are no hangs, deadlocks,
 or use-after-free bugs when iterators are dropped mid-epoch.
 """
+
 import gc
-import hashlib
 
-import pytest
-
-from dataloader_rs import PyDataloader as DataLoader, PyDataset
-from tests.py_dataloader_test_utils import ListDataset, SlowDs, all_items
-
+from dataloader_rs import PyDataloader as DataLoader
+from tests.py_dataloader_test_utils import ListDataset, SlowDs
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _full_epoch(loader):
     """Consume all batches and return sorted flat items."""
@@ -23,6 +21,7 @@ def _full_epoch(loader):
 
 
 # ── Single early-drop then full recovery ──────────────────────────────────────
+
 
 def test_early_drop_then_full_epoch():
     """Drop after 1 batch; subsequent full epoch yields all items."""
@@ -44,6 +43,7 @@ def test_early_drop_zero_consumed():
 
 
 # ── Repeated early drop / recover cycles ─────────────────────────────────────
+
 
 def test_repeated_early_drop_with_slow_ds():
     """20 epochs: every 3rd epoch drop after first batch; full epoch otherwise.
@@ -83,6 +83,7 @@ def test_zero_consume_drop_20_cycles():
 
 # ── GC-triggered drop ─────────────────────────────────────────────────────────
 
+
 def test_gc_drop_does_not_hang():
     """Create an iterator without keeping a reference; gc.collect() triggers drop.
 
@@ -105,13 +106,14 @@ def test_gc_drop_zero_consumed():
     n = 40
     loader = DataLoader(ListDataset(range(n)), batch_size=4, num_workers=4, prefetch_depth=8)
 
-    iter(loader)   # no reference kept
+    iter(loader)  # no reference kept
     gc.collect()
 
     assert _full_epoch(loader) == list(range(n))
 
 
 # ── Ordering invariant under early drop ───────────────────────────────────────
+
 
 def test_order_preserved_after_partial_epoch():
     """After dropping mid-epoch, the next full epoch must be in sequential order."""
@@ -132,6 +134,7 @@ def test_order_preserved_after_partial_epoch():
 
 # ── Channel-full scenario (prefetch_depth=1) ──────────────────────────────────
 
+
 def test_early_drop_channel_full_prefetch_1():
     """prefetch_depth=1 means result channel fills immediately.
 
@@ -150,6 +153,7 @@ def test_early_drop_channel_full_prefetch_1():
 
 
 # ── Workers > batches edge case under early drop ──────────────────────────────
+
 
 def test_early_drop_more_workers_than_batches():
     """More workers than batches; idle workers must still shut down cleanly."""

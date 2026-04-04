@@ -71,9 +71,9 @@ pub mod collator;
 pub mod dataset;
 pub mod error;
 pub mod loader;
-pub mod sampler;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod sampler;
 
 // ── Top-level re-exports ──────────────────────────────────────────────────────
 
@@ -81,6 +81,4 @@ pub use collator::{Collator, VecCollator};
 pub use dataset::{Dataset, IterableDataset};
 pub use error::{Error, Result};
 pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter};
-pub use sampler::{
-    BatchSampler, DistributedSampler, RandomSampler, Sampler, SequentialSampler,
-};
+pub use sampler::{BatchSampler, DistributedSampler, RandomSampler, Sampler, SequentialSampler};

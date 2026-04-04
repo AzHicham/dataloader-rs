@@ -13,6 +13,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest==9",
+    "pytest-benchmark==5",
     "torch==2.11",
 ]
 
@@ -23,6 +24,28 @@ torch = { index = "pytorch-cpu" }
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"bench/*" = ["B023", "E741"]   # loop variable capture + short lambda arg names are intentional
+
+[tool.ty.environment]
+python-version = "3.13"
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "bench"]
+# Benchmark tests are skipped in regular pytest runs; the bench CI job
+# re-enables them explicitly with -m bench --benchmark-enable.
+addopts = "-m 'not bench'"
+markers = ["bench: mark test as a benchmark (deselected by default)"]
 
 [tool.maturin]
 manifest-path = "Cargo.toml"

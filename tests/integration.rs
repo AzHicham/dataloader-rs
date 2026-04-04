@@ -13,16 +13,16 @@
 //!   - Edge cases
 
 use dataloader_rs::{
+    DataLoader, Dataset,
     collator::Collator,
     error::Result,
     sampler::{DistributedSampler, RandomSampler, SequentialSampler},
-    DataLoader, Dataset,
 };
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::Duration,
@@ -299,7 +299,10 @@ fn seq_reusable_across_epochs() {
     let e1: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
     for _ in 0..4 {
         let en: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
-        assert_eq!(e1, en, "every epoch must be identical for SequentialSampler");
+        assert_eq!(
+            e1, en,
+            "every epoch must be identical for SequentialSampler"
+        );
     }
 }
 
@@ -340,7 +343,10 @@ fn seq_collator_error_propagates() {
         .collator(ErrCollator)
         .build();
     for result in loader.iter() {
-        assert!(result.is_err(), "collator error must propagate as Err batch");
+        assert!(
+            result.is_err(),
+            "collator error must propagate as Err batch"
+        );
     }
 }
 
@@ -736,7 +742,10 @@ fn sampler_distributed_each_rank_gets_equal_share() {
             .sampler(DistributedSampler::new(SequentialSampler, rank, world_size))
             .build();
         let count: usize = loader.iter().flat_map(|b| b.unwrap()).count();
-        assert_eq!(count, expected, "rank {rank} must receive exactly {expected} items");
+        assert_eq!(
+            count, expected,
+            "rank {rank} must receive exactly {expected} items"
+        );
     }
 }
 
@@ -771,10 +780,13 @@ fn error_in_last_item_fails_batch() {
 #[test]
 fn error_propagates_parallel() {
     // With parallel workers, at least one batch must surface as Err.
-    let mut loader = DataLoader::builder(PartialErrDs { fail_at: 5, len: 16 })
-        .batch_size(4)
-        .num_workers(4)
-        .build();
+    let mut loader = DataLoader::builder(PartialErrDs {
+        fail_at: 5,
+        len: 16,
+    })
+    .batch_size(4)
+    .num_workers(4)
+    .build();
     let results: Vec<_> = loader.iter().collect();
     let has_err = results.iter().any(|r| r.is_err());
     assert!(has_err, "parallel loader must propagate dataset errors");
@@ -783,11 +795,12 @@ fn error_propagates_parallel() {
 #[test]
 fn error_all_items_fail() {
     // AlwaysErrDs → every batch must be Err.
-    let mut loader = DataLoader::builder(AlwaysErrDs(8))
-        .batch_size(4)
-        .build();
+    let mut loader = DataLoader::builder(AlwaysErrDs(8)).batch_size(4).build();
     for result in loader.iter() {
-        assert!(result.is_err(), "every batch must be Err when all items fail");
+        assert!(
+            result.is_err(),
+            "every batch must be Err when all items fail"
+        );
     }
 }
 
@@ -803,7 +816,10 @@ fn error_loader_reusable_after_error_epoch() {
 
     // Epoch 2 must complete without panic and produce the same results.
     let count = loader.iter().count();
-    assert_eq!(count, 2, "second epoch must produce the same number of batches");
+    assert_eq!(
+        count, 2,
+        "second epoch must produce the same number of batches"
+    );
 }
 
 #[test]
@@ -824,7 +840,9 @@ fn collator_error_skips_collation() {
     }
 
     let calls = Arc::new(AtomicUsize::new(0));
-    let collator = CountingCollator { calls: Arc::clone(&calls) };
+    let collator = CountingCollator {
+        calls: Arc::clone(&calls),
+    };
 
     // fail_at=3 → first batch (0-3) fails; second batch (4-7) succeeds.
     let mut loader = DataLoader::builder(PartialErrDs { fail_at: 3, len: 8 })
@@ -847,13 +865,19 @@ fn collator_error_skips_collation() {
 fn error_middle_batch_others_succeed() {
     // N=12, bs=4, fail_at=5 → batch indices [0-3] ok, [4-7] contains 5 → Err,
     // [8-11] ok.  Exactly 1 error, 2 successes.
-    let mut loader = DataLoader::builder(PartialErrDs { fail_at: 5, len: 12 })
-        .batch_size(4)
-        .build();
+    let mut loader = DataLoader::builder(PartialErrDs {
+        fail_at: 5,
+        len: 12,
+    })
+    .batch_size(4)
+    .build();
     let results: Vec<_> = loader.iter().collect();
     assert_eq!(results.len(), 3);
     assert!(results[0].is_ok(), "batch 0 should succeed");
-    assert!(results[1].is_err(), "batch 1 (indices 4-7) should fail at index 5");
+    assert!(
+        results[1].is_err(),
+        "batch 1 (indices 4-7) should fail at index 5"
+    );
     assert!(results[2].is_ok(), "batch 2 should succeed");
 }
 

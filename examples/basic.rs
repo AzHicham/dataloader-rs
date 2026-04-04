@@ -3,7 +3,7 @@
 //! Run with:
 //!   cargo run --example basic
 
-use dataloader_rs::{error::Result, DataLoader, Dataset, RandomSampler, SequentialSampler};
+use dataloader_rs::{DataLoader, Dataset, RandomSampler, SequentialSampler, error::Result};
 
 // ── Dataset implementation ────────────────────────────────────────────────────
 

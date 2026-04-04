@@ -1,6 +1,7 @@
 //! Shared datasets and collators used by all bench files.
+#![allow(dead_code)]
 
-use dataloader_rs::{collator::Collator, error::Result, Dataset};
+use dataloader_rs::{Dataset, collator::Collator, error::Result};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Datasets

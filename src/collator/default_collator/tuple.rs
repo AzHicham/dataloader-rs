@@ -33,4 +33,3 @@ tuple_impl!(A, B, C ; 0, 1, 2);
 tuple_impl!(A, B, C, D ; 0, 1, 2, 3);
 tuple_impl!(A, B, C, D, E ; 0, 1, 2, 3, 4);
 tuple_impl!(A, B, C, D, E, F ; 0, 1, 2, 3, 4, 5);
-

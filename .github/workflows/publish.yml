@@ -1,0 +1,90 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [dev]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Build Python wheels (always — validates compilation on dev too) ───────
+  build-wheels:
+    name: Wheel (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 (manylinux)
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
+
+          # macOS Apple Silicon
+          - os: macos-14
+            target: aarch64-apple-darwin
+            macos_target: '11.0'
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.7.8
+        with:
+          key: publish-${{ matrix.target }}
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || '' }}
+          args: --release --features python --out dist
+          sccache: true
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target || '' }}
+
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+
+  # ── Publish to PyPI — real releases only ─────────────────────────────────
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-24.04
+    needs: build-wheels
+    if: github.event_name == 'release'
+    environment: pypi
+    permissions:
+      id-token: write  # required for OIDC trusted publishing
+
+    steps:
+      - uses: actions/download-artifact@v4.2.1
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  # ── Publish to crates.io (dry-run on dev, real on release) ───────────────
+  publish-crates:
+    name: Publish to crates.io
+    runs-on: ubuntu-24.04
+    needs: build-wheels
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.7.8
+      - uses: katyo/publish-crates@v2
+        with:
+          dry-run: ${{ github.event_name != 'release' }}
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}

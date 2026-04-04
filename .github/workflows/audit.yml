@@ -1,0 +1,28 @@
+name: Security audit
+
+on:
+  push:
+    paths: ['Cargo.lock']
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays at 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.7.8
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: cargo audit
+        run: cargo audit

@@ -1,10 +1,10 @@
 use crate::{dataset::Dataset, error::Result};
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::exceptions::PyNotImplementedError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use std::time::Instant;
-use pyo3::intern;
 
 #[pyclass(frozen, subclass)]
 pub struct PyDatasetBase;
@@ -33,10 +33,16 @@ impl PyDatasetBase {
 pub(crate) type PyDataset = Py<PyDatasetBase>;
 
 pub(crate) fn len_py(dataset: &PyDataset, py: Python<'_>) -> PyResult<usize> {
-    dataset.call_method0(py, intern!(py, "__len__"))?.extract(py)
+    dataset
+        .call_method0(py, intern!(py, "__len__"))?
+        .extract(py)
 }
 
-pub(crate) fn get_item_py(dataset: &PyDataset, py: Python<'_>, index: usize) -> PyResult<Py<PyAny>> {
+pub(crate) fn get_item_py(
+    dataset: &PyDataset,
+    py: Python<'_>,
+    index: usize,
+) -> PyResult<Py<PyAny>> {
     dataset.call_method1(py, intern!(py, "__getitem__"), (index,))
 }
 
@@ -67,8 +73,7 @@ impl Dataset for PyDataset {
 
     fn len(&self) -> usize {
         Python::attach(|py| {
-            len_py(self, py)
-                .unwrap_or_else(|e| panic!("PyDataset.__len__ failed: {e}"))
+            len_py(self, py).unwrap_or_else(|e| panic!("PyDataset.__len__ failed: {e}"))
         })
     }
 }
