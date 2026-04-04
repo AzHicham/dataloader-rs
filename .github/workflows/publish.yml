@@ -49,17 +49,29 @@ jobs:
         with:
           key: publish-${{ matrix.target }}-${{ matrix.python }}
 
-      - uses: actions/setup-python@v5.4.0
-        with:
-          python-version: ${{ matrix.python }}
-          allow-prereleases: true
+      - uses: astral-sh/setup-uv@v5.4.1
+
+      # On macOS maturin runs natively — install the free-threaded interpreter
+      # via uv (setup-python does not provide free-threaded builds).
+      # On Linux maturin runs inside the manylinux container which already
+      # ships the interpreters; no host-side Python setup is needed.
+      - name: Install Python (macOS only)
+        if: runner.os == 'macOS'
+        run: uv python install ${{ matrix.python }}
+
+      - name: Resolve interpreter path (macOS only)
+        if: runner.os == 'macOS'
+        id: pypath
+        run: echo "path=$(uv python find ${{ matrix.python }})" >> $GITHUB_OUTPUT
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || '' }}
-          args: --release --features python --out dist --interpreter ${{ matrix.python }}
+          args: >-
+            --release --features python --out dist
+            --interpreter ${{ runner.os == 'macOS' && steps.pypath.outputs.path || matrix.python }}
           sccache: true
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target || '' }}
