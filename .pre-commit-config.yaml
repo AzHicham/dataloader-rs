@@ -1,3 +1,5 @@
+default_stages: [pre-commit]
+
 repos:
   # ── Python: ruff (lint + format) ─────────────────────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -33,7 +35,7 @@ repos:
       - id: cargo-clippy
         name: cargo clippy
         language: system
-        entry: cargo clippy --all-targets --all-features -- -D warnings
+        entry: cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged -- -D warnings
         types: [rust]
         pass_filenames: false
 

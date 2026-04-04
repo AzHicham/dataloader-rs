@@ -21,7 +21,7 @@
 mod common;
 use common::*;
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use dataloader_rs::DataLoader;
 
 const N: usize = 4096;
@@ -40,8 +40,11 @@ fn bench_batch_size_sequential(c: &mut Criterion) {
                 .build();
 
             b.iter(|| {
-                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                black_box(total);
+                let total: u64 = loader
+                    .iter()
+                    .map(|b| std::hint::black_box(b.unwrap()))
+                    .sum();
+                std::hint::black_box(total);
             });
         });
     }
@@ -64,8 +67,11 @@ fn bench_batch_size_parallel(c: &mut Criterion) {
                 .build();
 
             b.iter(|| {
-                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                black_box(total);
+                let total: u64 = loader
+                    .iter()
+                    .map(|b| std::hint::black_box(b.unwrap()))
+                    .sum();
+                std::hint::black_box(total);
             });
         });
     }

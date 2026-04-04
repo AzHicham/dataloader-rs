@@ -16,7 +16,7 @@
 mod common;
 use common::*;
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use dataloader_rs::{DataLoader, sampler::RandomSampler};
 
 const BS: usize = 128;
@@ -37,8 +37,11 @@ fn bench_sampler(c: &mut Criterion) {
                 .build();
 
             b.iter(|| {
-                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                black_box(total);
+                let total: u64 = loader
+                    .iter()
+                    .map(|b| std::hint::black_box(b.unwrap()))
+                    .sum();
+                std::hint::black_box(total);
             });
         });
 
@@ -53,8 +56,11 @@ fn bench_sampler(c: &mut Criterion) {
                 .build();
 
             b.iter(|| {
-                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                black_box(total);
+                let total: u64 = loader
+                    .iter()
+                    .map(|b| std::hint::black_box(b.unwrap()))
+                    .sum();
+                std::hint::black_box(total);
             });
         });
     }
