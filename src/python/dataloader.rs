@@ -1,9 +1,8 @@
 use crate::loader as core_loader;
 use crate::sampler::{RandomSampler, SequentialSampler};
 use pyo3::exceptions::PyValueError;
-use pyo3::prelude::*;
-
 use pyo3::intern;
+use pyo3::prelude::*;
 
 use crate::python::collator::PyCollator;
 use crate::python::dataset::PyDataset;
@@ -54,34 +53,34 @@ impl PyDataloader {
 
         let sampler = match sampler {
             Some(py_sampler) => {
-                validate_python_sampler(&py_sampler).map_err(|e| PyValueError::new_err(e.to_string()))?;
+                validate_python_sampler(&py_sampler)
+                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
                 SharedPySampler::new(PySampler::Python(py_sampler))
             }
             None if shuffle => SharedPySampler::new(PySampler::Random(RandomSampler::from_entropy())),
             None => SharedPySampler::new(PySampler::Sequential(SequentialSampler)),
         };
 
-        let collator = PyCollator::new(collate_fn);
-        let loader = core_loader::DataLoader::builder(dataset)
+        // `num_workers` maps to inter-batch workers; intra_workers stays 0 for
+        // Python datasets (rayon cannot call Python's __getitem__ in parallel).
+        let inner = core_loader::DataLoader::builder(dataset)
             .batch_size(batch_size)
             .prefetch_depth(prefetch_depth)
             .drop_last(drop_last)
             .num_workers(num_workers)
             .sampler(sampler)
-            .collator(collator)
+            .collator(PyCollator::new(collate_fn))
             .build();
 
-        Ok(Self {
-            inner: loader,
-        })
+        Ok(Self { inner })
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
         let mut loader = slf.borrow_mut(py);
 
         if !loader.inner.has_workers() {
-            // Direct path: no thread, no channel.
-            // Cache __getitem__ once so __next__ skips one attribute lookup per item.
+            // Direct path (num_workers=0): call Python directly inside __next__
+            // using the py token already held — zero extra GIL acquisitions.
             let chunks = loader.inner.epoch_chunks();
             let remaining = chunks.len();
             let getitem = loader
@@ -90,7 +89,7 @@ impl PyDataloader {
                 .getattr(py, intern!(py, "__getitem__"))?;
             let collator = loader.inner.collator().clone();
             drop(loader);
-            Ok(PyDataloaderIter {
+            return Ok(PyDataloaderIter {
                 _owner: slf,
                 inner: PyIterInner::Direct {
                     chunks: chunks.into_iter(),
@@ -98,16 +97,17 @@ impl PyDataloader {
                     getitem,
                     collator,
                 },
-            })
-        } else {
-            // Threaded path: rayon workers + crossbeam channel.
-            let inner = loader.inner.iter_owned();
-            drop(loader);
-            Ok(PyDataloaderIter {
-                _owner: slf,
-                inner: PyIterInner::Threaded(Some(inner)),
-            })
+            });
         }
+
+        // Parallel path: core spawns N inter-batch worker threads.
+        // Each worker calls dataset.get_batch() (one Python::attach per batch).
+        let inner = loader.inner.iter_owned();
+        drop(loader);
+        Ok(PyDataloaderIter {
+            _owner: slf,
+            inner: PyIterInner::Threaded(Some(inner)),
+        })
     }
 
     fn __len__(&self) -> usize {

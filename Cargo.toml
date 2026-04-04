@@ -25,7 +25,6 @@ lto = "thin"
 [profile.bench]
 opt-level = 3
 codegen-units = 1
-panic = 'unwind'
 lto = "thin"
 
 # ── Runtime dependencies ──────────────────────────────────────────────────────
@@ -39,10 +38,13 @@ version          = "0.5"
 default-features = false
 features         = ["std"]
 
-[dependencies.rand]
-version          = "0.8"
+[dependencies.hashbrown]
+version          = "0.15"
 default-features = false
-features         = ["small_rng", "alloc", "getrandom"]
+features         = ["default-hasher"]
+
+[dependencies.fastrand]
+version          = "2"
 
 # ── Optional Runtime dependencies ──────────────────────────────────────────────────────
 
@@ -76,5 +78,25 @@ default-features = false
 features         = ["download-libtorch"]
 
 [[bench]]
-name    = "dataloader"
+name    = "bench_inter_workers"
+harness = false
+
+[[bench]]
+name    = "bench_intra_workers"
+harness = false
+
+[[bench]]
+name    = "bench_prefetch_depth"
+harness = false
+
+[[bench]]
+name    = "bench_batch_size"
+harness = false
+
+[[bench]]
+name    = "bench_sampler"
+harness = false
+
+[[bench]]
+name    = "bench_early_drop"
 harness = false

@@ -16,6 +16,11 @@ pub struct DataLoader<D, S: Sampler, C> {
     pub(super) batch_sampler: BatchSampler<S>,
     pub(super) collator: C,
     pub(super) prefetch_depth: usize,
+    /// Number of independent worker threads (inter-batch concurrency).
+    /// `0` means the direct path: batches are processed in `Iterator::next`.
+    pub(super) inter_workers: usize,
+    /// Optional rayon pool for intra-batch item-level parallelism.
+    /// `None` when `intra_workers = 0`.
     pub(super) pool: Option<Arc<rayon::ThreadPool>>,
 }
 
@@ -34,7 +39,7 @@ where
     C: Collator<D::Item>,
 {
     /// Start one epoch of iteration.
-    pub fn iter(&mut self) -> DataLoaderIter<'_, C::Batch> {
+    pub fn iter(&mut self) -> DataLoaderIter<'_, D, C> {
         DataLoaderIter::new(self)
     }
 
@@ -55,9 +60,14 @@ where
         &self.collator
     }
 
-    /// Returns `true` when a rayon worker pool is active (num_workers > 0).
+    /// Returns `true` when inter-batch worker threads are active.
     pub(crate) fn has_workers(&self) -> bool {
-        self.pool.is_some()
+        self.inter_workers > 0
+    }
+
+    /// Maximum number of batches to buffer ahead of the consumer.
+    pub(crate) fn prefetch_depth(&self) -> usize {
+        self.prefetch_depth
     }
 
     /// Generate batch index chunks for one epoch, advancing the sampler.
@@ -92,9 +102,10 @@ where
     D: Dataset,
     S: Sampler,
     C: Collator<D::Item>,
+    C::Batch: Send + 'static,
 {
     type Item = Result<C::Batch>;
-    type IntoIter = DataLoaderIter<'a, C::Batch>;
+    type IntoIter = DataLoaderIter<'a, D, C>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
