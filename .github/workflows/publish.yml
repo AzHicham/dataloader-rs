@@ -12,22 +12,33 @@ env:
 
 jobs:
   # ── Build Python wheels (always — validates compilation on dev too) ───────
+  # 4 combinations: 2 platforms × 2 free-threaded interpreters (3.13t, 3.14t)
   build-wheels:
-    name: Wheel (${{ matrix.target }})
+    name: Wheel (${{ matrix.target }}, ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64 (manylinux)
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             manylinux: auto
+            python: "3.13t"
 
-          # macOS Apple Silicon
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
+            python: "3.14t"
+
           - os: macos-14
             target: aarch64-apple-darwin
             macos_target: '11.0'
+            python: "3.13t"
+
+          - os: macos-14
+            target: aarch64-apple-darwin
+            macos_target: '11.0'
+            python: "3.14t"
 
     steps:
       - uses: actions/checkout@v4.2.2
@@ -36,21 +47,26 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2.7.8
         with:
-          key: publish-${{ matrix.target }}
+          key: publish-${{ matrix.target }}-${{ matrix.python }}
+
+      - uses: actions/setup-python@v5.4.0
+        with:
+          python-version: ${{ matrix.python }}
+          allow-prereleases: true
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || '' }}
-          args: --release --features python --out dist
+          args: --release --features python --out dist --interpreter ${{ matrix.python }}
           sccache: true
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target || '' }}
 
       - uses: actions/upload-artifact@v4.6.2
         with:
-          name: wheel-${{ matrix.target }}
+          name: wheel-${{ matrix.target }}-${{ matrix.python }}
           path: dist/*.whl
 
   # ── Publish to PyPI — real releases only ─────────────────────────────────

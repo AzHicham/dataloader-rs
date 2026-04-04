@@ -91,10 +91,6 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --group dev
 
-      - name: Relax requires-python for 3.14t
-        if: matrix.python == '3.14t'
-        run: sed -i 's/requires-python.*/requires-python = ">=3.13"/' pyproject.toml
-
       - name: Build wheel
         run: uv run maturin develop --features python
 
