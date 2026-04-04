@@ -21,7 +21,7 @@
 mod common;
 use common::*;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use dataloader_rs::DataLoader;
 
 const N: usize = 4096;
@@ -31,23 +31,19 @@ fn bench_batch_size_sequential(c: &mut Criterion) {
     group.throughput(Throughput::Elements(N as u64));
 
     for &bs in &[1usize, 8, 32, 128, 512, 1024, 4096] {
-        group.bench_with_input(
-            BenchmarkId::new("bs", bs),
-            &bs,
-            |b, &batch_size| {
-                // Build ONCE outside b.iter()
-                let mut loader = DataLoader::builder(InMemoryDs(N))
-                    .batch_size(batch_size)
-                    .num_workers(0)
-                    .collator(SumCollator)
-                    .build();
+        group.bench_with_input(BenchmarkId::new("bs", bs), &bs, |b, &batch_size| {
+            // Build ONCE outside b.iter()
+            let mut loader = DataLoader::builder(InMemoryDs(N))
+                .batch_size(batch_size)
+                .num_workers(0)
+                .collator(SumCollator)
+                .build();
 
-                b.iter(|| {
-                    let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                    black_box(total);
-                });
-            },
-        );
+            b.iter(|| {
+                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
+                black_box(total);
+            });
+        });
     }
 
     group.finish();
@@ -58,28 +54,28 @@ fn bench_batch_size_parallel(c: &mut Criterion) {
     group.throughput(Throughput::Elements(N as u64));
 
     for &bs in &[1usize, 8, 32, 128, 512, 1024, 4096] {
-        group.bench_with_input(
-            BenchmarkId::new("bs", bs),
-            &bs,
-            |b, &batch_size| {
-                // Build ONCE outside b.iter()
-                let mut loader = DataLoader::builder(InMemoryDs(N))
-                    .batch_size(batch_size)
-                    .num_workers(4)
-                    .prefetch_depth(16)
-                    .collator(SumCollator)
-                    .build();
+        group.bench_with_input(BenchmarkId::new("bs", bs), &bs, |b, &batch_size| {
+            // Build ONCE outside b.iter()
+            let mut loader = DataLoader::builder(InMemoryDs(N))
+                .batch_size(batch_size)
+                .num_workers(4)
+                .prefetch_depth(16)
+                .collator(SumCollator)
+                .build();
 
-                b.iter(|| {
-                    let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                    black_box(total);
-                });
-            },
-        );
+            b.iter(|| {
+                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
+                black_box(total);
+            });
+        });
     }
 
     group.finish();
 }
 
-criterion_group!(benches, bench_batch_size_sequential, bench_batch_size_parallel);
+criterion_group!(
+    benches,
+    bench_batch_size_sequential,
+    bench_batch_size_parallel
+);
 criterion_main!(benches);

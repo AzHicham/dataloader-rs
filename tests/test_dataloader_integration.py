@@ -40,5 +40,3 @@ def test_python_sampler_order_is_respected():
     assert batches[0][0]["x"] == 4
     assert batches[0][1]["x"] == 0
     assert batches[1][0]["x"] == 2
-
-

@@ -8,13 +8,14 @@ Covers:
   - partial failures (some batches ok, one fails)
   - loader reuse after an epoch that raised errors
 """
+
 import pytest
 
 from dataloader_rs import PyDataloader as DataLoader
 from tests.py_dataloader_test_utils import FailingDs, ListDataset
 
-
 # ── Sequential error propagation ─────────────────────────────────────────────
+
 
 def test_dataset_error_surfaces_in_iteration():
     """dataset.__getitem__ raising must propagate as RuntimeError from next()."""
@@ -26,6 +27,7 @@ def test_dataset_error_surfaces_in_iteration():
 
 def test_collate_error_surfaces_in_iteration():
     """A collate_fn that raises must propagate as RuntimeError from next()."""
+
     def bad_collate(_items):
         raise RuntimeError("collate exploded")
 
@@ -57,6 +59,7 @@ def test_dataset_error_after_success():
 
 # ── Parallel error propagation ────────────────────────────────────────────────
 
+
 def test_dataset_error_parallel():
     """num_workers=4: a dataset error must surface as RuntimeError.
 
@@ -86,18 +89,18 @@ def test_dataset_error_parallel():
 
 def test_collate_error_parallel():
     """collate_fn raising in parallel mode must propagate as RuntimeError."""
+
     def bad_collate(_items):
         raise RuntimeError("parallel collate exploded")
 
-    loader = DataLoader(
-        ListDataset(range(8)), batch_size=4, num_workers=2, collate_fn=bad_collate
-    )
+    loader = DataLoader(ListDataset(range(8)), batch_size=4, num_workers=2, collate_fn=bad_collate)
     it = iter(loader)
     with pytest.raises(RuntimeError, match="parallel collate exploded"):
         next(it)
 
 
 # ── Reuse after error ─────────────────────────────────────────────────────────
+
 
 def test_error_then_next_epoch_works():
     """After an epoch that raised, the loader must work correctly in the next."""

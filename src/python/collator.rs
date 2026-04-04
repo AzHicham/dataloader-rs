@@ -31,7 +31,9 @@ impl PyCollator {
             None => Ok(PyBatch::Items(items)),
             Some(f) => {
                 let list = PyList::new(py, items)?;
-                f.call1(py, (list,)).map(PyBatch::Ready).map_err(crate::error::Error::from)
+                f.call1(py, (list,))
+                    .map(PyBatch::Ready)
+                    .map_err(crate::error::Error::from)
             }
         }
     }

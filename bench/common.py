@@ -11,10 +11,10 @@ from __future__ import annotations
 import hashlib
 import statistics
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
-from dataloader_rs import PyDataloader, PyDataset
+from dataloader_rs import PyDataset
 
 # 1MB payload — pre-allocated once at import time.
 # __getitem__ never allocates a large buffer; only the 32-byte digest is created.
@@ -24,6 +24,7 @@ _PAYLOAD = bytes(range(256)) * 4096  # 1 048 576 bytes
 # ---------------------------------------------------------------------------
 # dataloader_rs datasets
 # ---------------------------------------------------------------------------
+
 
 class InMemoryDs(PyDataset):
     """Trivial dataset returning the index. Isolates loader/sampler overhead."""
@@ -63,6 +64,7 @@ class CpuBoundDs(PyDataset):
 # ---------------------------------------------------------------------------
 # Torch equivalents (defined lazily to avoid hard dependency)
 # ---------------------------------------------------------------------------
+
 
 def _make_torch_datasets():
     """Return (TorchInMemoryDs, TorchCpuBoundDs) classes using torch.utils.data.Dataset."""
@@ -111,6 +113,7 @@ except ImportError:
 # Collate functions
 # ---------------------------------------------------------------------------
 
+
 def sum_collate(items: list[int]) -> int:
     """Collate a list of ints by summing them."""
     return sum(items)
@@ -125,11 +128,12 @@ def cat_collate(items: list[bytes]) -> bytes:
 # Result type
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BenchResult:
     group: str
-    name: str       # e.g. "ours" / "torch"
-    param: str      # the swept parameter value, as a string
+    name: str  # e.g. "ours" / "torch"
+    param: str  # the swept parameter value, as a string
     us_per_item: float
     items_per_s: float
 
@@ -137,6 +141,7 @@ class BenchResult:
 # ---------------------------------------------------------------------------
 # Timing helpers
 # ---------------------------------------------------------------------------
+
 
 def time_epoch(loader, repeats: int) -> list[float]:
     """Run one full epoch `repeats` times and return a list of wall-clock durations (seconds)."""
@@ -192,6 +197,7 @@ def run_case(
 # Output formatting
 # ---------------------------------------------------------------------------
 
+
 def fmt_results(results: list[BenchResult]) -> None:
     """Print results as CSV (group,library,param,us_per_item,items_per_s) then a summary table."""
     print("group,library,param,us_per_item,items_per_s")
@@ -206,6 +212,5 @@ def fmt_results(results: list[BenchResult]) -> None:
     print("-" * 76)
     for r in results:
         print(
-            f"{r.group:<30} {r.name:<8} {r.param:<10}"
-            f" {r.us_per_item:>10.2f} {r.items_per_s:>12.0f}"
+            f"{r.group:<30} {r.name:<8} {r.param:<10} {r.us_per_item:>10.2f} {r.items_per_s:>12.0f}"
         )

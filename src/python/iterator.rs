@@ -37,7 +37,12 @@ impl PyDataloaderIter {
 
     fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
         match &mut self.inner {
-            PyIterInner::Direct { chunks, remaining, getitem, collator } => {
+            PyIterInner::Direct {
+                chunks,
+                remaining,
+                getitem,
+                collator,
+            } => {
                 let Some(chunk) = chunks.next() else {
                     return Ok(None);
                 };
@@ -96,10 +101,10 @@ impl PyDataloaderIter {
     }
 
     fn __del__(&mut self, py: Python<'_>) {
-        if let PyIterInner::Threaded(inner) = &mut self.inner {
-            if let Some(inner) = inner.take() {
-                py.detach(|| drop(inner));
-            }
+        if let PyIterInner::Threaded(inner) = &mut self.inner
+            && let Some(inner) = inner.take()
+        {
+            py.detach(|| drop(inner));
         }
     }
 }

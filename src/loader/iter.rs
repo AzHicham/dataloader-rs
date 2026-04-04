@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::thread::JoinHandle;
 
-use crossbeam_channel::{bounded, unbounded, Receiver};
+use crossbeam_channel::{Receiver, bounded, unbounded};
 use hashbrown::HashMap;
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
     error::Result,
     loader::{
         core::DataLoader,
-        worker::{process_batch, worker_loop, WorkItem},
+        worker::{WorkItem, process_batch, worker_loop},
     },
     sampler::Sampler,
 };
@@ -105,7 +105,9 @@ impl<B: Send + 'static> ParallelCore<B> {
                 return Some(batch);
             }
             match self.result_rx.as_ref()?.recv() {
-                Ok((idx, batch)) => { self.reorder.insert(idx, batch); }
+                Ok((idx, batch)) => {
+                    self.reorder.insert(idx, batch);
+                }
                 Err(_) => return None,
             }
         }
@@ -196,10 +198,21 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.inner {
-            Inner::Direct { chunks, remaining, dataset, collator, pool } => {
+            Inner::Direct {
+                chunks,
+                remaining,
+                dataset,
+                collator,
+                pool,
+            } => {
                 let indices = chunks.next()?;
                 *remaining -= 1;
-                Some(process_batch(*dataset, &indices, *collator, pool.as_deref()))
+                Some(process_batch(
+                    *dataset,
+                    &indices,
+                    *collator,
+                    pool.as_deref(),
+                ))
             }
             Inner::Parallel(core) => core.next(),
         }
@@ -219,7 +232,8 @@ where
     D: Dataset,
     C: Collator<D::Item>,
     C::Batch: Send + 'static,
-{}
+{
+}
 
 // ── OwnedDataLoaderIter (Python FFI) ──────────────────────────────────────────
 
@@ -244,8 +258,13 @@ impl<B: Send + 'static> OwnedDataLoaderIter<B> {
 #[cfg(feature = "python")]
 impl<B: Send + 'static> Iterator for OwnedDataLoaderIter<B> {
     type Item = Result<B>;
-    fn next(&mut self) -> Option<Self::Item> { self.0.next() }
-    fn size_hint(&self) -> (usize, Option<usize>) { let n = self.0.len(); (n, Some(n)) }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.0.len();
+        (n, Some(n))
+    }
 }
 
 #[cfg(feature = "python")]

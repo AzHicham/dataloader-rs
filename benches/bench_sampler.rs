@@ -16,8 +16,8 @@
 mod common;
 use common::*;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use dataloader_rs::{sampler::RandomSampler, DataLoader};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use dataloader_rs::{DataLoader, sampler::RandomSampler};
 
 const BS: usize = 128;
 
@@ -28,43 +28,35 @@ fn bench_sampler(c: &mut Criterion) {
         group.throughput(Throughput::Elements(n as u64));
 
         // Sequential sampler (default)
-        group.bench_with_input(
-            BenchmarkId::new("sequential", n),
-            &n,
-            |b, &size| {
-                // Build ONCE outside b.iter()
-                let mut loader = DataLoader::builder(InMemoryDs(size))
-                    .batch_size(BS)
-                    .num_workers(0)
-                    .collator(SumCollator)
-                    .build();
+        group.bench_with_input(BenchmarkId::new("sequential", n), &n, |b, &size| {
+            // Build ONCE outside b.iter()
+            let mut loader = DataLoader::builder(InMemoryDs(size))
+                .batch_size(BS)
+                .num_workers(0)
+                .collator(SumCollator)
+                .build();
 
-                b.iter(|| {
-                    let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                    black_box(total);
-                });
-            },
-        );
+            b.iter(|| {
+                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
+                black_box(total);
+            });
+        });
 
         // Random sampler (Fisher-Yates shuffle)
-        group.bench_with_input(
-            BenchmarkId::new("random", n),
-            &n,
-            |b, &size| {
-                // Build ONCE outside b.iter()
-                let mut loader = DataLoader::builder(InMemoryDs(size))
-                    .batch_size(BS)
-                    .num_workers(0)
-                    .sampler(RandomSampler::new(42))
-                    .collator(SumCollator)
-                    .build();
+        group.bench_with_input(BenchmarkId::new("random", n), &n, |b, &size| {
+            // Build ONCE outside b.iter()
+            let mut loader = DataLoader::builder(InMemoryDs(size))
+                .batch_size(BS)
+                .num_workers(0)
+                .sampler(RandomSampler::new(42))
+                .collator(SumCollator)
+                .build();
 
-                b.iter(|| {
-                    let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
-                    black_box(total);
-                });
-            },
-        );
+            b.iter(|| {
+                let total: u64 = loader.iter().map(|b| black_box(b.unwrap())).sum();
+                black_box(total);
+            });
+        });
     }
 
     group.finish();

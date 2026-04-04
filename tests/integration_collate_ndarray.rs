@@ -1,6 +1,6 @@
 #![cfg(feature = "ndarray")]
 
-use dataloader_rs::{collator::DefaultCollator, error::Result, DataLoader, Dataset};
+use dataloader_rs::{DataLoader, Dataset, collator::DefaultCollator, error::Result};
 
 struct NdDs(usize);
 
@@ -8,7 +8,11 @@ impl Dataset for NdDs {
     type Item = ndarray::Array1<i32>;
 
     fn get(&self, index: usize) -> Result<Self::Item> {
-        Ok(ndarray::arr1(&[index as i32, index as i32 + 1, index as i32 + 2]))
+        Ok(ndarray::arr1(&[
+            index as i32,
+            index as i32 + 1,
+            index as i32 + 2,
+        ]))
     }
 
     fn len(&self) -> usize {

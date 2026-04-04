@@ -8,20 +8,15 @@ Tests verify:
   - custom collate_fn applied correctly in parallel mode
   - large prefetch_depth does not corrupt results
 """
-import math
-
-import pytest
 
 from dataloader_rs import PyDataloader as DataLoader
 from tests.py_dataloader_test_utils import (
-    CpuBoundDs,
     ListDataset,
     all_items,
-    materialize,
 )
 
-
 # ── Coverage / correctness ────────────────────────────────────────────────────
+
 
 def test_par_all_items_covered_2w():
     """N=20, bs=4, num_workers=2 → all 20 items present, none duplicated."""
@@ -80,9 +75,7 @@ def test_par_single_batch():
 
 def test_par_drop_last():
     """N=11, bs=4, num_workers=4, drop_last=True → floor(11/4)=2 full batches."""
-    loader = DataLoader(
-        ListDataset(range(11)), batch_size=4, num_workers=4, drop_last=True
-    )
+    loader = DataLoader(ListDataset(range(11)), batch_size=4, num_workers=4, drop_last=True)
     batches = list(loader)
     assert len(batches) == 2
     for b in batches:
@@ -99,6 +92,7 @@ def test_par_multi_epoch_consistent():
 
 
 # ── Cancellation / early drop ─────────────────────────────────────────────────
+
 
 def test_par_early_drop_no_hang():
     """Consume 1 batch then discard the iterator; the next full epoch must work.
@@ -134,16 +128,16 @@ def test_par_early_drop_zero_consumed():
 
 # ── Collate function ──────────────────────────────────────────────────────────
 
+
 def test_par_with_collate_fn():
     """Custom collate_fn must be applied correctly in the parallel path."""
+
     def collate_fn(items):
         return sum(items)  # reduce the batch to a single integer
 
     n = 12
     bs = 4
-    loader = DataLoader(
-        ListDataset(range(n)), batch_size=bs, num_workers=2, collate_fn=collate_fn
-    )
+    loader = DataLoader(ListDataset(range(n)), batch_size=bs, num_workers=2, collate_fn=collate_fn)
     sums = list(loader)
     # batch 0: 0+1+2+3=6, batch 1: 4+5+6+7=22, batch 2: 8+9+10+11=38
     assert sums == [6, 22, 38]
@@ -151,11 +145,10 @@ def test_par_with_collate_fn():
 
 # ── Prefetch depth ────────────────────────────────────────────────────────────
 
+
 def test_par_large_prefetch():
     """prefetch_depth=100 >> number of batches; results must still be correct."""
     # edge case: extremely large prefetch_depth
     n = 8
-    loader = DataLoader(
-        ListDataset(range(n)), batch_size=2, num_workers=2, prefetch_depth=100
-    )
+    loader = DataLoader(ListDataset(range(n)), batch_size=2, num_workers=2, prefetch_depth=100)
     assert all_items(loader) == list(range(n))

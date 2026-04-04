@@ -21,7 +21,7 @@
 mod common;
 use common::*;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use dataloader_rs::DataLoader;
 
 const N: usize = 128;
@@ -33,26 +33,22 @@ fn bench_prefetch_depth(c: &mut Criterion) {
     group.throughput(Throughput::Elements(N as u64));
 
     for &depth in &[1usize, 2, 4, 8, 16] {
-        group.bench_with_input(
-            BenchmarkId::new("depth", depth),
-            &depth,
-            |b, &d| {
-                // Build ONCE outside b.iter()
-                let mut loader = DataLoader::builder(LightCpuDs(N))
-                    .batch_size(BS)
-                    .num_workers(INTER)
-                    .intra_workers(0)
-                    .prefetch_depth(d)
-                    .collator(CatCollator)
-                    .build();
+        group.bench_with_input(BenchmarkId::new("depth", depth), &depth, |b, &d| {
+            // Build ONCE outside b.iter()
+            let mut loader = DataLoader::builder(LightCpuDs(N))
+                .batch_size(BS)
+                .num_workers(INTER)
+                .intra_workers(0)
+                .prefetch_depth(d)
+                .collator(CatCollator)
+                .build();
 
-                b.iter(|| {
-                    for batch in loader.iter() {
-                        black_box(batch.unwrap());
-                    }
-                });
-            },
-        );
+            b.iter(|| {
+                for batch in loader.iter() {
+                    black_box(batch.unwrap());
+                }
+            });
+        });
     }
 
     group.finish();

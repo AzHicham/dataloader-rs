@@ -1,6 +1,6 @@
 #![cfg(feature = "torch-rs")]
 
-use dataloader_rs::{collator::DefaultCollator, error::Result, DataLoader, Dataset};
+use dataloader_rs::{DataLoader, Dataset, collator::DefaultCollator, error::Result};
 
 struct TensorDs(usize);
 

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use dataloader_rs::{
+    Collator, DataLoader, Dataset,
     collator::{DefaultCollate, DefaultCollator},
     error::Result,
     sampler::RandomSampler,
-    Collator, DataLoader, Dataset,
 };
 
 #[derive(Debug, Clone, PartialEq)]

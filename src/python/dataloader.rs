@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 use crate::python::collator::PyCollator;
 use crate::python::dataset::PyDataset;
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
-use crate::python::sampler::{validate_python_sampler, PySampler, SharedPySampler};
+use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
 
 type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollator>;
 
@@ -29,6 +29,7 @@ impl PyDataloader {
         collate_fn=None,
         drop_last=false
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         dataset: PyDataset,
         batch_size: usize,
@@ -57,7 +58,9 @@ impl PyDataloader {
                     .map_err(|e| PyValueError::new_err(e.to_string()))?;
                 SharedPySampler::new(PySampler::Python(py_sampler))
             }
-            None if shuffle => SharedPySampler::new(PySampler::Random(RandomSampler::from_entropy())),
+            None if shuffle => {
+                SharedPySampler::new(PySampler::Random(RandomSampler::from_entropy()))
+            }
             None => SharedPySampler::new(PySampler::Sequential(SequentialSampler)),
         };
 

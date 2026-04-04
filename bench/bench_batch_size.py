@@ -23,16 +23,16 @@ Run:
 from __future__ import annotations
 
 import argparse
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from common import (
-    InMemoryDs,
-    sum_collate,
-    run_case,
-    fmt_results,
     BenchResult,
+    InMemoryDs,
+    fmt_results,
+    run_case,
+    sum_collate,
 )
 
 from dataloader_rs import PyDataloader
@@ -94,8 +94,8 @@ def bench_ours(warmup: int, repeats: int) -> list[BenchResult]:
 
 def bench_torch(warmup: int, repeats: int) -> list[BenchResult]:
     try:
-        from torch.utils.data import DataLoader  # type: ignore[import]
         from common import TorchInMemoryDs
+        from torch.utils.data import DataLoader  # type: ignore[import]
     except ImportError:
         print("# torch not available — skipping torch benchmarks", flush=True)
         return []
@@ -173,7 +173,9 @@ def main() -> None:
         description="Sweep batch_size with InMemoryDs to measure per-batch overhead."
     )
     parser.add_argument("--warmup", type=int, default=2, help="warmup epochs per case (default: 2)")
-    parser.add_argument("--repeats", type=int, default=10, help="timed epochs per case (default: 10)")
+    parser.add_argument(
+        "--repeats", type=int, default=10, help="timed epochs per case (default: 10)"
+    )
     args = parser.parse_args()
 
     results: list[BenchResult] = []
@@ -184,7 +186,11 @@ def main() -> None:
 
     print()
     _print_scenario_table(results, "batch_size/sequential", "Sequential (num_workers=0)")
-    _print_scenario_table(results, "batch_size/parallel", f"Parallel   (num_workers={NUM_WORKERS_PAR}, prefetch_depth={PREFETCH_DEPTH_PAR})")
+    _print_scenario_table(
+        results,
+        "batch_size/parallel",
+        f"Parallel   (num_workers={NUM_WORKERS_PAR}, prefetch_depth={PREFETCH_DEPTH_PAR})",
+    )
 
 
 if __name__ == "__main__":

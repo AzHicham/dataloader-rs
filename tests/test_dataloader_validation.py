@@ -6,13 +6,14 @@ Tests verify that:
   - __len__ on the loader reflects the dataset size and batch settings
   - collate_fn receives the correct argument type
 """
+
 import pytest
 
 from dataloader_rs import PyDataloader as DataLoader
-from tests.py_dataloader_test_utils import ListDataset, ToyDataset
-
+from tests.py_dataloader_test_utils import ListDataset
 
 # ── Required rejections ───────────────────────────────────────────────────────
+
 
 def test_rejects_zero_batch_size():
     """batch_size=0 is invalid and must raise ValueError."""
@@ -34,6 +35,7 @@ def test_rejects_shuffle_and_sampler_together():
 
 def test_rejects_dataset_not_subclassing_pydataset():
     """A dataset that does not subclass PyDataset must raise TypeError."""
+
     class PlainDataset:
         def __len__(self):
             return 2
@@ -46,6 +48,7 @@ def test_rejects_dataset_not_subclassing_pydataset():
 
 
 # ── Required acceptances ──────────────────────────────────────────────────────
+
 
 def test_accepts_zero_num_workers():
     """num_workers=0 (sequential mode) must be accepted without error."""
@@ -77,6 +80,7 @@ def test_batch_size_equals_dataset_len():
 
 # ── __len__ correctness ───────────────────────────────────────────────────────
 
+
 def test_len_matches_drop_last_false():
     """len(loader) == ceil(N / bs) when drop_last=False."""
     loader = DataLoader(ListDataset(range(10)), batch_size=3, drop_last=False)
@@ -91,6 +95,7 @@ def test_len_matches_drop_last_true():
 
 def test_dataset_len_respected():
     """The loader must honour dataset.__len__ for batch count computation."""
+
     class SizedDs(ListDataset):
         def __len__(self):
             # Report 6 even though there are 10 items — loader must trust __len__.
@@ -115,6 +120,7 @@ def test_accepts_prefetch_depth_argument():
 
 # ── Collate function interface ────────────────────────────────────────────────
 
+
 def test_collate_fn_receives_list():
     """collate_fn must receive a plain Python list of items, not some other type."""
     received_type = []
@@ -123,11 +129,7 @@ def test_collate_fn_receives_list():
         received_type.append(type(items))
         return items  # pass-through
 
-    loader = DataLoader(
-        ListDataset(range(4)), batch_size=4, collate_fn=inspecting_collate
-    )
+    loader = DataLoader(ListDataset(range(4)), batch_size=4, collate_fn=inspecting_collate)
     list(loader)  # trigger one call to collate_fn
     assert received_type, "collate_fn must have been called at least once"
-    assert received_type[0] is list, (
-        f"collate_fn must receive a list, got {received_type[0]}"
-    )
+    assert received_type[0] is list, f"collate_fn must receive a list, got {received_type[0]}"

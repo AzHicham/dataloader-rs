@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - rc
+      - dev
+
+# Only one release at a time — prevents race conditions on shared resources
+# (git tags, crates.io, PyPI).
+concurrency:
+  group: ${{ github.workflow }}
+
+jobs:
+  release:
+    name: Semantic release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write       # create tags and GitHub releases
+      issues: write         # comment on released issues
+      pull-requests: write  # comment on released PRs
+      id-token: write       # OIDC provenance
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          # Use a PAT so that the release commit created by semantic-release
+          # triggers subsequent workflows (GITHUB_TOKEN commits do not).
+          persist-credentials: false
+
+      # semantic-release-cargo updates Cargo.toml + Cargo.lock with the new
+      # version number as part of the release prepare step.
+      - name: Install semantic-release-cargo
+        uses: EricCrosson/install-github-release-binary@v2
+        with:
+          targets: semantic-release-cargo/semantic-release-cargo@v2.2.30
+
+      - name: Semantic Release
+        uses: cycjimmy/semantic-release-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.SCOPED_GITHUB_TOKEN }}
+        with:
+          semantic_version: 22.0.6
+          # Dry-run on dev: analyze commits and report the next version without
+          # creating tags, GitHub releases, or pushing anything.
+          dry_run: ${{ github.ref_name == 'dev' }}
+          extra_plugins: |
+            @semantic-release/changelog@6.0.3
+            @semantic-release/git@10.0.1
+            @semantic-release/exec@6.0.3
+            conventional-changelog-conventionalcommits@7.0.2
+            @saithodev/semantic-release-backmerge@3.2.1

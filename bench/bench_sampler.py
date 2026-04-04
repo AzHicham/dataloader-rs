@@ -14,18 +14,18 @@ Run:
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import sys
-import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 from common import (
+    BenchResult,
     CpuBoundDs,
     TorchCpuBoundDs,
     cat_collate,
-    run_case,
     fmt_results,
-    BenchResult,
+    run_case,
 )
 
 from dataloader_rs import PyDataloader
@@ -161,12 +161,19 @@ def _print_overhead_table(results: list[BenchResult]) -> None:
         header += f"  {lib:>10}"
     print(header)
     for n in N_SWEEP:
-        for sampler_tag, group in (("sequential", "sampler/sequential"), ("shuffle", "sampler/shuffle")):
+        for sampler_tag, group in (
+            ("sequential", "sampler/sequential"),
+            ("shuffle", "sampler/shuffle"),
+        ):
             row = f"  {n:<10}  {sampler_tag:<10}"
             param_key = f"N={n},{sampler_tag[:4]}"
             for lib in libs:
                 match = next(
-                    (r for r in results if r.name == lib and r.group == group and r.param == param_key),
+                    (
+                        r
+                        for r in results
+                        if r.name == lib and r.group == group and r.param == param_key
+                    ),
                     None,
                 )
                 row += f"  {match.items_per_s:>10.0f}" if match else f"  {'n/a':>10}"
@@ -179,7 +186,9 @@ def main() -> None:
         description="Sweep dataset size N for sequential vs shuffle sampler (num_workers=0)."
     )
     parser.add_argument("--warmup", type=int, default=2, help="warmup epochs per case (default: 2)")
-    parser.add_argument("--repeats", type=int, default=10, help="timed epochs per case (default: 10)")
+    parser.add_argument(
+        "--repeats", type=int, default=10, help="timed epochs per case (default: 10)"
+    )
     args = parser.parse_args()
 
     results: list[BenchResult] = []

@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
+#[cfg(feature = "torch-rs")]
+use crate::collator::TorchPinnedCollator;
 use crate::{
     collator::{Collator, VecCollator},
     dataset::Dataset,
     loader::core::DataLoader,
     sampler::{BatchSampler, Sampler, SequentialSampler},
 };
-#[cfg(feature = "torch-rs")]
-use crate::collator::TorchPinnedCollator;
 
 /// Builder for [`DataLoader`].
 pub struct DataLoaderBuilder<D, S, C> {
@@ -160,11 +160,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        collator::Collator,
-        dataset::Dataset,
-        error::Result,
-        loader::DataLoader,
-        sampler::Sampler,
+        collator::Collator, dataset::Dataset, error::Result, loader::DataLoader, sampler::Sampler,
     };
 
     struct TinyDs(usize);
@@ -229,5 +225,4 @@ mod tests {
     fn builder_rejects_zero_prefetch_depth() {
         let _ = DataLoader::builder(TinyDs(4)).prefetch_depth(0);
     }
-
 }

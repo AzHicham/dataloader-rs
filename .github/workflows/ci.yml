@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Lint: prek (drop-in pre-commit replacement written in Rust) ───────────
+  pre-commit:
+    name: Lint (prek)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # Required by language: system hooks in .pre-commit-config.yaml:
+      #   cargo-fmt, cargo-clippy → Rust toolchain
+      #   ty                      → ty binary (Python, pre-installed on runner)
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2.7.8
+
+      - run: pip install ty
+
+      - uses: j178/prek-action@v1
+        with:
+          prek-version: "0.2.19"
+
+      - run: prek run --all-files --show-diff-on-failure
+
+  # ── Rust tests (MSRV + latest stable) ────────────────────────────────────
+  test-rust:
+    name: Rust tests (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "MSRV (1.91)"
+            toolchain: "1.91"
+          - name: "stable"
+            toolchain: stable
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - uses: Swatinem/rust-cache@v2.7.8
+        with:
+          key: ${{ matrix.toolchain }}
+
+      # On latest stable the rust-version field is irrelevant — strip it so
+      # Cargo never rejects a dep update because of a stale MSRV pin.
+      - name: Remove rust-version pin (stable only)
+        if: matrix.toolchain == 'stable'
+        run: sed -i '/^rust-version/d' Cargo.toml
+
+      - name: cargo test
+        run: cargo test --all-features
+
+  # ── Python tests (3.13 · 3.13t · 3.14t) ─────────────────────────────────
+  test-python:
+    name: Python tests (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    # 3.14t is still experimental — don't fail the whole CI if it breaks.
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.13t"
+            experimental: false
+          - python: "3.14t"
+            experimental: true
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.7.8
+        with:
+          key: python-${{ matrix.python }}
+
+      # setup-uv understands the `t` suffix and installs the free-threaded build.
+      - uses: astral-sh/setup-uv@v5.4.1
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dev dependencies
+        run: uv sync --group dev
+
+      # pyproject.toml pins requires-python = ">=3.13,<3.14"; relax the upper
+      # bound for 3.14t so maturin does not reject the interpreter.
+      - name: Relax requires-python for 3.14t
+        if: matrix.python == '3.14t'
+        run: sed -i 's/requires-python.*/requires-python = ">=3.13"/' pyproject.toml
+
+      - name: Build & install wheel
+        run: uv run maturin develop --features python
+
+      - name: pytest
+        run: uv run pytest -v

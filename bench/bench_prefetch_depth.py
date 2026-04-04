@@ -22,26 +22,26 @@ Run:
 from __future__ import annotations
 
 import argparse
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from common import (
+    BenchResult,
     CpuBoundDs,
     cat_collate,
-    run_case,
     fmt_results,
-    BenchResult,
+    run_case,
 )
 
 from dataloader_rs import PyDataloader
 
 DEPTH_SWEEP = [1, 2, 4, 8, 16, 32]
-TORCH_FACTOR_SWEEP = [1, 2, 4, 8, 16]   # per-worker; total = factor × 4
+TORCH_FACTOR_SWEEP = [1, 2, 4, 8, 16]  # per-worker; total = factor × 4
 
 N_ITEMS = 128
-BATCH_SIZE = 16   # 8 batches per epoch
-NUM_WORKERS = 4   # fixed — workers can outpace consumer, so depth matters
+BATCH_SIZE = 16  # 8 batches per epoch
+NUM_WORKERS = 4  # fixed — workers can outpace consumer, so depth matters
 
 
 def bench_ours(warmup: int, repeats: int) -> list[BenchResult]:
@@ -70,8 +70,8 @@ def bench_ours(warmup: int, repeats: int) -> list[BenchResult]:
 
 def bench_torch(warmup: int, repeats: int) -> list[BenchResult]:
     try:
-        from torch.utils.data import DataLoader  # type: ignore[import]
         from common import TorchCpuBoundDs
+        from torch.utils.data import DataLoader  # type: ignore[import]
     except ImportError:
         print("# torch not available — skipping torch benchmarks", flush=True)
         return []
@@ -107,7 +107,9 @@ def main() -> None:
         description="Sweep prefetch_depth (ours) / prefetch_factor (torch) with 4 workers."
     )
     parser.add_argument("--warmup", type=int, default=2, help="warmup epochs per case (default: 2)")
-    parser.add_argument("--repeats", type=int, default=10, help="timed epochs per case (default: 10)")
+    parser.add_argument(
+        "--repeats", type=int, default=10, help="timed epochs per case (default: 10)"
+    )
     args = parser.parse_args()
 
     results: list[BenchResult] = []

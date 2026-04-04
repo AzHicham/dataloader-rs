@@ -3,12 +3,14 @@
 All test files import from this module so that dataset definitions and
 utility functions stay in one place.
 """
+
 import hashlib
 
-from dataloader_rs import PyDataloader as DataLoader, PyDataset
-
+from dataloader_rs import PyDataloader as DataLoader
+from dataloader_rs import PyDataset
 
 # ── Dataset implementations ───────────────────────────────────────────────────
+
 
 class ToyDataset(PyDataset):
     """Returns dicts {x: i, y: i*2}. Useful for collation tests."""
@@ -116,6 +118,7 @@ class CountingDs(PyDataset):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def materialize(loader: DataLoader):
     """Return list(loader). Collects all batches from one epoch."""

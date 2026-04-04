@@ -1,0 +1,193 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/**'
+      - 'bench/**'
+      - 'benches/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'src/**'
+      - 'bench/**'
+      - 'benches/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── Rust: run all benches in parallel, upload output as artifact ──────────
+  rust-bench:
+    name: Rust / ${{ matrix.bench }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        bench:
+          - bench_sampler
+          - bench_batch_size
+          - bench_early_drop
+          - bench_prefetch_depth
+          - bench_inter_workers
+          - bench_intra_workers
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Separate cache key per bench so matrix jobs never share a stale artifact.
+      - uses: Swatinem/rust-cache@v2.7.8
+        with:
+          key: ${{ matrix.bench }}
+
+      - name: Run ${{ matrix.bench }}
+        # --output-format bencher produces libtest-compatible lines:
+        #   test <name> ... bench: <ns> ns/iter (+/- <dev>)
+        # Criterion 0.3.4+ supports this format.
+        run: |
+          cargo bench --bench ${{ matrix.bench }} \
+            -- --output-format bencher \
+            | tee ${{ matrix.bench }}.txt
+
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: rust-bench-${{ matrix.bench }}
+          path: ${{ matrix.bench }}.txt
+
+  # ── Python: build wheel then run pytest-benchmark ─────────────────────────
+  python-bench:
+    name: Python benchmarks (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.13t"
+            experimental: false
+          - python: "3.14t"
+            experimental: true
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2.7.8
+        with:
+          key: python-bench-${{ matrix.python }}
+
+      - uses: astral-sh/setup-uv@v5.4.1
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dev dependencies
+        run: uv sync --group dev
+
+      - name: Relax requires-python for 3.14t
+        if: matrix.python == '3.14t'
+        run: sed -i 's/requires-python.*/requires-python = ">=3.13"/' pyproject.toml
+
+      - name: Build wheel
+        run: uv run maturin develop --features python
+
+      # Run our library benchmarks only (no torch comparison — torch is slow
+      # to init and its performance is not what we're tracking for regression).
+      - name: Run pytest-benchmark
+        run: |
+          uv run pytest bench/ \
+            -m bench \
+            --benchmark-enable \
+            --benchmark-json=python-bench.json \
+            --benchmark-warmup=on \
+            --benchmark-min-rounds=5 \
+            -v
+
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: python-bench-${{ matrix.python }}
+          path: python-bench.json
+
+  # ── Store Rust results ─────────────────────────────────────────────────────
+  store-rust:
+    name: Store Rust benchmark results
+    runs-on: ubuntu-24.04
+    needs: rust-bench
+    permissions:
+      contents: write
+      deployments: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # merge-multiple flattens all artifacts; each file is named after its
+      # bench (e.g. bench_sampler.txt) so there are no name collisions.
+      - uses: actions/download-artifact@v4.2.1
+        with:
+          pattern: rust-bench-*
+          merge-multiple: true
+          path: bench-outputs/
+
+      - name: Merge bench outputs
+        run: cat bench-outputs/*.txt > all-rust-benchmarks.txt
+
+      - uses: benchmark-action/github-action-benchmark@v1.20.4
+        with:
+          name: Rust benchmarks
+          tool: cargo
+          output-file-path: all-rust-benchmarks.txt
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.event_name == 'push' }}
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: benchmarks/rust
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: true
+          alert-comment-cc-users: '@AzHicham'
+
+  # ── Store Python results (one store job per Python version) ──────────────
+  store-python:
+    name: Store Python benchmarks (${{ matrix.python }})
+    runs-on: ubuntu-24.04
+    needs: python-bench
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.13t"
+          - python: "3.14t"
+    permissions:
+      contents: write
+      deployments: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/download-artifact@v4.2.1
+        with:
+          name: python-bench-${{ matrix.python }}
+          path: .
+
+      - uses: benchmark-action/github-action-benchmark@v1.20.4
+        with:
+          name: Python benchmarks (${{ matrix.python }})
+          tool: pytest
+          output-file-path: python-bench.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.event_name == 'push' }}
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: benchmarks/python-${{ matrix.python }}
+          alert-threshold: '150%'
+          comment-on-alert: true
+          fail-on-alert: true
+          alert-comment-cc-users: '@AzHicham'

@@ -4,15 +4,14 @@ These tests exercise every edge-case in the single-threaded code path:
 batch count arithmetic, drop_last semantics, ordering guarantees,
 multi-epoch reuse, and return types.
 """
+
 import math
 
-import pytest
-
 from dataloader_rs import PyDataloader as DataLoader
-from tests.py_dataloader_test_utils import ListDataset, ToyDataset, all_items
-
+from tests.py_dataloader_test_utils import ListDataset, all_items
 
 # ── Coverage / correctness ────────────────────────────────────────────────────
+
 
 def test_seq_all_items_covered():
     """Every index in [0, N) must appear exactly once across all batches."""

@@ -7,19 +7,20 @@ Tests verify:
   - Multiple independent iterators from the same loader
   - __iter__(it) returns the iterator itself (protocol requirement)
 """
+
 import pytest
 
 from dataloader_rs import PyDataloader as DataLoader
 from tests.py_dataloader_test_utils import ListDataset
 
-
 # ── __len__ on the iterator ───────────────────────────────────────────────────
+
 
 def test_iter_len_decrements_as_consumed():
     """Iterator __len__ must start at ceil(N/bs) and decrement with each next()."""
     loader = DataLoader(ListDataset(range(7)), batch_size=3, drop_last=False)
     it = iter(loader)
-    assert len(it) == 3   # ceil(7/3)
+    assert len(it) == 3  # ceil(7/3)
     next(it)
     assert len(it) == 2
     next(it)
@@ -47,6 +48,7 @@ def test_parallel_iter_len_decrements():
 
 # ── loader __len__ ────────────────────────────────────────────────────────────
 
+
 def test_loader_len_after_drop_last():
     """DataLoader.__len__ must reflect drop_last semantics."""
     loader_keep = DataLoader(ListDataset(range(10)), batch_size=3, drop_last=False)
@@ -57,6 +59,7 @@ def test_loader_len_after_drop_last():
 
 
 # ── Exhaustion ────────────────────────────────────────────────────────────────
+
 
 def test_iter_is_exhausted_only_once():
     """After a full epoch, calling next() on the iterator must raise StopIteration."""
@@ -73,6 +76,7 @@ def test_iter_is_exhausted_only_once():
 
 # ── Reusability ───────────────────────────────────────────────────────────────
 
+
 def test_loader_reusable_across_epochs():
     """Calling iter() a second time on the same loader must restart the epoch."""
     loader = DataLoader(ListDataset(range(8)), batch_size=3)
@@ -83,6 +87,7 @@ def test_loader_reusable_across_epochs():
 
 # ── iter(it) returns self ─────────────────────────────────────────────────────
 
+
 def test_iter_returns_self():
     """iter(it) must return the iterator object itself (Python iterator protocol)."""
     loader = DataLoader(ListDataset(range(4)), batch_size=2)
@@ -91,6 +96,7 @@ def test_iter_returns_self():
 
 
 # ── Multiple independent iterators ───────────────────────────────────────────
+
 
 def test_multiple_iters_independent():
     """Two iterators obtained from the same loader represent independent epochs.
