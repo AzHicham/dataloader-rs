@@ -1,11 +1,11 @@
 // This module contains intentional unsafe code for zero-overhead dataset
-// sharing with the prefetch thread.
+// sharing with worker threads.
 #![allow(unsafe_code)]
 
 mod builder;
 mod core;
 mod iter;
-mod prefetch;
+mod worker;
 
 pub use builder::DataLoaderBuilder;
 pub use core::DataLoader;

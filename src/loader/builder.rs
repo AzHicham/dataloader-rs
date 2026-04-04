@@ -17,7 +17,10 @@ pub struct DataLoaderBuilder<D, S, C> {
     batch_size: usize,
     drop_last: bool,
     prefetch_depth: usize,
-    num_workers: usize,
+    /// Number of independent worker threads (inter-batch concurrency).
+    inter_workers: usize,
+    /// Number of rayon threads for intra-batch item-level parallelism.
+    intra_workers: usize,
 }
 
 impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
@@ -29,7 +32,8 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
             batch_size: 1,
             drop_last: false,
             prefetch_depth: 1,
-            num_workers: 0,
+            inter_workers: 0,
+            intra_workers: 0,
         }
     }
 }
@@ -55,9 +59,24 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         self
     }
 
-    /// Number of rayon worker threads used for intra-batch parallelism.
+    /// Number of independent worker threads for inter-batch concurrency.
+    ///
+    /// Each worker pulls full batches from a shared work queue and processes
+    /// them independently — mirroring PyTorch's `num_workers` semantics.
+    /// `0` (default) processes batches directly in `Iterator::next` with no
+    /// spawned threads.
     pub fn num_workers(mut self, n: usize) -> Self {
-        self.num_workers = n;
+        self.inter_workers = n;
+        self
+    }
+
+    /// Number of rayon threads for intra-batch item-level parallelism.
+    ///
+    /// When `> 0`, each worker fetches items within its batch in parallel
+    /// using a shared rayon thread pool.  Useful for CPU-bound Rust datasets.
+    /// `0` (default) fetches items sequentially via [`Dataset::get_batch`].
+    pub fn intra_workers(mut self, n: usize) -> Self {
+        self.intra_workers = n;
         self
     }
 
@@ -77,7 +96,8 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_size: self.batch_size,
             drop_last: self.drop_last,
             prefetch_depth: self.prefetch_depth,
-            num_workers: self.num_workers,
+            inter_workers: self.inter_workers,
+            intra_workers: self.intra_workers,
         }
     }
 
@@ -90,7 +110,8 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_size: self.batch_size,
             drop_last: self.drop_last,
             prefetch_depth: self.prefetch_depth,
-            num_workers: self.num_workers,
+            inter_workers: self.inter_workers,
+            intra_workers: self.intra_workers,
         }
     }
 
@@ -103,7 +124,8 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_size: self.batch_size,
             drop_last: self.drop_last,
             prefetch_depth: self.prefetch_depth,
-            num_workers: self.num_workers,
+            inter_workers: self.inter_workers,
+            intra_workers: self.intra_workers,
         }
     }
 
@@ -114,9 +136,9 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         S: Sampler,
         C: Collator<D::Item>,
     {
-        let pool = if self.num_workers > 0 {
+        let pool = if self.intra_workers > 0 {
             let tp = rayon::ThreadPoolBuilder::new()
-                .num_threads(self.num_workers)
+                .num_threads(self.intra_workers)
                 .build()
                 .expect("failed to build rayon thread pool");
             Some(Arc::new(tp))
@@ -129,6 +151,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_sampler: BatchSampler::new(self.sampler, self.batch_size, self.drop_last),
             collator: self.collator,
             prefetch_depth: self.prefetch_depth,
+            inter_workers: self.inter_workers,
             pool,
         }
     }
