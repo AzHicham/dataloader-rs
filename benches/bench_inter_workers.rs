@@ -15,7 +15,7 @@
 mod common;
 use common::*;
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use dataloader_rs::DataLoader;
 
 const N: usize = 256;
@@ -43,7 +43,7 @@ fn bench_inter_workers(c: &mut Criterion) {
 
                 b.iter(|| {
                     for batch in loader.iter() {
-                        black_box(batch.unwrap());
+                        std::hint::black_box(batch.unwrap());
                     }
                 });
             },

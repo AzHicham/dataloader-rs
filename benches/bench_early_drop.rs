@@ -23,7 +23,7 @@
 mod common;
 use common::*;
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use dataloader_rs::DataLoader;
 
 const N: usize = 1000;
@@ -47,7 +47,7 @@ fn bench_early_drop(c: &mut Criterion) {
                 b.iter(|| {
                     let mut iter = loader.iter();
                     // Consume exactly one batch, then drop the iterator mid-epoch
-                    black_box(iter.next().unwrap().unwrap());
+                    std::hint::black_box(iter.next().unwrap().unwrap());
                     drop(iter); // triggers rx-drop + prefetch thread join
                 });
             },
