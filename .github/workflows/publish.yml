@@ -45,7 +45,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2.7.8
+      - uses: Swatinem/rust-cache@v2.9.1
         with:
           key: publish-${{ matrix.target }}-${{ matrix.python }}
 
@@ -111,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.7.8
+      - uses: Swatinem/rust-cache@v2.9.1
       - uses: katyo/publish-crates@v2
         with:
           dry-run: ${{ github.event_name != 'release' }}
