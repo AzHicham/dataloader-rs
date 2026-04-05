@@ -42,7 +42,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       # Separate cache key per bench so matrix jobs never share a stale artifact.
-      - uses: Swatinem/rust-cache@v2.7.8
+      - uses: Swatinem/rust-cache@v2.9.1
         with:
           key: ${{ matrix.bench }}
 
@@ -79,7 +79,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2.7.8
+      - uses: Swatinem/rust-cache@v2.9.1
         with:
           key: python-bench-${{ matrix.python }}
 
@@ -132,7 +132,7 @@ jobs:
       - name: Merge bench outputs
         run: cat bench-outputs/*.txt > all-rust-benchmarks.txt
 
-      - uses: benchmark-action/github-action-benchmark@v1.20.4
+      - uses: benchmark-action/github-action-benchmark@v1.22.0
         with:
           name: Rust benchmarks
           tool: cargo
@@ -171,7 +171,7 @@ jobs:
           name: python-bench-${{ matrix.python }}
           path: .
 
-      - uses: benchmark-action/github-action-benchmark@v1.20.4
+      - uses: benchmark-action/github-action-benchmark@v1.22.0
         with:
           name: Python benchmarks (${{ matrix.python }})
           tool: pytest
