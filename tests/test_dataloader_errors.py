@@ -64,21 +64,12 @@ def test_dataset_error_parallel():
     """num_workers=4: a dataset error must surface as RuntimeError.
 
     We cannot guarantee which batch is delivered first in a parallel setting,
-    so we collect all results and assert that at least one raised.
+    so we iterate all batches and assert that at least one raised.
     """
     loader = DataLoader(FailingDs(16, fail_index=5), batch_size=4, num_workers=4)
-    errors = []
-    for _ in range(4):  # 16/4 = 4 batches
-        try:
-            # iterate one batch at a time
-            pass
-        except RuntimeError:
-            errors.append(True)
-
-    # Full iteration: at least one batch must raise.
     raised = False
     it = iter(loader)
-    for _ in range(4):
+    for _ in range(4):  # 16/4 = 4 batches
         try:
             next(it)
         except RuntimeError:

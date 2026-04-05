@@ -96,7 +96,3 @@ harness = false
 [[bench]]
 name    = "bench_sampler"
 harness = false
-
-[[bench]]
-name    = "bench_early_drop"
-harness = false

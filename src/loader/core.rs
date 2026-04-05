@@ -61,11 +61,13 @@ where
     }
 
     /// Returns `true` when inter-batch worker threads are active.
+    #[cfg(feature = "python")]
     pub(crate) fn has_workers(&self) -> bool {
         self.inter_workers > 0
     }
 
     /// Generate batch index chunks for one epoch, advancing the sampler.
+    #[cfg(feature = "python")]
     pub(crate) fn epoch_chunks(&mut self) -> Vec<Vec<usize>> {
         self.batch_sampler.batch_indices(self.dataset.len())
     }
@@ -510,6 +512,29 @@ mod tests {
 
         let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
         assert_eq!(sums, vec![3, 12]);
+    }
+
+    #[test]
+    fn intra_workers_produces_correct_results() {
+        let n = 20;
+        let mut loader = DataLoader::builder(CountingDs { len: n })
+            .batch_size(4)
+            .intra_workers(2)
+            .build();
+        let seen: HashSet<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
+        assert_eq!(seen.len(), n);
+    }
+
+    #[test]
+    fn intra_workers_with_inter_workers() {
+        let n = 24;
+        let mut loader = DataLoader::builder(CountingDs { len: n })
+            .batch_size(4)
+            .num_workers(2)
+            .intra_workers(2)
+            .build();
+        let seen: HashSet<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
+        assert_eq!(seen.len(), n);
     }
 
     #[test]

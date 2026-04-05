@@ -1,5 +1,5 @@
 from dataloader_rs import PyDataloader as DataLoader
-from tests.py_dataloader_test_utils import ToyDataset, materialize
+from tests.py_dataloader_test_utils import ListDataset, ToyDataset, materialize
 
 
 def test_iteration_without_collate_matches_torch_like_batches():
@@ -31,6 +31,19 @@ def test_custom_collate_fn_is_applied():
         {"x": [0, 1], "y": [0, 2]},
         {"x": [2, 3], "y": [4, 6]},
     ]
+
+
+def test_sum_collate_sequential_exact():
+    """N=12, bs=4, sum collate → exact expected values [6, 22, 38]."""
+    # batch 0: 0+1+2+3=6, batch 1: 4+5+6+7=22, batch 2: 8+9+10+11=38
+    loader = DataLoader(ListDataset(range(12)), batch_size=4, collate_fn=sum)
+    assert list(loader) == [6, 22, 38]
+
+
+def test_sum_collate_parallel_exact():
+    """Same expected sums in the parallel path — SequentialSampler is deterministic."""
+    loader = DataLoader(ListDataset(range(12)), batch_size=4, num_workers=4, collate_fn=sum)
+    assert list(loader) == [6, 22, 38]
 
 
 def test_python_sampler_order_is_respected():
