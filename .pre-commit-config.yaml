@@ -3,7 +3,7 @@ default_stages: [pre-commit]
 repos:
   # ── Python: ruff (lint + format) ─────────────────────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.2
+    rev: v0.15.9
     hooks:
       - id: ruff
         args: [--fix]
