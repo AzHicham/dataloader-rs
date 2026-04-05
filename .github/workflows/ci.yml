@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
       # Required by language: system hooks in .pre-commit-config.yaml:
       #   cargo-fmt, cargo-clippy → Rust toolchain
@@ -50,7 +50,7 @@ jobs:
             toolchain: stable
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -85,7 +85,7 @@ jobs:
             experimental: true
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
 
       - uses: dtolnay/rust-toolchain@stable
 

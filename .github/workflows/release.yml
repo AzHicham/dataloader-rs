@@ -23,7 +23,7 @@ jobs:
       id-token: write       # OIDC provenance
 
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v6.0.2
         with:
           # Use a PAT so that the release commit created by semantic-release
           # triggers subsequent workflows (GITHUB_TOKEN commits do not).
