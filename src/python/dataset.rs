@@ -1,10 +1,8 @@
 use crate::{dataset::Dataset, error::Result};
 use pyo3::exceptions::PyNotImplementedError;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
-use std::time::Instant;
 
 #[pyclass(frozen, subclass)]
 pub struct PyDatasetBase;
@@ -76,22 +74,4 @@ impl Dataset for PyDataset {
             len_py(self, py).unwrap_or_else(|e| panic!("PyDataset.__len__ failed: {e}"))
         })
     }
-}
-
-#[pyfunction]
-pub(crate) fn bench_dataset_get_dispatch(dataset: PyDataset, iters: usize) -> PyResult<f64> {
-    if iters == 0 {
-        return Err(PyValueError::new_err("iters must be > 0"));
-    }
-    let n = Python::attach(|py| len_py(&dataset, py))?;
-    if n == 0 {
-        return Err(PyValueError::new_err("dataset length must be > 0"));
-    }
-
-    let start = Instant::now();
-    for i in 0..iters {
-        <PyDataset as Dataset>::get(&dataset, i % n)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-    }
-    Ok(start.elapsed().as_secs_f64())
 }
