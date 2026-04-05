@@ -14,7 +14,7 @@ dependencies = []
 dev = [
     "maturin>=1.7,<2.0",
     "pytest==9",
-    "pytest-benchmark==5",
+    "pytest-benchmark==5.2.3",
     "torch==2.11",
 ]
 
