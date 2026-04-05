@@ -60,7 +60,7 @@
     [
       "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md", "Cargo.toml", "Cargo.lock"],
+        "assets": ["CHANGELOG.md", "Cargo.toml", "Cargo.lock", "pyproject.toml"],
         "message": "chore(release): ${nextRelease.version}\n\n[skip ci]"
       }
     ],

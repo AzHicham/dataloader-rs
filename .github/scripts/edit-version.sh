@@ -4,3 +4,5 @@ set -euo pipefail
 echo "Editing files with given version: $1"
 
 semantic-release-cargo prepare "$1"
+
+sed -i "s/^version = \".*\"/version = \"$1\"/" pyproject.toml
