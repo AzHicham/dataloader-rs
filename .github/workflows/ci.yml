@@ -105,4 +105,4 @@ jobs:
         run: uv run maturin develop --features python
 
       - name: pytest
-        run: uv run pytest -v
+        run: uv run python -X gil=0 -m pytest -v

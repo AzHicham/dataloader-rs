@@ -95,7 +95,7 @@ jobs:
 
       - name: Run pytest-benchmark
         run: |
-          uv run pytest bench/ \
+          uv run python -X gil=0 -m pytest bench/ \
             -m bench \
             --benchmark-enable \
             --benchmark-json=python-bench.json \
