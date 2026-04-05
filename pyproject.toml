@@ -7,7 +7,7 @@ name = "dataloader-rs"
 version = "0.1.0"
 description = "PyO3 bindings for dataloader-rs with a PyTorch-like DataLoader API"
 requires-python = ">=3.13"
-#readme = "python/README.md"
+readme = "python/README.md"
 dependencies = []
 
 [dependency-groups]
