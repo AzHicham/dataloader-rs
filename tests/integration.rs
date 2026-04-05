@@ -351,6 +351,107 @@ fn seq_collator_error_propagates() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
+// Exact-value correctness (sequential path)
+// ═════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn seq_sum_collator_exact_values() {
+    // N=12, bs=4, SequentialSampler:
+    //   batch 0 → [0,1,2,3]   → sum = 6
+    //   batch 1 → [4,5,6,7]   → sum = 22
+    //   batch 2 → [8,9,10,11] → sum = 38
+    let mut loader = DataLoader::builder(RangeDs(12))
+        .batch_size(4)
+        .collator(SumCollator)
+        .build();
+    let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(sums, vec![6, 22, 38]);
+}
+
+#[test]
+fn seq_sum_collator_drop_last_exact() {
+    // N=10, bs=4, drop_last=true → only 2 full batches (last 2-item batch dropped).
+    //   batch 0 → [0,1,2,3] → sum = 6
+    //   batch 1 → [4,5,6,7] → sum = 22
+    let mut loader = DataLoader::builder(RangeDs(10))
+        .batch_size(4)
+        .drop_last(true)
+        .collator(SumCollator)
+        .build();
+    let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(sums, vec![6, 22]);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Exact-value correctness (parallel inter-batch path)
+// ═════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn par_sum_collator_exact_values() {
+    // Sequential sampler is deterministic, so batch contents are predictable
+    // even in the parallel path.  Same expected sums as the sequential test.
+    //   batch 0 → [0,1,2,3]   → sum = 6
+    //   batch 1 → [4,5,6,7]   → sum = 22
+    //   batch 2 → [8,9,10,11] → sum = 38
+    let mut loader = DataLoader::builder(RangeDs(12))
+        .batch_size(4)
+        .num_workers(4)
+        .collator(SumCollator)
+        .build();
+    let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(sums, vec![6, 22, 38]);
+}
+
+#[test]
+fn par_sum_collator_matches_sequential() {
+    // Whatever the sequential path computes, the parallel path must match exactly.
+    let n = 30;
+    let bs = 6;
+    let mut seq = DataLoader::builder(RangeDs(n))
+        .batch_size(bs)
+        .collator(SumCollator)
+        .build();
+    let mut par = DataLoader::builder(RangeDs(n))
+        .batch_size(bs)
+        .num_workers(4)
+        .collator(SumCollator)
+        .build();
+    let seq_sums: Vec<usize> = seq.iter().map(|b| b.unwrap()).collect();
+    let par_sums: Vec<usize> = par.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(seq_sums, par_sums);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Exact-value correctness (intra-batch path)
+// ═════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn intra_sum_collator_exact_values() {
+    // Same expected sums as the sequential test — intra_workers must not
+    // change which indices end up in which batch, only how they are fetched.
+    let mut loader = DataLoader::builder(RangeDs(12))
+        .batch_size(4)
+        .intra_workers(4)
+        .collator(SumCollator)
+        .build();
+    let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(sums, vec![6, 22, 38]);
+}
+
+#[test]
+fn intra_inter_sum_collator_exact_values() {
+    // Both intra and inter workers active; sums must still match the sequential result.
+    let mut loader = DataLoader::builder(RangeDs(12))
+        .batch_size(4)
+        .num_workers(2)
+        .intra_workers(2)
+        .collator(SumCollator)
+        .build();
+    let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(sums, vec![6, 22, 38]);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
 // Parallel inter-batch path (num_workers > 0)
 // ═════════════════════════════════════════════════════════════════════════════
 

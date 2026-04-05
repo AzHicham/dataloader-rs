@@ -32,7 +32,6 @@ jobs:
         bench:
           - bench_sampler
           - bench_batch_size
-          - bench_early_drop
           - bench_prefetch_depth
           - bench_inter_workers
           - bench_intra_workers
@@ -92,10 +91,8 @@ jobs:
         run: uv sync --group dev
 
       - name: Build wheel
-        run: uv run maturin develop --features python
+        run: uv run maturin develop --release
 
-      # Run our library benchmarks only (no torch comparison — torch is slow
-      # to init and its performance is not what we're tracking for regression).
       - name: Run pytest-benchmark
         run: |
           uv run pytest bench/ \

@@ -127,3 +127,21 @@ def test_seq_drop_last_partial():
     assert len(batches) == 3
     for b in batches:
         assert len(b) == 3, "every remaining batch must be full"
+
+
+def test_shuffle_covers_all_items():
+    """shuffle=True → all N items present each epoch, order varies across epochs."""
+    n = 20
+    loader = DataLoader(ListDataset(range(n)), batch_size=4, shuffle=True)
+
+    # Collect raw (unsorted) flat items so we can compare order.
+    def flat(ldr):
+        return [x for batch in ldr for x in batch]
+
+    epoch1 = flat(loader)
+    epoch2 = flat(loader)
+
+    assert sorted(epoch1) == list(range(n)), "epoch 1: all items must be present"
+    assert sorted(epoch2) == list(range(n)), "epoch 2: all items must be present"
+    # With n=20 and entropy seed, two identical shuffles have probability 1/20! ≈ 0.
+    assert epoch1 != epoch2, "shuffled epochs must differ"

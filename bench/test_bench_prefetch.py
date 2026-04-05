@@ -1,31 +1,33 @@
 """Non-regression benchmarks: prefetch depth impact on pipeline throughput.
 
-Uses InMemoryDs with num_workers=4 so the channel is the bottleneck at
-depth=1 and pipeline saturation occurs at larger depths.  Regressions here
-point to changes in channel capacity, waker logic, or batch dispatch.
+Uses CpuBoundDs (SHA-256 per item, ~1 ms, GIL-releasing) with num_workers=4
+so batches take real time to produce and the prefetch buffer can actually
+saturate.  With InMemoryDs the pipeline never fills up and depth has no
+observable effect.  Regressions here point to changes in channel capacity or
+batch dispatch.
 """
 
 from __future__ import annotations
 
 import pytest
-from common import InMemoryDs, sum_collate
+from common import CpuBoundDs, cat_collate
 
 from dataloader_rs import PyDataloader
 
 pytestmark = pytest.mark.bench
 
-N = 4_096
-BATCH_SIZE = 64
+N = 256
+BATCH_SIZE = 32
 NUM_WORKERS = 4
 
 
 @pytest.mark.parametrize("prefetch_depth", [1, 4, 16])
 def test_prefetch_depth(benchmark, prefetch_depth):
-    """Pipeline throughput vs prefetch buffer depth (workers=4, InMemoryDs)."""
+    """Pipeline throughput vs prefetch buffer depth (workers=4, CpuBoundDs)."""
     loader = PyDataloader(
-        InMemoryDs(N),
+        CpuBoundDs(N),
         batch_size=BATCH_SIZE,
-        collate_fn=sum_collate,
+        collate_fn=cat_collate,
         num_workers=NUM_WORKERS,
         prefetch_depth=prefetch_depth,
     )
