@@ -13,7 +13,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "maturin>=1.7,<2.0",
-    "pytest==9.0.2",
+    "pytest==9.0.3",
     "pytest-benchmark==5.2.3",
     "torch==2.11",
 ]
