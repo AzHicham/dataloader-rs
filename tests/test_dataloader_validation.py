@@ -33,6 +33,12 @@ def test_rejects_shuffle_and_sampler_together():
         DataLoader(ListDataset([1, 2, 3]), shuffle=True, sampler=[0, 1, 2])
 
 
+def test_rejects_generator_without_shuffle():
+    """generator= without shuffle=True must raise ValueError."""
+    with pytest.raises(ValueError, match="generator requires shuffle=True"):
+        DataLoader(ListDataset([1, 2, 3]), generator=42)
+
+
 def test_rejects_dataset_not_subclassing_pydataset():
     """A dataset that does not subclass PyDataset must raise TypeError."""
 
