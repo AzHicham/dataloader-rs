@@ -39,7 +39,7 @@ default-features = false
 features         = ["std"]
 
 [dependencies.hashbrown]
-version          = "0.16"
+version          = "0.17"
 default-features = false
 features         = ["default-hasher"]
 
