@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
       # Required by language: system hooks in .pre-commit-config.yaml:
       #   cargo-fmt, cargo-clippy → Rust toolchain
@@ -50,7 +50,7 @@ jobs:
             toolchain: stable
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -85,7 +85,7 @@ jobs:
             experimental: true
 
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.3
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -94,7 +94,7 @@ jobs:
           key: python-${{ matrix.python }}
 
       # setup-uv understands the `t` suffix and installs the free-threaded build.
-      - uses: astral-sh/setup-uv@v8.0.0
+      - uses: astral-sh/setup-uv@v8.3.0
         with:
           python-version: ${{ matrix.python }}
 
