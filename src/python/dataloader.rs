@@ -27,7 +27,8 @@ impl PyDataloader {
         sampler=None,
         num_workers=0,
         collate_fn=None,
-        drop_last=false
+        drop_last=false,
+        generator=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -39,6 +40,7 @@ impl PyDataloader {
         num_workers: usize,
         collate_fn: Option<Py<PyAny>>,
         drop_last: bool,
+        generator: Option<u64>,
     ) -> PyResult<Self> {
         if batch_size == 0 {
             return Err(PyValueError::new_err("batch_size must be > 0"));
@@ -51,6 +53,9 @@ impl PyDataloader {
                 "sampler and shuffle are mutually exclusive",
             ));
         }
+        if generator.is_some() && !shuffle {
+            return Err(PyValueError::new_err("generator requires shuffle=True"));
+        }
 
         let sampler = match sampler {
             Some(py_sampler) => {
@@ -59,7 +64,11 @@ impl PyDataloader {
                 SharedPySampler::new(PySampler::Python(py_sampler))
             }
             None if shuffle => {
-                SharedPySampler::new(PySampler::Random(RandomSampler::from_entropy()))
+                let rng = match generator {
+                    Some(seed) => RandomSampler::new(seed),
+                    None => RandomSampler::from_entropy(),
+                };
+                SharedPySampler::new(PySampler::Random(rng))
             }
             None => SharedPySampler::new(PySampler::Sequential(SequentialSampler)),
         };

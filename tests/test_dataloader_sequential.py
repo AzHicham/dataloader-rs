@@ -129,6 +129,39 @@ def test_seq_drop_last_partial():
         assert len(b) == 3, "every remaining batch must be full"
 
 
+def test_generator_same_seed_same_order():
+    """shuffle=True with the same generator seed must produce identical epoch order."""
+    n = 20
+    loader_a = DataLoader(ListDataset(range(n)), batch_size=4, shuffle=True, generator=42)
+    loader_b = DataLoader(ListDataset(range(n)), batch_size=4, shuffle=True, generator=42)
+    assert list(loader_a) == list(loader_b)
+
+
+def test_generator_different_seeds_different_order():
+    """Two different seeds must produce different orderings."""
+    n = 20
+    loader_a = DataLoader(ListDataset(range(n)), batch_size=4, shuffle=True, generator=1)
+    loader_b = DataLoader(ListDataset(range(n)), batch_size=4, shuffle=True, generator=2)
+    assert list(loader_a) != list(loader_b)
+
+
+def test_generator_covers_all_items():
+    """A seeded shuffle must still cover every index exactly once."""
+    n = 20
+    loader = DataLoader(ListDataset(range(n)), batch_size=4, shuffle=True, generator=99)
+    items = sorted(x for batch in loader for x in batch)
+    assert items == list(range(n))
+
+
+def test_generator_different_order_per_epoch():
+    """Even with a fixed seed the RNG advances, so epoch N+1 differs from epoch N."""
+    n = 20
+    loader = DataLoader(ListDataset(range(n)), batch_size=4, shuffle=True, generator=7)
+    epoch1 = list(loader)
+    epoch2 = list(loader)
+    assert epoch1 != epoch2
+
+
 def test_shuffle_covers_all_items():
     """shuffle=True → all N items present each epoch, order varies across epochs."""
     n = 20

@@ -93,10 +93,17 @@ class PyDataloader:
     prefetch_depth:
         Maximum number of pre-computed batches kept in the internal buffer.
         Only meaningful when ``num_workers > 0``. Default: ``1``.
+    generator:
+        Integer seed for the shuffle RNG, enabling reproducible ordering across
+        epochs and runs.  Requires ``shuffle=True``; raises ``ValueError``
+        otherwise.  When ``None`` (default) a random seed is drawn from the OS
+        entropy pool.
 
     Example
     -------
     >>> loader = PyDataloader(dataset, batch_size=32, shuffle=True, num_workers=4)
+    >>> # Reproducible shuffle — same order every run:
+    >>> loader = PyDataloader(dataset, batch_size=32, shuffle=True, generator=42)
     >>> for epoch in range(10):
     ...     for batch in loader:
     ...         train(batch)
@@ -112,6 +119,7 @@ class PyDataloader:
         num_workers: int = 0,
         collate_fn: Callable[[list[Any]], Any] | None = None,
         drop_last: bool = False,
+        generator: int | None = None,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""
