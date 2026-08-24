@@ -30,7 +30,7 @@ jobs:
 
       - run: pip install ty
 
-      - uses: j178/prek-action@v2
+      - uses: j178/prek-action@v3.0.0
         with:
           prek-version: "0.2.19"
 
