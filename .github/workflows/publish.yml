@@ -41,15 +41,15 @@ jobs:
             python: "3.14t"
 
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v6.1.0
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2.9.1
+      - uses: Swatinem/rust-cache@v2.9.2
         with:
           key: publish-${{ matrix.target }}-${{ matrix.python }}
 
-      - uses: astral-sh/setup-uv@v8.3.0
+      - uses: astral-sh/setup-uv@v8.3.2
 
       # On macOS maturin runs natively — install the free-threaded interpreter
       # via uv (setup-python does not provide free-threaded builds).
@@ -109,9 +109,9 @@ jobs:
     needs: build-wheels
 
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v6.1.0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.1
+      - uses: Swatinem/rust-cache@v2.9.2
       - uses: katyo/publish-crates@v2
         with:
           dry-run: ${{ github.event_name != 'release' }}
