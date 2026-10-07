@@ -23,7 +23,7 @@ jobs:
       id-token: write       # OIDC provenance
 
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v6.1.0
         with:
           # Use a PAT so that the release commit created by semantic-release
           # triggers subsequent workflows (GITHUB_TOKEN commits do not).
@@ -41,7 +41,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.SCOPED_GITHUB_TOKEN }}
         with:
-          semantic_version: 22.0.6
+          semantic_version: 22.0.12
           # Dry-run on dev: analyze commits and report the next version without
           # creating tags, GitHub releases, or pushing anything.
           dry_run: ${{ github.ref_name == 'dev' }}
