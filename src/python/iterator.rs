@@ -4,8 +4,9 @@ use pyo3::types::PyList;
 
 use crate::python::collator::{PyBatch, PyCollator};
 use crate::python::dataloader::PyDataloader;
+use crate::python::dataset::PyDataset;
 
-type CorePyDataloaderIter = crate::loader::OwnedDataLoaderIter<PyBatch>;
+type CorePyDataloaderIter = crate::loader::DataLoaderIter<PyDataset, PyCollator>;
 
 pub(crate) enum PyIterInner {
     /// Sequential (num_workers=0): call Python directly in `__next__` using the
@@ -99,12 +100,17 @@ impl PyDataloaderIter {
             PyIterInner::Threaded(inner) => inner.as_ref().map_or(0, |it| it.len()),
         }
     }
+}
 
-    fn __del__(&mut self, py: Python<'_>) {
+impl Drop for PyDataloaderIter {
+    /// Joining the workers must happen with the thread state detached: a
+    /// worker blocked in `Python::attach` (inside `__getitem__` or
+    /// `collate_fn`) can only finish once this thread lets go of the GIL.
+    fn drop(&mut self) {
         if let PyIterInner::Threaded(inner) = &mut self.inner
             && let Some(inner) = inner.take()
         {
-            py.detach(|| drop(inner));
+            Python::attach(|py| py.detach(|| drop(inner)));
         }
     }
 }

@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -12,26 +11,15 @@ use crate::{
     collator::Collator,
     dataset::Dataset,
     error::Result,
-    loader::{
-        core::DataLoader,
-        worker::{WorkItem, process_batch, worker_loop},
-    },
-    sampler::Sampler,
+    loader::worker::{WorkItem, process_batch, worker_loop},
 };
 
 // ── ParallelCore ──────────────────────────────────────────────────────────────
 
-// Safety contract (shared by DataLoaderIter<'a> and OwnedDataLoaderIter):
-//
-//   Worker threads receive raw pointers into the parent DataLoader's dataset
-//   and collator.  The caller guarantees:
-//
-//   • DataLoaderIter<'a>  — the mutable borrow lifetime 'a prevents any use
-//     of the loader while the iterator is live; Drop joins threads before 'a
-//     ends.
-//   • OwnedDataLoaderIter — the Python layer stores a Py<PyDataloader> strong
-//     ref in PyDataloaderIter::_owner; Drop joins threads before that ref can
-//     be released.
+// Worker threads share the dataset and collator through `Arc` clones, so the
+// iterator owns everything its workers touch and does not borrow the loader.
+// Leaking the iterator (e.g. `mem::forget`) only leaks threads; it can never
+// leave a worker reading freed memory.
 
 struct ParallelCore<B> {
     result_rx: Option<Receiver<(usize, Result<B>)>>,
@@ -44,15 +32,21 @@ struct ParallelCore<B> {
 }
 
 impl<B: Send + 'static> ParallelCore<B> {
-    fn spawn<D, S, C>(loader: &mut DataLoader<D, S, C>, chunks: Vec<Vec<usize>>) -> Self
+    fn spawn<D, C>(
+        dataset: &Arc<D>,
+        collator: &Arc<C>,
+        pool: Option<&Arc<rayon::ThreadPool>>,
+        num_workers: usize,
+        prefetch_depth: usize,
+        chunks: Vec<Vec<usize>>,
+    ) -> Self
     where
         D: Dataset,
-        S: Sampler,
         C: Collator<D::Item, Batch = B>,
     {
         let n_batches = chunks.len();
         let (work_tx, work_rx) = unbounded::<WorkItem>();
-        let (result_tx, result_rx) = bounded(loader.prefetch_depth);
+        let (result_tx, result_rx) = bounded(prefetch_depth);
 
         for (batch_idx, indices) in chunks.into_iter().enumerate() {
             let _ = work_tx.send(WorkItem { batch_idx, indices });
@@ -60,24 +54,17 @@ impl<B: Send + 'static> ParallelCore<B> {
         drop(work_tx);
 
         let cancel = Arc::new(AtomicBool::new(false));
-        let dataset_ptr = &loader.dataset as *const D as usize;
-        let collator_ptr = &loader.collator as *const C as usize;
 
-        let handles = (0..loader.inter_workers)
+        let handles = (0..num_workers)
             .map(|_| {
+                let dataset = Arc::clone(dataset);
+                let collator = Arc::clone(collator);
                 let work_rx = work_rx.clone();
                 let result_tx = result_tx.clone();
-                let pool = loader.pool.clone();
+                let pool = pool.cloned();
                 let cancel = Arc::clone(&cancel);
-                std::thread::spawn(move || unsafe {
-                    worker_loop(
-                        dataset_ptr as *const D,
-                        collator_ptr as *const C,
-                        work_rx,
-                        result_tx,
-                        pool,
-                        cancel,
-                    );
+                std::thread::spawn(move || {
+                    worker_loop(&*dataset, &*collator, work_rx, result_tx, pool, cancel);
                 })
             })
             .collect();
@@ -131,64 +118,73 @@ impl<B> Drop for ParallelCore<B> {
 
 // ── DataLoaderIter ────────────────────────────────────────────────────────────
 
-enum Inner<'a, D, C>
+enum Inner<D, C>
 where
     D: Dataset,
     C: Collator<D::Item>,
 {
     /// inter_workers=0: process batches on the calling thread, zero allocation.
-    /// Concrete references + monomorphized `process_batch` — no virtual dispatch.
+    /// Concrete types + monomorphized `process_batch` — no virtual dispatch.
     Direct {
         chunks: std::vec::IntoIter<Vec<usize>>,
         remaining: usize,
-        dataset: &'a D,
-        collator: &'a C,
+        dataset: Arc<D>,
+        collator: Arc<C>,
         pool: Option<Arc<rayon::ThreadPool>>,
     },
     /// inter_workers>0: N workers, optional rayon intra-batch pool.
     Parallel(ParallelCore<C::Batch>),
 }
 
-pub struct DataLoaderIter<'a, D, C>
+/// Iterator over one epoch of a [`DataLoader`](crate::DataLoader).
+///
+/// Owns shared handles to the dataset and collator, so it does not borrow the
+/// loader and can be stored, sent to another thread, or outlive it.
+pub struct DataLoaderIter<D, C>
 where
     D: Dataset,
     C: Collator<D::Item>,
 {
-    inner: Inner<'a, D, C>,
-    _borrow: PhantomData<&'a mut ()>,
+    inner: Inner<D, C>,
 }
 
-impl<'a, D, C> DataLoaderIter<'a, D, C>
+impl<D, C> DataLoaderIter<D, C>
 where
     D: Dataset,
     C: Collator<D::Item>,
     C::Batch: Send + 'static,
 {
-    pub(super) fn new<S: Sampler>(loader: &'a mut DataLoader<D, S, C>) -> Self {
-        let chunks = loader.batch_sampler.batch_indices(loader.dataset.len());
-
-        if loader.inter_workers == 0 {
-            let remaining = chunks.len();
-            Self {
-                inner: Inner::Direct {
-                    chunks: chunks.into_iter(),
-                    remaining,
-                    dataset: &loader.dataset,
-                    collator: &loader.collator,
-                    pool: loader.pool.clone(),
-                },
-                _borrow: PhantomData,
+    pub(super) fn new(
+        dataset: &Arc<D>,
+        collator: &Arc<C>,
+        pool: Option<&Arc<rayon::ThreadPool>>,
+        num_workers: usize,
+        prefetch_depth: usize,
+        chunks: Vec<Vec<usize>>,
+    ) -> Self {
+        let inner = if num_workers == 0 {
+            Inner::Direct {
+                remaining: chunks.len(),
+                chunks: chunks.into_iter(),
+                dataset: Arc::clone(dataset),
+                collator: Arc::clone(collator),
+                pool: pool.cloned(),
             }
         } else {
-            Self {
-                inner: Inner::Parallel(ParallelCore::spawn(loader, chunks)),
-                _borrow: PhantomData,
-            }
-        }
+            Inner::Parallel(ParallelCore::spawn(
+                dataset,
+                collator,
+                pool,
+                num_workers,
+                prefetch_depth,
+                chunks,
+            ))
+        };
+        Self { inner }
     }
 }
 
-impl<'a, D, C> Iterator for DataLoaderIter<'a, D, C>
+impl<D, C> Iterator for DataLoaderIter<D, C>
 where
     D: Dataset,
     C: Collator<D::Item>,
@@ -208,9 +204,9 @@ where
                 let indices = chunks.next()?;
                 *remaining -= 1;
                 Some(process_batch(
-                    *dataset,
+                    &**dataset,
                     &indices,
-                    *collator,
+                    &**collator,
                     pool.as_deref(),
                 ))
             }
@@ -227,45 +223,10 @@ where
     }
 }
 
-impl<'a, D, C> ExactSizeIterator for DataLoaderIter<'a, D, C>
+impl<D, C> ExactSizeIterator for DataLoaderIter<D, C>
 where
     D: Dataset,
     C: Collator<D::Item>,
     C::Batch: Send + 'static,
 {
 }
-
-// ── OwnedDataLoaderIter (Python FFI) ──────────────────────────────────────────
-
-/// Lifetime-free iterator for the Python FFI boundary.
-/// Safety is upheld by `PyDataloaderIter::_owner` keeping the loader alive.
-#[cfg(feature = "python")]
-pub(crate) struct OwnedDataLoaderIter<B>(ParallelCore<B>);
-
-#[cfg(feature = "python")]
-impl<B: Send + 'static> OwnedDataLoaderIter<B> {
-    pub(super) fn new<D, S, C>(loader: &mut DataLoader<D, S, C>) -> Self
-    where
-        D: Dataset,
-        S: Sampler,
-        C: Collator<D::Item, Batch = B>,
-    {
-        let chunks = loader.batch_sampler.batch_indices(loader.dataset.len());
-        Self(ParallelCore::spawn(loader, chunks))
-    }
-}
-
-#[cfg(feature = "python")]
-impl<B: Send + 'static> Iterator for OwnedDataLoaderIter<B> {
-    type Item = Result<B>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
-    }
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = self.0.len();
-        (n, Some(n))
-    }
-}
-
-#[cfg(feature = "python")]
-impl<B: Send + 'static> ExactSizeIterator for OwnedDataLoaderIter<B> {}
