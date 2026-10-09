@@ -40,15 +40,9 @@ where
 }
 
 /// Per-worker loop: drain the work queue, process each batch, send results.
-///
-/// # Safety
-///
-/// `dataset` and `collator` must remain valid for the entire duration of this
-/// call. The caller is responsible for joining this thread before the values
-/// pointed to are dropped.
-pub(super) unsafe fn worker_loop<D, C>(
-    dataset: *const D,
-    collator: *const C,
+pub(super) fn worker_loop<D, C>(
+    dataset: &D,
+    collator: &C,
     work_rx: Receiver<WorkItem>,
     result_tx: Sender<(usize, Result<C::Batch>)>,
     pool: Option<Arc<rayon::ThreadPool>>,
@@ -58,10 +52,6 @@ pub(super) unsafe fn worker_loop<D, C>(
     C: Collator<D::Item>,
     C::Batch: Send,
 {
-    // SAFETY: guaranteed by the DataLoaderIter / OwnedDataLoaderIter lifetime
-    // contract — see their respective safety comments.
-    let (dataset, collator) = unsafe { (&*dataset, &*collator) };
-
     while let Ok(item) = work_rx.recv() {
         if cancel.load(Ordering::Acquire) {
             break;

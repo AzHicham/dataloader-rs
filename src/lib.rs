@@ -61,11 +61,9 @@
 //! deliberately avoids lifetime parameters on public structs and requires
 //! `'static` bounds everywhere so that wrapping is straightforward.
 
-// All modules other than `loader` must be unsafe-free.
-// `loader` uses intentional, documented unsafe (raw-pointer sharing with the
-// prefetch thread) and opts in with `#[allow(unsafe_code)]` at the top of
-// that file.
-#![deny(unsafe_code)]
+// The dataset and collator are shared with worker threads through `Arc`, so
+// the crate needs no unsafe code at all.
+#![forbid(unsafe_code)]
 
 pub mod collator;
 pub mod dataset;

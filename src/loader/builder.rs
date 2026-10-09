@@ -147,9 +147,9 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         };
 
         DataLoader {
-            dataset: self.dataset,
+            dataset: Arc::new(self.dataset),
             batch_sampler: BatchSampler::new(self.sampler, self.batch_size, self.drop_last),
-            collator: self.collator,
+            collator: Arc::new(self.collator),
             prefetch_depth: self.prefetch_depth,
             inter_workers: self.inter_workers,
             pool,

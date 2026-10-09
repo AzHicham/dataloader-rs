@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-#[cfg(feature = "python")]
-use crate::loader::iter::OwnedDataLoaderIter;
 use crate::{
     collator::{Collator, VecCollator},
     dataset::Dataset,
@@ -12,9 +10,9 @@ use crate::{
 
 /// High-performance DataLoader with a PyTorch-like interface.
 pub struct DataLoader<D, S: Sampler, C> {
-    pub(super) dataset: D,
+    pub(super) dataset: Arc<D>,
     pub(super) batch_sampler: BatchSampler<S>,
-    pub(super) collator: C,
+    pub(super) collator: Arc<C>,
     pub(super) prefetch_depth: usize,
     /// Number of independent worker threads (inter-batch concurrency).
     /// `0` means the direct path: batches are processed in `Iterator::next`.
@@ -39,15 +37,22 @@ where
     C: Collator<D::Item>,
 {
     /// Start one epoch of iteration.
-    pub fn iter(&mut self) -> DataLoaderIter<'_, D, C> {
-        DataLoaderIter::new(self)
-    }
-
-    /// Start one epoch of iteration without borrowing `self` in the returned
-    /// iterator.
-    #[cfg(feature = "python")]
-    pub(crate) fn iter_owned(&mut self) -> OwnedDataLoaderIter<C::Batch> {
-        OwnedDataLoaderIter::new(self)
+    ///
+    /// Advances the sampler (hence `&mut self`); the returned iterator does
+    /// not borrow the loader.
+    pub fn iter(&mut self) -> DataLoaderIter<D, C>
+    where
+        C::Batch: Send + 'static,
+    {
+        let chunks = self.batch_sampler.batch_indices(self.dataset.len());
+        DataLoaderIter::new(
+            &self.dataset,
+            &self.collator,
+            self.pool.as_ref(),
+            self.inter_workers,
+            self.prefetch_depth,
+            chunks,
+        )
     }
 
     /// Reference to the underlying dataset.
@@ -94,7 +99,7 @@ where
     }
 }
 
-impl<'a, D, S, C> IntoIterator for &'a mut DataLoader<D, S, C>
+impl<D, S, C> IntoIterator for &mut DataLoader<D, S, C>
 where
     D: Dataset,
     S: Sampler,
@@ -102,7 +107,7 @@ where
     C::Batch: Send + 'static,
 {
     type Item = Result<C::Batch>;
-    type IntoIter = DataLoaderIter<'a, D, C>;
+    type IntoIter = DataLoaderIter<D, C>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -577,6 +582,34 @@ mod tests {
 
         let all_items: HashSet<usize> = second.into_iter().flatten().collect();
         assert_eq!(all_items.len(), 20);
+    }
+
+    #[test]
+    fn leaked_iterator_keeps_dataset_alive() {
+        struct DropFlagDs(StdArc<AtomicUsize>);
+        impl Dataset for DropFlagDs {
+            type Item = usize;
+            fn get(&self, index: usize) -> Result<usize> {
+                Ok(index)
+            }
+            fn len(&self) -> usize {
+                64
+            }
+        }
+        impl Drop for DropFlagDs {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let drops = StdArc::new(AtomicUsize::new(0));
+        let mut loader = DataLoader::builder(DropFlagDs(StdArc::clone(&drops)))
+            .num_workers(2)
+            .build();
+        std::mem::forget(loader.iter());
+        drop(loader);
+        // Leaked workers still hold the dataset: it must not have been freed.
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
     }
 
     #[test]

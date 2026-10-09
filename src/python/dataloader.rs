@@ -105,7 +105,7 @@ impl PyDataloader {
 
         // Parallel path: core spawns N inter-batch worker threads.
         // Each worker calls dataset.get_batch() (one Python::attach per batch).
-        let inner = loader.inner.iter_owned();
+        let inner = loader.inner.iter();
         drop(loader);
         Ok(PyDataloaderIter {
             _owner: slf,

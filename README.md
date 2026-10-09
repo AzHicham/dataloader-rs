@@ -208,12 +208,10 @@ Workers complete batches out of order. A `HashMap<batch_idx, Batch>` reorder
 buffer in the iterator reassembles results in epoch order regardless of
 scheduling.
 
-**Safe raw-pointer sharing.**
-Workers hold raw pointers to the dataset and collator, valid because:
-- `DataLoaderIter<'a>` — the borrow lifetime prevents use of the loader while
-  the iterator is live; `Drop` joins all threads before `'a` ends.
-- `OwnedDataLoaderIter` (Python FFI) — a `Py<PyDataloader>` strong reference
-  keeps the loader alive until all threads are joined.
+**No unsafe code.**
+The dataset and collator live behind `Arc`; each worker holds its own clone,
+so an iterator never borrows the loader and leaking it (e.g. `mem::forget`)
+cannot leave a worker reading freed memory. The crate is `#![forbid(unsafe_code)]`.
 
 **Python: GIL acquired once per batch.**
 `PyDataset::get_batch` acquires the Python thread state once for all items in
@@ -238,7 +236,7 @@ src/
 └── loader/
     ├── builder.rs      DataLoaderBuilder (type-safe builder)
     ├── core.rs         DataLoader struct + IntoIterator
-    ├── iter.rs         DataLoaderIter, ParallelCore, OwnedDataLoaderIter (Python)
+    ├── iter.rs         DataLoaderIter, ParallelCore
     └── worker.rs       process_batch, worker_loop
 ```
 
