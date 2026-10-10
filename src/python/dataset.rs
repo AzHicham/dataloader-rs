@@ -1,8 +1,8 @@
 use crate::{dataset::Dataset, error::Result};
-use pyo3::exceptions::PyNotImplementedError;
+use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyDict, PyList, PyTuple};
 
 #[pyclass(frozen, subclass)]
 pub struct PyDatasetBase;
@@ -44,6 +44,50 @@ pub(crate) fn get_item_py(
     dataset.call_method1(py, intern!(py, "__getitem__"), (index,))
 }
 
+/// How a batch of samples is fetched from a Python dataset.
+///
+/// Mirrors PyTorch's fetcher: a dataset defining `__getitems__(indices)` is
+/// called once per batch with the list of indices and returns the list of
+/// samples; otherwise `__getitem__` is called once per index.
+pub(crate) enum Fetcher {
+    /// Bound `__getitems__` method.
+    Batched(Py<PyAny>),
+    /// Bound `__getitem__` method, cached to skip one lookup per item.
+    PerItem(Py<PyAny>),
+}
+
+impl Fetcher {
+    pub(crate) fn new(dataset: &PyDataset, py: Python<'_>) -> PyResult<Self> {
+        let dataset = dataset.bind(py);
+        Ok(match dataset.getattr_opt(intern!(py, "__getitems__"))? {
+            Some(getitems) => Self::Batched(getitems.unbind()),
+            None => Self::PerItem(dataset.getattr(intern!(py, "__getitem__"))?.unbind()),
+        })
+    }
+
+    pub(crate) fn fetch(&self, py: Python<'_>, indices: &[usize]) -> PyResult<Vec<Py<PyAny>>> {
+        match self {
+            Self::PerItem(getitem) => indices.iter().map(|&i| getitem.call1(py, (i,))).collect(),
+            Self::Batched(getitems) => {
+                let samples = getitems.bind(py).call1((PyList::new(py, indices)?,))?;
+                let samples = samples
+                    .try_iter()?
+                    .map(|sample| sample.map(Bound::unbind))
+                    .collect::<PyResult<Vec<_>>>()?;
+                // A short or long list would silently change batch sizes.
+                if samples.len() != indices.len() {
+                    return Err(PyValueError::new_err(format!(
+                        "__getitems__ returned {} samples for {} indices",
+                        samples.len(),
+                        indices.len()
+                    )));
+                }
+                Ok(samples)
+            }
+        }
+    }
+}
+
 impl Dataset for PyDataset {
     type Item = Py<PyAny>;
 
@@ -55,18 +99,10 @@ impl Dataset for PyDataset {
     /// once per item — reduces GIL attach/release overhead from O(batch_size)
     /// to O(1) per batch in the threaded (num_workers>0) code path.
     ///
-    /// Also caches the bound `__getitem__` method for the duration of the batch,
-    /// saving one attribute lookup per item (same trick used in the direct path).
+    /// Uses `__getitems__` when the dataset defines it, else a cached bound
+    /// `__getitem__` (one attribute lookup per batch, not per item).
     fn get_batch(&self, indices: &[usize]) -> Result<Vec<Py<PyAny>>> {
-        Python::attach(|py| {
-            let getitem = self
-                .getattr(py, intern!(py, "__getitem__"))
-                .map_err(crate::error::Error::from)?;
-            indices
-                .iter()
-                .map(|&i| getitem.call1(py, (i,)).map_err(crate::error::Error::from))
-                .collect()
-        })
+        Python::attach(|py| Fetcher::new(self, py)?.fetch(py, indices)).map_err(Into::into)
     }
 
     fn len(&self) -> usize {

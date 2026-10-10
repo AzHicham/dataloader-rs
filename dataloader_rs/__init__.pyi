@@ -52,6 +52,12 @@ class PyDataset:
         """
         ...
 
+    # Optional: define ``__getitems__(self, indices: list[int]) -> Sequence[Any]``
+    # to fetch a whole batch in one call. When present, the loader calls it once
+    # per batch instead of ``__getitem__`` per index; it must return one sample
+    # per index, in order. It is not declared here so that ``hasattr`` stays
+    # ``False`` for datasets that do not implement it.
+
 class PyDataloaderIter:
     """Iterator over one epoch of a :class:`PyDataloader`.
 

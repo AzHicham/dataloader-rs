@@ -32,6 +32,28 @@ class RangeDataset(PyDataset):
         return {"x": index, "y": index ** 2}
 ```
 
+Optionally implement `__getitems__(indices)` to fetch a whole batch in one call
+(PyTorch's batched-fetch protocol). When defined, the loader calls it once per
+batch with the list of indices instead of calling `__getitem__` per index — useful
+for vectorised reads such as numpy fancy indexing or one database query per batch.
+It must return one sample per index, in order:
+
+```python
+class ArrayDataset(PyDataset):
+    def __init__(self, array) -> None:
+        super().__init__()
+        self.array = array
+
+    def __len__(self) -> int:
+        return len(self.array)
+
+    def __getitem__(self, index: int):
+        return self.array[index]
+
+    def __getitems__(self, indices: list[int]):
+        return list(self.array[indices])
+```
+
 ### 2 — Iterate
 
 ```python
