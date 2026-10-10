@@ -14,6 +14,8 @@ type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollat
 #[pyclass(name = "PyDataloader", module = "dataloader_rs", unsendable)]
 pub struct PyDataloader {
     inner: CorePyLoader,
+    /// Shared with `inner`; reports exceptions raised by a Python sampler.
+    sampler: SharedPySampler,
 }
 
 #[pymethods]
@@ -71,11 +73,11 @@ impl PyDataloader {
             .prefetch_depth(prefetch_depth)
             .drop_last(drop_last)
             .num_workers(num_workers)
-            .sampler(sampler)
+            .sampler(sampler.clone())
             .collator(PyCollator::new(collate_fn))
             .build();
 
-        Ok(Self { inner })
+        Ok(Self { inner, sampler })
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
@@ -85,6 +87,9 @@ impl PyDataloader {
             // Direct path (num_workers=0): call Python directly inside __next__
             // using the py token already held — zero extra GIL acquisitions.
             let chunks = loader.inner.epoch_chunks();
+            if let Some(err) = loader.sampler.take_error() {
+                return Err(err);
+            }
             let remaining = chunks.len();
             let getitem = loader
                 .inner
@@ -106,6 +111,11 @@ impl PyDataloader {
         // Parallel path: core spawns N inter-batch worker threads.
         // Each worker calls dataset.get_batch() (one Python::attach per batch).
         let inner = loader.inner.iter();
+        if let Some(err) = loader.sampler.take_error() {
+            // Join the (idle) workers with the GIL released.
+            py.detach(|| drop(inner));
+            return Err(err);
+        }
         drop(loader);
         Ok(PyDataloaderIter {
             _owner: slf,

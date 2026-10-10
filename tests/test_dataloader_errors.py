@@ -113,3 +113,51 @@ def test_error_then_next_epoch_works():
     # But the second batch (indices 4-7) should still succeed.
     second = next(it)
     assert second == [4, 5, 6, 7]
+
+
+# ── Sampler errors ────────────────────────────────────────────────────────────
+
+
+class _RaisingSampler:
+    """Yields two indices, then raises."""
+
+    def __iter__(self):
+        yield 0
+        yield 1
+        raise ValueError("sampler exploded")
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_sampler_exception_surfaces_from_iter(num_workers):
+    """A sampler raising mid-epoch must raise, not yield an empty epoch."""
+    loader = DataLoader(ListDataset(range(8)), sampler=_RaisingSampler(), num_workers=num_workers)
+    with pytest.raises(ValueError, match="sampler exploded"):
+        iter(loader)
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_sampler_non_integer_index_surfaces(num_workers):
+    """A sampler yielding a non-index must raise TypeError, not stop silently."""
+    loader = DataLoader(ListDataset(range(8)), sampler=[0, "x", 2], num_workers=num_workers)
+    with pytest.raises(TypeError):
+        iter(loader)
+
+
+def test_sampler_error_does_not_break_next_epoch():
+    """After a failed epoch, a sampler that recovers must work again."""
+
+    class FlakySampler:
+        fail = False
+
+        def __iter__(self):
+            if self.fail:
+                raise ValueError("this epoch fails")
+            return iter(range(4))
+
+    sampler = FlakySampler()
+    loader = DataLoader(ListDataset(range(4)), sampler=sampler, batch_size=2)
+    sampler.fail = True
+    with pytest.raises(ValueError, match="this epoch fails"):
+        iter(loader)
+    sampler.fail = False
+    assert list(loader) == [[0, 1], [2, 3]]
