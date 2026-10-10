@@ -1,3 +1,5 @@
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -67,11 +69,27 @@ impl PyDataloaderIter {
             }
 
             PyIterInner::Threaded(inner_opt) => {
-                let Some(mut inner) = inner_opt.take() else {
+                let Some(inner) = inner_opt.take() else {
                     return Ok(None);
                 };
                 // Release Python thread state while blocked on the channel.
-                let next_item = py.detach(|| inner.next());
+                // A worker panic is re-raised here; join the workers before
+                // re-attaching, so none is left waiting on our GIL.
+                let next_item = py.detach(move || {
+                    let mut inner = inner;
+                    let next_item = catch_unwind(AssertUnwindSafe(|| inner.next()));
+                    match next_item {
+                        Ok(next_item) => Ok((next_item, inner)),
+                        Err(payload) => {
+                            drop(inner);
+                            Err(payload)
+                        }
+                    }
+                });
+                let (next_item, inner) = match next_item {
+                    Ok(next_item) => next_item,
+                    Err(payload) => resume_unwind(payload),
+                };
                 match next_item {
                     Some(Ok(batch)) => {
                         let out = match batch {

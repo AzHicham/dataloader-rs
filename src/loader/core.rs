@@ -584,6 +584,67 @@ mod tests {
         assert_eq!(all_items.len(), 20);
     }
 
+    struct PanicDs;
+
+    impl Dataset for PanicDs {
+        type Item = usize;
+
+        fn get(&self, index: usize) -> Result<usize> {
+            if index == 5 {
+                panic!("dataset panicked at {index}");
+            }
+            Ok(index)
+        }
+
+        fn len(&self) -> usize {
+            40
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "dataset panicked at 5")]
+    fn worker_panic_propagates_to_consumer() {
+        let mut loader = DataLoader::builder(PanicDs)
+            .batch_size(4)
+            .num_workers(2)
+            .build();
+        // Before the fix the epoch silently ended after the first batch.
+        for batch in loader.iter() {
+            let _ = batch;
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "dataset panicked at 5")]
+    fn intra_worker_panic_propagates_to_consumer() {
+        let mut loader = DataLoader::builder(PanicDs)
+            .batch_size(4)
+            .num_workers(2)
+            .intra_workers(2)
+            .build();
+        for batch in loader.iter() {
+            let _ = batch;
+        }
+    }
+
+    #[test]
+    fn loader_is_reusable_after_worker_panic() {
+        let mut loader = DataLoader::builder(PanicDs)
+            .batch_size(4)
+            .num_workers(2)
+            .build();
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            loader.iter().for_each(drop);
+        }));
+        assert!(caught.is_err());
+        // The next epoch still reaches (and re-raises) the same panic rather
+        // than hanging or truncating.
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            loader.iter().for_each(drop);
+        }));
+        assert!(caught.is_err());
+    }
+
     #[test]
     fn leaked_iterator_keeps_dataset_alive() {
         struct DropFlagDs(StdArc<AtomicUsize>);

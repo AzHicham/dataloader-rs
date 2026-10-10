@@ -11,7 +11,7 @@ use crate::{
     collator::Collator,
     dataset::Dataset,
     error::Result,
-    loader::worker::{WorkItem, process_batch, worker_loop},
+    loader::worker::{WorkItem, WorkerMsg, process_batch, worker_loop},
 };
 
 // ── ParallelCore ──────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ use crate::{
 // leave a worker reading freed memory.
 
 struct ParallelCore<B> {
-    result_rx: Option<Receiver<(usize, Result<B>)>>,
+    result_rx: Option<Receiver<WorkerMsg<B>>>,
     /// Out-of-order results waiting to be returned in epoch order.
     reorder: HashMap<usize, Result<B>>,
     next_out: usize,
@@ -92,8 +92,14 @@ impl<B: Send + 'static> ParallelCore<B> {
                 return Some(batch);
             }
             match self.result_rx.as_ref()?.recv() {
-                Ok((idx, batch)) => {
+                Ok((idx, Ok(batch))) => {
                     self.reorder.insert(idx, batch);
+                }
+                // A worker panicked: re-raise on the consumer thread, as
+                // `num_workers(0)` would. `Drop` stops the other workers.
+                Ok((_, Err(payload))) => {
+                    self.remaining = 0;
+                    std::panic::resume_unwind(payload);
                 }
                 Err(_) => return None,
             }
