@@ -1,7 +1,4 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use crossbeam_channel::{Receiver, bounded, unbounded};
@@ -11,7 +8,7 @@ use crate::{
     collator::Collator,
     dataset::Dataset,
     error::Result,
-    loader::worker::{WorkItem, process_batch, worker_loop},
+    loader::worker::{Gate, WorkItem, process_batch, worker_loop},
 };
 
 // ── ParallelCore ──────────────────────────────────────────────────────────────
@@ -23,12 +20,13 @@ use crate::{
 
 struct ParallelCore<B> {
     result_rx: Option<Receiver<(usize, Result<B>)>>,
-    /// Out-of-order results waiting to be returned in epoch order.
+    /// Out-of-order results waiting to be returned in epoch order; bounded
+    /// by the gate's window.
     reorder: HashMap<usize, Result<B>>,
     next_out: usize,
     remaining: usize,
     handles: Vec<JoinHandle<()>>,
-    cancel: Arc<AtomicBool>,
+    gate: Arc<Gate>,
 }
 
 impl<B: Send + 'static> ParallelCore<B> {
@@ -53,7 +51,10 @@ impl<B: Send + 'static> ParallelCore<B> {
         }
         drop(work_tx);
 
-        let cancel = Arc::new(AtomicBool::new(false));
+        // Twice the steady-state pipeline (one batch per worker plus the
+        // prefetch depth): wide enough that the gate stays open unless one
+        // batch falls far behind.
+        let gate = Arc::new(Gate::new(2 * (num_workers + prefetch_depth)));
 
         let handles = (0..num_workers)
             .map(|_| {
@@ -62,9 +63,9 @@ impl<B: Send + 'static> ParallelCore<B> {
                 let work_rx = work_rx.clone();
                 let result_tx = result_tx.clone();
                 let pool = pool.cloned();
-                let cancel = Arc::clone(&cancel);
+                let gate = Arc::clone(&gate);
                 std::thread::spawn(move || {
-                    worker_loop(&*dataset, &*collator, work_rx, result_tx, pool, cancel);
+                    worker_loop(&*dataset, &*collator, work_rx, result_tx, pool, gate);
                 })
             })
             .collect();
@@ -77,7 +78,7 @@ impl<B: Send + 'static> ParallelCore<B> {
             next_out: 0,
             remaining: n_batches,
             handles,
-            cancel,
+            gate,
         }
     }
 
@@ -89,6 +90,7 @@ impl<B: Send + 'static> ParallelCore<B> {
             if let Some(batch) = self.reorder.remove(&self.next_out) {
                 self.next_out += 1;
                 self.remaining -= 1;
+                self.gate.advance(self.next_out);
                 return Some(batch);
             }
             match self.result_rx.as_ref()?.recv() {
@@ -107,7 +109,7 @@ impl<B: Send + 'static> ParallelCore<B> {
 
 impl<B> Drop for ParallelCore<B> {
     fn drop(&mut self) {
-        self.cancel.store(true, Ordering::Release);
+        self.gate.cancel();
         // Drop receiver so workers blocked on send() get Err and exit.
         drop(self.result_rx.take());
         for h in self.handles.drain(..) {

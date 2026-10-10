@@ -585,6 +585,61 @@ mod tests {
     }
 
     #[test]
+    fn slow_batch_does_not_buffer_whole_epoch() {
+        // Batch 0 is slow; every other batch is instant. The consumer waits
+        // on batch 0, so results of later batches pile up in the reorder
+        // buffer. They must stay within the in-flight window instead of
+        // growing to the whole epoch.
+        struct SlowFirstDs;
+        impl Dataset for SlowFirstDs {
+            type Item = usize;
+            fn get(&self, index: usize) -> Result<usize> {
+                if index == 0 {
+                    thread::sleep(Duration::from_millis(200));
+                }
+                Ok(index)
+            }
+            fn len(&self) -> usize {
+                1000
+            }
+        }
+
+        struct CountingCollator(StdArc<AtomicUsize>);
+        impl Collator<usize> for CountingCollator {
+            type Batch = Vec<usize>;
+            fn collate(&self, items: Vec<usize>) -> Result<Vec<usize>> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(items)
+            }
+        }
+
+        let (workers, depth) = (2, 2);
+        let produced = StdArc::new(AtomicUsize::new(0));
+        let mut loader = DataLoader::builder(SlowFirstDs)
+            .num_workers(workers)
+            .prefetch_depth(depth)
+            .collator(CountingCollator(StdArc::clone(&produced)))
+            .build();
+
+        let mut iter = loader.iter();
+        assert_eq!(iter.next().unwrap().unwrap(), vec![0]);
+        // Workers may not start batches beyond the window
+        // (2 * (workers + depth)) while batch 0 is outstanding.
+        let produced = produced.load(Ordering::SeqCst);
+        assert!(
+            produced <= 2 * (workers + depth),
+            "{produced} batches produced while waiting on batch 0"
+        );
+        assert_eq!(iter.count(), 999);
+
+        // Dropping the iterator while workers are parked on the gate must
+        // wake and join them rather than hang.
+        let iter = loader.iter();
+        thread::sleep(Duration::from_millis(50));
+        drop(iter);
+    }
+
+    #[test]
     fn leaked_iterator_keeps_dataset_alive() {
         struct DropFlagDs(StdArc<AtomicUsize>);
         impl Dataset for DropFlagDs {
