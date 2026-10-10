@@ -81,8 +81,10 @@ impl PyDataloaderIter {
                         *inner_opt = Some(inner);
                         Ok(Some(out))
                     }
+                    // A failed batch does not end the epoch: the next call
+                    // returns the following batch, as with num_workers=0.
                     Some(Err(e)) => {
-                        py.detach(|| drop(inner));
+                        *inner_opt = Some(inner);
                         Err(PyRuntimeError::new_err(e.to_string()))
                     }
                     None => {
