@@ -65,6 +65,24 @@ impl Fetcher {
         })
     }
 
+    /// The bound method used to fetch: `__getitems__` or `__getitem__`.
+    pub(crate) fn method(&self) -> &Py<PyAny> {
+        match self {
+            Self::Batched(method) | Self::PerItem(method) => method,
+        }
+    }
+
+    pub(crate) fn is_batched(&self) -> bool {
+        matches!(self, Self::Batched(_))
+    }
+
+    /// Whether the fetch method is `async def`.
+    pub(crate) fn is_async(&self, py: Python<'_>) -> PyResult<bool> {
+        py.import(intern!(py, "inspect"))?
+            .call_method1(intern!(py, "iscoroutinefunction"), (self.method(),))?
+            .is_truthy()
+    }
+
     pub(crate) fn fetch(&self, py: Python<'_>, indices: &[usize]) -> PyResult<Vec<Py<PyAny>>> {
         match self {
             Self::PerItem(getitem) => indices.iter().map(|&i| getitem.call1(py, (i,))).collect(),

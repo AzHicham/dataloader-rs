@@ -53,6 +53,10 @@ class PyDataset:
         """
         ...
 
+    # ``__getitem__`` and ``__getitems__`` may also be ``async def``: batches are
+    # then awaited concurrently on an event loop thread owned by the loader
+    # (up to ``max(num_workers, 1) + prefetch_depth`` batches in flight).
+    #
     # Optional: define ``__getitems__(self, indices: list[int]) -> Sequence[Any]``
     # to fetch a whole batch in one call. When present, the loader calls it once
     # per batch instead of ``__getitem__`` per index; it must return one sample
@@ -105,6 +109,10 @@ class PyDataloader:
         the same sequence of epoch orders; each epoch still differs from the
         previous one. Requires ``shuffle=True``. Default: ``None`` (seeded
         from OS entropy, not reproducible).
+    max_concurrency:
+        For async datasets only: maximum number of ``__getitem__`` (or
+        ``__getitems__``) calls awaited at once, across batches and epochs.
+        Default: ``None`` (every sample of the batches in flight at once).
 
     Example
     -------
@@ -125,6 +133,7 @@ class PyDataloader:
         collate_fn: Callable[[list[Any]], Any] | None = None,
         drop_last: bool = False,
         seed: int | None = None,
+        max_concurrency: int | None = None,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""
