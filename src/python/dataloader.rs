@@ -5,7 +5,7 @@ use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::python::collator::PyCollator;
-use crate::python::dataset::PyDataset;
+use crate::python::dataset::{PyDataset, len_py};
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
 use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
 
@@ -80,6 +80,9 @@ impl PyDataloader {
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
         let mut loader = slf.borrow_mut(py);
+        // `Dataset::len` cannot fail; surface a raising `__len__` here instead
+        // of letting the core panic on it.
+        len_py(loader.inner.dataset(), py)?;
 
         if !loader.inner.has_workers() {
             // Direct path (num_workers=0): call Python directly inside __next__
@@ -113,7 +116,8 @@ impl PyDataloader {
         })
     }
 
-    fn __len__(&self) -> usize {
-        self.inner.batch_len()
+    fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
+        len_py(self.inner.dataset(), py)?;
+        Ok(self.inner.batch_len())
     }
 }
