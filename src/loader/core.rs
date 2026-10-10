@@ -86,14 +86,11 @@ where
     }
 
     /// Total number of batches for one epoch with current batch settings.
+    ///
+    /// Counts what the sampler yields, so a sharding or subsampling sampler
+    /// (e.g. [`DistributedSampler`](crate::DistributedSampler)) is accounted for.
     pub fn batch_len(&self) -> usize {
-        let n = self.dataset.len();
-        let bs = self.batch_sampler.batch_size();
-        if self.batch_sampler.drop_last() {
-            n / bs
-        } else {
-            n.div_ceil(bs)
-        }
+        self.batch_sampler.len(self.dataset.len())
     }
 
     /// Returns `true` when the dataset is empty.
@@ -763,6 +760,19 @@ mod tests {
         drop(loader);
         // Leaked workers still hold the dataset: it must not have been freed.
         assert_eq!(drops.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn batch_len_follows_distributed_sampler() {
+        use crate::sampler::DistributedSampler;
+
+        let mut loader = DataLoader::builder(CountingDs { len: 10 })
+            .batch_size(2)
+            .sampler(DistributedSampler::new(SequentialSampler, 0, 4))
+            .build();
+        // 10 items over 4 ranks -> 3 per rank -> 2 batches of size 2.
+        assert_eq!(loader.batch_len(), 2);
+        assert_eq!(loader.iter().count(), 2);
     }
 
     #[test]

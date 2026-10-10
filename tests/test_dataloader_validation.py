@@ -133,3 +133,16 @@ def test_collate_fn_receives_list():
     list(loader)  # trigger one call to collate_fn
     assert received_type, "collate_fn must have been called at least once"
     assert received_type[0] is list, f"collate_fn must receive a list, got {received_type[0]}"
+
+
+def test_len_counts_sampler_indices_not_dataset():
+    """len(loader) follows a custom sampler that defines __len__."""
+    loader = DataLoader(ListDataset(range(10)), batch_size=2, sampler=[0, 1, 2])
+    assert len(loader) == 2
+    assert len(list(loader)) == 2
+
+
+def test_len_counts_sampler_indices_with_drop_last():
+    loader = DataLoader(ListDataset(range(10)), batch_size=2, sampler=[0, 1, 2], drop_last=True)
+    assert len(loader) == 1
+    assert len(list(loader)) == 1
