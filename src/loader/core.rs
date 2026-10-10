@@ -14,11 +14,13 @@ pub struct DataLoader<D, S: Sampler, C> {
     pub(super) batch_sampler: BatchSampler<S>,
     pub(super) collator: Arc<C>,
     pub(super) prefetch_depth: usize,
-    /// Number of independent worker threads (inter-batch concurrency).
+    /// Number of batches processed concurrently (inter-batch concurrency).
     /// `0` means the direct path: batches are processed in `Iterator::next`.
     pub(super) inter_workers: usize,
-    /// Optional rayon pool for intra-batch item-level parallelism.
-    /// `None` when `intra_workers = 0`.
+    /// Fetch the items of a batch in parallel on `pool`.
+    pub(super) parallel_items: bool,
+    /// The single rayon pool running both batch tasks and item-level work,
+    /// sized `max(num_workers, intra_workers)`. `None` when both are `0`.
     pub(super) pool: Option<Arc<rayon::ThreadPool>>,
 }
 
@@ -49,6 +51,7 @@ where
             &self.dataset,
             &self.collator,
             self.pool.as_ref(),
+            self.parallel_items,
             self.inter_workers,
             self.prefetch_depth,
             chunks,
@@ -643,6 +646,95 @@ mod tests {
             loader.iter().for_each(drop);
         }));
         assert!(caught.is_err());
+    }
+
+    /// Batch 0 sleeps; every other batch is instant.
+    struct SlowFirstDs(StdArc<AtomicUsize>);
+
+    impl Dataset for SlowFirstDs {
+        type Item = usize;
+
+        fn get(&self, index: usize) -> Result<usize> {
+            if index == 0 {
+                thread::sleep(Duration::from_millis(200));
+            }
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(index)
+        }
+
+        fn len(&self) -> usize {
+            1000
+        }
+    }
+
+    #[test]
+    fn slow_batch_does_not_buffer_whole_epoch() {
+        // While the consumer waits on batch 0, fast batches must not pile up
+        // in the reorder buffer beyond num_workers + prefetch_depth.
+        let (workers, depth) = (2, 2);
+        let fetched = StdArc::new(AtomicUsize::new(0));
+        let mut loader = DataLoader::builder(SlowFirstDs(StdArc::clone(&fetched)))
+            .num_workers(workers)
+            .prefetch_depth(depth)
+            .build();
+
+        let mut iter = loader.iter();
+        assert_eq!(iter.next().unwrap().unwrap(), vec![0]);
+        // Returning batch 0 may let one more batch start.
+        let fetched_now = fetched.load(Ordering::SeqCst);
+        assert!(
+            fetched_now <= workers + depth + 1,
+            "{fetched_now} batches fetched while waiting on batch 0"
+        );
+        assert_eq!(iter.count(), 999);
+    }
+
+    #[test]
+    fn dropping_iterator_does_not_wait_for_running_batch() {
+        let mut loader = DataLoader::builder(SlowFirstDs(StdArc::new(AtomicUsize::new(0))))
+            .num_workers(2)
+            .build();
+        let iter = loader.iter();
+        thread::sleep(Duration::from_millis(20)); // batch 0 is now sleeping
+        let start = std::time::Instant::now();
+        drop(iter);
+        assert!(start.elapsed() < Duration::from_millis(100));
+        // The loader is immediately reusable.
+        assert_eq!(loader.iter().nth(1).unwrap().unwrap(), vec![1]);
+    }
+
+    #[test]
+    fn batch_and_item_work_share_one_pool() {
+        struct ThreadNameDs(std::sync::Mutex<HashSet<String>>);
+        impl Dataset for ThreadNameDs {
+            type Item = usize;
+            fn get(&self, index: usize) -> Result<usize> {
+                let name = thread::current().name().unwrap_or("?").to_owned();
+                self.0.lock().unwrap().insert(name);
+                thread::sleep(Duration::from_micros(200));
+                Ok(index)
+            }
+            fn len(&self) -> usize {
+                64
+            }
+        }
+
+        let mut loader = DataLoader::builder(ThreadNameDs(Default::default()))
+            .batch_size(8)
+            .num_workers(2)
+            .intra_workers(3)
+            .build();
+        loader.iter().for_each(|b| drop(b.unwrap()));
+
+        let names = loader.dataset().0.lock().unwrap().clone();
+        assert!(
+            names.iter().all(|n| n.starts_with("dataloader-")),
+            "items fetched outside the loader pool: {names:?}"
+        );
+        assert!(
+            names.len() <= 3,
+            "pool must have max(2, 3) threads: {names:?}"
+        );
     }
 
     #[test]
