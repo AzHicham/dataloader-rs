@@ -1,11 +1,10 @@
 use crate::loader as core_loader;
 use crate::sampler::{RandomSampler, SequentialSampler};
 use pyo3::exceptions::PyValueError;
-use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::python::collator::PyCollator;
-use crate::python::dataset::{PyDataset, len_py};
+use crate::python::dataset::{Fetcher, PyDataset, len_py};
 use crate::python::into_py_err;
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
 use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
@@ -99,10 +98,7 @@ impl PyDataloader {
             // using the py token already held — zero extra GIL acquisitions.
             let chunks = loader.inner.epoch_chunks();
             let remaining = chunks.len();
-            let getitem = loader
-                .inner
-                .dataset()
-                .getattr(py, intern!(py, "__getitem__"))?;
+            let fetcher = Fetcher::new(loader.inner.dataset(), py)?;
             let collator = loader.inner.collator().clone();
             drop(loader);
             return Ok(PyDataloaderIter {
@@ -110,7 +106,7 @@ impl PyDataloader {
                 inner: PyIterInner::Direct {
                     chunks: chunks.into_iter(),
                     remaining,
-                    getitem,
+                    fetcher,
                     collator,
                 },
             });
