@@ -161,3 +161,39 @@ def test_sampler_error_does_not_break_next_epoch():
         iter(loader)
     sampler.fail = False
     assert list(loader) == [[0, 1], [2, 3]]
+# ── Original exception types are preserved ────────────────────────────────────
+
+
+class _KeyErrorDs(ListDataset):
+    def __getitem__(self, idx):
+        if idx == 2:
+            raise KeyError(f"missing key {idx}")
+        return super().__getitem__(idx)
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_dataset_exception_type_is_preserved(num_workers):
+    """__getitem__ raising KeyError must surface as KeyError, not RuntimeError."""
+    loader = DataLoader(_KeyErrorDs(range(4)), batch_size=4, num_workers=num_workers)
+    with pytest.raises(KeyError, match="missing key 2"):
+        next(iter(loader))
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_collate_exception_type_is_preserved(num_workers):
+    """collate_fn raising ValueError must surface as ValueError."""
+
+    def bad_collate(_items):
+        raise ValueError("bad shapes")
+
+    loader = DataLoader(
+        ListDataset(range(4)), batch_size=2, num_workers=num_workers, collate_fn=bad_collate
+    )
+    with pytest.raises(ValueError, match="bad shapes"):
+        next(iter(loader))
+
+
+def test_non_iterable_sampler_raises_type_error():
+    """A sampler that is not iterable raises TypeError, as in PyTorch."""
+    with pytest.raises(TypeError):
+        DataLoader(ListDataset(range(4)), sampler=42)

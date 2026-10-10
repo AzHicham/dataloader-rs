@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 
 use crate::python::collator::PyCollator;
 use crate::python::dataset::PyDataset;
+use crate::python::into_py_err;
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
 use crate::python::sampler::{
     PyDistributedSampler, PySampler, SharedPySampler, validate_python_sampler,
@@ -77,8 +78,7 @@ impl PyDataloader {
                 if let Some(shared) = native {
                     SharedPySampler::new(PySampler::Distributed(shared))
                 } else {
-                    validate_python_sampler(&py_sampler)
-                        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                    validate_python_sampler(&py_sampler).map_err(into_py_err)?;
                     SharedPySampler::new(PySampler::Python(py_sampler))
                 }
             }
