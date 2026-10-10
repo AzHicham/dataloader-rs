@@ -14,6 +14,7 @@ default = []
 ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
 python = ["dep:pyo3"]
+async = ["dep:futures"]
 
 
 [profile.release]
@@ -59,6 +60,12 @@ version          = "0.24"
 default-features = false
 optional         = true
 
+[dependencies.futures]
+version          = "0.3"
+default-features = false
+features         = ["std", "executor", "async-await"]
+optional         = true
+
 [dependencies.pyo3]
 version          = "0.28"
 default-features = false
@@ -72,10 +79,22 @@ version          = "0.8"
 default-features = false
 features         = ["cargo_bench_support", "html_reports", "plotters"]
 
+[dev-dependencies.tokio]
+version          = "1"
+default-features = false
+features         = ["rt-multi-thread", "time", "macros"]
+
+[dev-dependencies.futures]
+version          = "0.3"
+
 [dev-dependencies.tch]
 version          = "0.24"
 default-features = false
 features         = ["download-libtorch"]
+
+[[test]]
+name              = "integration_async"
+required-features = ["async"]
 
 [[bench]]
 name    = "bench_inter_workers"

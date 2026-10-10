@@ -83,6 +83,41 @@ impl Collator<Vec<f32>> for StackCollator {
 }
 ```
 
+### Async datasets (feature `async`)
+
+For samples behind network calls (object stores, HTTP, databases), implement
+`AsyncDataset`: many requests stay in flight on a few threads instead of one
+thread per request. The loader only composes futures, so it runs under any
+executor (tokio, smol, async-std, `futures::executor`).
+
+```rust,ignore
+use dataloader_rs::{AsyncDataLoader, AsyncDataset, error::Result};
+
+struct S3Images { client: Client, keys: Vec<String> }
+
+impl AsyncDataset for S3Images {
+    type Item = Vec<u8>;
+    async fn get(&self, index: usize) -> Result<Vec<u8>> {
+        Ok(self.client.get(&self.keys[index]).await?)
+    }
+    fn len(&self) -> usize { self.keys.len() }
+}
+
+let mut loader = AsyncDataLoader::builder(S3Images { client, keys })
+    .batch_size(64)
+    .concurrency(4)       // batches in flight, each with all samples concurrent
+    .collate_threads(2)   // CPU collation off the executor
+    .build();
+
+// From your runtime: a Stream of batches, in sampler order.
+let mut batches = std::pin::pin!(loader.stream());
+while let Some(batch) = batches.next().await { /* ... */ }
+
+// Or from synchronous code: a blocking iterator driven on a background thread
+// (only for futures that do not need a specific runtime).
+for batch in loader.iter() { /* ... */ }
+```
+
 ---
 
 ## Python quick start
@@ -317,6 +352,7 @@ uv run python bench/bench_sampler.py       --warmup 2 --repeats 10
 | `python` | ❌ | PyO3 bindings (`PyDataloader`, `PyDataset`) |
 | `ndarray` | ❌ | `DefaultCollator` for `ndarray::Array` types |
 | `torch-rs` | ❌ | `TorchPinnedCollator` for `tch::Tensor` + `pin_memory` |
+| `async` | ❌ | `AsyncDataset` + `AsyncDataLoader` (runtime-agnostic, adds `futures`) |
 
 ---
 

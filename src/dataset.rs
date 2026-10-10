@@ -49,6 +49,56 @@ pub trait Dataset: Send + Sync + 'static {
     }
 }
 
+/// Map-style dataset whose samples are fetched asynchronously — for data
+/// behind network calls (object stores, HTTP, databases) where many requests
+/// should be in flight at once without one thread per request.
+///
+/// The loader only composes futures (it never spawns tasks or uses timers),
+/// so any executor can drive it: tokio, smol, async-std or
+/// `futures::executor`. Futures that need a specific runtime (e.g. reqwest or
+/// the AWS SDK need tokio) must be polled inside that runtime, i.e. through
+/// [`AsyncDataLoader::stream`](crate::AsyncDataLoader::stream) from a task of
+/// that runtime.
+///
+/// # Example
+///
+/// ```rust
+/// use dataloader_rs::{AsyncDataset, error::Result};
+///
+/// struct Remote;
+///
+/// impl AsyncDataset for Remote {
+///     type Item = u64;
+///     async fn get(&self, index: usize) -> Result<u64> {
+///         // e.g. `client.get(url(index)).send().await?` in a real dataset
+///         Ok(index as u64)
+///     }
+///     fn len(&self) -> usize { 100 }
+/// }
+/// ```
+#[cfg(feature = "async")]
+pub trait AsyncDataset: Send + Sync + 'static {
+    /// The type of a single sample.
+    type Item: Send + 'static;
+
+    /// Fetch the sample at `index`.
+    fn get(&self, index: usize) -> impl Future<Output = Result<Self::Item>> + Send;
+
+    /// Fetch a batch of samples. The default runs every [`get`](Self::get)
+    /// of the batch concurrently; override it to use a batched request.
+    fn get_batch(&self, indices: &[usize]) -> impl Future<Output = Result<Vec<Self::Item>>> + Send {
+        futures::future::try_join_all(indices.iter().map(|&i| self.get(i)))
+    }
+
+    /// Total number of samples in the dataset.
+    fn len(&self) -> usize;
+
+    /// Returns `true` when the dataset contains no samples.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 /// Streaming (iterable-style) dataset for sources without random access,
 /// such as network streams, stdin, or sharded files read sequentially.
 ///

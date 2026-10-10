@@ -76,7 +76,11 @@ pub mod sampler;
 // ── Top-level re-exports ──────────────────────────────────────────────────────
 
 pub use collator::{Collator, VecCollator};
+#[cfg(feature = "async")]
+pub use dataset::AsyncDataset;
 pub use dataset::{Dataset, IterableDataset};
 pub use error::{Error, Result};
+#[cfg(feature = "async")]
+pub use loader::{AsyncDataLoader, AsyncDataLoaderBuilder, AsyncDataLoaderIter};
 pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter};
 pub use sampler::{BatchSampler, DistributedSampler, RandomSampler, Sampler, SequentialSampler};
