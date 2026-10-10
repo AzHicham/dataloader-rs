@@ -37,6 +37,10 @@ impl<S: Sampler> Sampler for DistributedSampler<S> {
             .step_by(self.world_size)
             .collect()
     }
+
+    fn len(&self, dataset_len: usize) -> usize {
+        self.inner.len(dataset_len).div_ceil(self.world_size)
+    }
 }
 
 #[cfg(test)]
@@ -67,6 +71,16 @@ mod tests {
             .collect();
         assert!(lengths.windows(2).all(|w| w[0] == w[1]));
         assert_eq!(lengths[0], 3);
+    }
+
+    #[test]
+    fn distributed_len_matches_indices() {
+        for (n, world_size) in [(10, 3), (10, 4), (8, 4), (1, 4), (0, 2)] {
+            for rank in 0..world_size {
+                let mut ds = DistributedSampler::new(SequentialSampler, rank, world_size);
+                assert_eq!(ds.len(n), ds.indices(n).len(), "n={n} world={world_size}");
+            }
+        }
     }
 
     #[test]
