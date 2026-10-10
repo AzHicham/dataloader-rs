@@ -106,6 +106,7 @@ impl AsyncDataset for S3Images {
 let mut loader = AsyncDataLoader::builder(S3Images { client, keys })
     .batch_size(64)
     .concurrency(4)       // batches in flight, each with all samples concurrent
+    .max_concurrency(128) // optional: at most 128 samples in flight overall
     .collate_threads(2)   // CPU collation off the executor
     .build();
 
@@ -113,10 +114,14 @@ let mut loader = AsyncDataLoader::builder(S3Images { client, keys })
 let mut batches = std::pin::pin!(loader.stream());
 while let Some(batch) = batches.next().await { /* ... */ }
 
-// Or from synchronous code: a blocking iterator driven on a background thread
-// (only for futures that do not need a specific runtime).
+// Or from synchronous code: a blocking iterator driven on a background thread.
 for batch in loader.iter() { /* ... */ }
 ```
+
+`iter()` drives the stream with `futures::executor`, which cannot run futures
+that need tokio (reqwest, the AWS SDK, `tokio::time`). Enable the `tokio`
+feature to drive it on a tokio runtime instead: one the loader creates and
+keeps for its lifetime, or yours via `.tokio_handle(handle)`.
 
 ---
 
@@ -353,6 +358,7 @@ uv run python bench/bench_sampler.py       --warmup 2 --repeats 10
 | `ndarray` | ❌ | `DefaultCollator` for `ndarray::Array` types |
 | `torch-rs` | ❌ | `TorchPinnedCollator` for `tch::Tensor` + `pin_memory` |
 | `async` | ❌ | `AsyncDataset` + `AsyncDataLoader` (runtime-agnostic, adds `futures`) |
+| `tokio` | ❌ | Implies `async`; `AsyncDataLoader::iter` runs on a tokio runtime |
 
 ---
 

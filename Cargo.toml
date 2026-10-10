@@ -15,6 +15,7 @@ ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
 python = ["dep:pyo3"]
 async = ["dep:futures"]
+tokio = ["async", "dep:tokio"]
 
 
 [profile.release]
@@ -64,6 +65,12 @@ optional         = true
 version          = "0.3"
 default-features = false
 features         = ["std", "executor", "async-await"]
+optional         = true
+
+[dependencies.tokio]
+version          = "1"
+default-features = false
+features         = ["rt-multi-thread"]
 optional         = true
 
 [dependencies.pyo3]

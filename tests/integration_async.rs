@@ -291,3 +291,123 @@ fn collate_runs_on_collate_pool() {
         "{names:?}"
     );
 }
+
+// ── max_concurrency ───────────────────────────────────────────────────────────
+
+#[test]
+fn max_concurrency_caps_samples_in_flight_across_batches() {
+    let mut loader = AsyncDataLoader::builder(LatencyDs::new(30, Duration::from_millis(10)))
+        .batch_size(8)
+        .concurrency(4)
+        .max_concurrency(5)
+        .build();
+    let batches: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
+
+    // Batches are regrouped in order, including the shorter last one.
+    let expected: Vec<Vec<usize>> = (0..30)
+        .collect::<Vec<_>>()
+        .chunks(8)
+        .map(<[_]>::to_vec)
+        .collect();
+    assert_eq!(batches, expected);
+    let peak = loader.dataset().peak.load(Ordering::SeqCst);
+    assert_eq!(peak, 5, "the limit is reached but never exceeded");
+}
+
+#[test]
+fn max_concurrency_with_drop_last_and_shuffle() {
+    let mut loader = AsyncDataLoader::builder(LatencyDs::new(30, Duration::from_millis(1)))
+        .batch_size(8)
+        .drop_last(true)
+        .sampler(RandomSampler::new(9))
+        .max_concurrency(3)
+        .build();
+    let batches: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(batches.len(), 3);
+    assert!(batches.iter().all(|b| b.len() == 8));
+    let distinct: HashSet<usize> = batches.into_iter().flatten().collect();
+    assert_eq!(distinct.len(), 24);
+}
+
+#[test]
+fn max_concurrency_error_fails_its_batch_only() {
+    let mut loader = AsyncDataLoader::builder(InstantDs {
+        fail_at: Some(5),
+        ..InstantDs::new(12)
+    })
+    .batch_size(4)
+    .max_concurrency(2)
+    .build();
+    let results: Vec<_> = loader.iter().collect();
+    assert_eq!(results.len(), 3);
+    assert!(results[0].is_ok() && results[1].is_err() && results[2].is_ok());
+}
+
+#[test]
+fn max_concurrency_works_through_stream() {
+    let mut loader = AsyncDataLoader::builder(InstantDs::new(10))
+        .batch_size(3)
+        .max_concurrency(2)
+        .build();
+    let batches: Vec<Vec<usize>> =
+        futures::executor::block_on(loader.stream().map(|b| b.unwrap()).collect::<Vec<_>>());
+    assert_eq!(
+        batches,
+        vec![vec![0, 1, 2], vec![3, 4, 5], vec![6, 7, 8], vec![9]]
+    );
+}
+
+// ── tokio feature: sync iter() over tokio-based datasets ──────────────────────
+
+#[cfg(feature = "tokio")]
+#[test]
+fn iter_drives_tokio_futures_on_owned_runtime() {
+    let mut loader = AsyncDataLoader::builder(TokioDs)
+        .batch_size(8)
+        .concurrency(4)
+        .build();
+    // Several epochs on the same runtime.
+    for _ in 0..2 {
+        let start = Instant::now();
+        let out: Vec<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
+        assert_eq!(out, (0..32).map(|i| i * 2).collect::<Vec<_>>());
+        assert!(start.elapsed() < Duration::from_millis(400));
+    }
+}
+
+#[cfg(feature = "tokio")]
+#[test]
+fn iter_uses_supplied_tokio_handle() {
+    struct WhichRuntime;
+    impl AsyncDataset for WhichRuntime {
+        type Item = String;
+        async fn get(&self, _index: usize) -> Result<String> {
+            let id = tokio::runtime::Handle::current().id();
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            Ok(id.to_string())
+        }
+        fn len(&self) -> usize {
+            4
+        }
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut loader = AsyncDataLoader::builder(WhichRuntime)
+        .batch_size(2)
+        .tokio_handle(runtime.handle().clone())
+        .build();
+    let ids: HashSet<String> = loader.iter().flat_map(|b| b.unwrap()).collect();
+    assert_eq!(ids, HashSet::from([runtime.handle().id().to_string()]));
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn loader_can_be_built_and_dropped_inside_tokio() {
+    // Dropping the loader's own runtime from async code must not panic.
+    let loader = AsyncDataLoader::builder(TokioDs).batch_size(4).build();
+    drop(loader);
+}
