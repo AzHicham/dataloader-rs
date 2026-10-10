@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 
 use crate::python::collator::PyCollator;
 use crate::python::dataset::PyDataset;
+use crate::python::into_py_err;
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
 use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
 
@@ -54,8 +55,7 @@ impl PyDataloader {
 
         let sampler = match sampler {
             Some(py_sampler) => {
-                validate_python_sampler(&py_sampler)
-                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                validate_python_sampler(&py_sampler).map_err(into_py_err)?;
                 SharedPySampler::new(PySampler::Python(py_sampler))
             }
             None if shuffle => {

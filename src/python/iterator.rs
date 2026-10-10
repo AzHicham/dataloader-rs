@@ -1,10 +1,10 @@
-use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::python::collator::{PyBatch, PyCollator};
 use crate::python::dataloader::PyDataloader;
 use crate::python::dataset::PyDataset;
+use crate::python::into_py_err;
 
 type CorePyDataloaderIter = crate::loader::DataLoaderIter<PyDataset, PyCollator>;
 
@@ -55,9 +55,7 @@ impl PyDataloaderIter {
                     chunk.iter().map(|&i| getitem.call1(py, (i,))).collect();
                 let items = items?;
 
-                let batch = collator
-                    .collate_with_py(py, items)
-                    .map_err(|e: crate::error::Error| PyRuntimeError::new_err(e.to_string()))?;
+                let batch = collator.collate_with_py(py, items).map_err(into_py_err)?;
 
                 let out = match batch {
                     PyBatch::Ready(obj) => obj,
@@ -83,7 +81,7 @@ impl PyDataloaderIter {
                     }
                     Some(Err(e)) => {
                         py.detach(|| drop(inner));
-                        Err(PyRuntimeError::new_err(e.to_string()))
+                        Err(into_py_err(e))
                     }
                     None => {
                         py.detach(|| drop(inner));
