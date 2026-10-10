@@ -7,6 +7,8 @@ multi-epoch reuse, and return types.
 
 import math
 
+import pytest
+
 from dataloader_rs import PyDataloader as DataLoader
 from tests.py_dataloader_test_utils import ListDataset, all_items
 
@@ -145,3 +147,42 @@ def test_shuffle_covers_all_items():
     assert sorted(epoch2) == list(range(n)), "epoch 2: all items must be present"
     # With n=20 and entropy seed, two identical shuffles have probability 1/20! ≈ 0.
     assert epoch1 != epoch2, "shuffled epochs must differ"
+
+
+# ── Seeded shuffle ────────────────────────────────────────────────────────────
+
+
+def _epochs(loader, n):
+    return [list(loader) for _ in range(n)]
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_seeded_shuffle_is_reproducible(num_workers):
+    """Two loaders with the same seed produce the same epoch orders."""
+
+    def make():
+        return DataLoader(
+            ListDataset(range(50)), batch_size=4, shuffle=True, seed=123, num_workers=num_workers
+        )
+
+    first, second = _epochs(make(), 3), _epochs(make(), 3)
+    assert first == second
+    assert first[0] != first[1], "epochs must still differ from each other"
+    for epoch in first:
+        assert sorted(x for batch in epoch for x in batch) == list(range(50))
+
+
+def test_different_seeds_give_different_orders():
+    a = DataLoader(ListDataset(range(50)), shuffle=True, seed=1)
+    b = DataLoader(ListDataset(range(50)), shuffle=True, seed=2)
+    assert list(a) != list(b)
+
+
+def test_seed_without_shuffle_is_rejected():
+    with pytest.raises(ValueError, match="seed only applies when shuffle=True"):
+        DataLoader(ListDataset(range(4)), seed=0)
+
+
+def test_negative_seed_is_rejected():
+    with pytest.raises(OverflowError):
+        DataLoader(ListDataset(range(4)), shuffle=True, seed=-1)
