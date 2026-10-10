@@ -22,4 +22,13 @@ pub trait Sampler: Send + 'static {
     fn len(&self, dataset_len: usize) -> usize {
         dataset_len
     }
+
+    /// Select the epoch whose order [`indices`](Self::indices) returns next.
+    ///
+    /// Stateless samplers ignore it (the default). Randomized samplers that
+    /// support it make their order a pure function of `(seed, epoch)`, which
+    /// is what keeps distributed ranks in agreement.
+    fn set_epoch(&mut self, epoch: u64) {
+        let _ = epoch;
+    }
 }

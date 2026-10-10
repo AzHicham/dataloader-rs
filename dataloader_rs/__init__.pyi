@@ -11,10 +11,11 @@ PyDataloaderIter Iterator returned by ``PyDataloader.__iter__``.  Supports
                  ``len()`` (number of batches remaining in the current epoch).
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any
 
 __all__ = [
+    "DistributedSampler",
     "PyDataset",
     "PyDataloader",
     "PyDataloaderIter",
@@ -119,4 +120,68 @@ class PyDataloader:
 
     def __len__(self) -> int:
         """Return the number of batches per epoch (respecting *drop_last*)."""
+        ...
+
+class DistributedSampler:
+    """Shard a dataset across distributed ranks (backed by the Rust sampler).
+
+    Same constructor as ``torch.utils.data.DistributedSampler``. Every rank
+    draws the same order (shuffled from ``seed + epoch`` when *shuffle*), then
+    takes every ``num_replicas``-th index starting at *rank*. Without
+    *drop_last* the order is padded by wrapping so each rank gets
+    ``ceil(len(dataset) / num_replicas)`` indices; with it, the tail is dropped.
+
+    Pass it as ``sampler=`` to :class:`PyDataloader` and call
+    :meth:`set_epoch` before each epoch; otherwise every epoch reuses the same
+    order. All ranks must use the same *seed*.
+
+    Parameters
+    ----------
+    dataset:
+        Any object with ``__len__``.
+    num_replicas, rank:
+        World size and this process's rank. Read from ``torch.distributed``
+        when omitted and a process group is initialized; required otherwise.
+    shuffle:
+        Shuffle the order each epoch. Default: ``True``.
+    seed:
+        Shuffle seed, identical on all ranks. Default: ``0``.
+    drop_last:
+        Drop the tail instead of padding. Default: ``False``.
+
+    Example
+    -------
+    >>> sampler = DistributedSampler(dataset, num_replicas=world, rank=rank)
+    >>> loader = PyDataloader(dataset, batch_size=32, sampler=sampler)
+    >>> for epoch in range(10):
+    ...     sampler.set_epoch(epoch)
+    ...     for batch in loader:
+    ...         train(batch)
+    """
+
+    def __init__(
+        self,
+        dataset: Any,
+        num_replicas: int | None = None,
+        rank: int | None = None,
+        shuffle: bool = True,
+        seed: int = 0,
+        drop_last: bool = False,
+    ) -> None: ...
+    def set_epoch(self, epoch: int) -> None:
+        """Select the epoch whose order the next iteration uses."""
+        ...
+
+    @property
+    def num_replicas(self) -> int: ...
+    @property
+    def rank(self) -> int: ...
+    @property
+    def epoch(self) -> int: ...
+    def __len__(self) -> int:
+        """Number of indices this rank receives per epoch."""
+        ...
+
+    def __iter__(self) -> Iterator[int]:
+        """This rank's indices for the current epoch."""
         ...

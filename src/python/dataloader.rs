@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::loader as core_loader;
 use crate::sampler::{RandomSampler, SequentialSampler};
 use pyo3::exceptions::PyValueError;
@@ -7,7 +9,9 @@ use pyo3::prelude::*;
 use crate::python::collator::PyCollator;
 use crate::python::dataset::PyDataset;
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
-use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
+use crate::python::sampler::{
+    PyDistributedSampler, PySampler, SharedPySampler, validate_python_sampler,
+};
 
 type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollator>;
 
@@ -54,9 +58,22 @@ impl PyDataloader {
 
         let sampler = match sampler {
             Some(py_sampler) => {
-                validate_python_sampler(&py_sampler)
-                    .map_err(|e| PyValueError::new_err(e.to_string()))?;
-                SharedPySampler::new(PySampler::Python(py_sampler))
+                // Our own DistributedSampler runs natively: no Python call
+                // per epoch, and set_epoch on it reaches the loader.
+                let native = Python::attach(|py| {
+                    py_sampler
+                        .bind(py)
+                        .cast::<PyDistributedSampler>()
+                        .ok()
+                        .map(|s| Arc::clone(&s.get().inner))
+                });
+                if let Some(shared) = native {
+                    SharedPySampler::new(PySampler::Distributed(shared))
+                } else {
+                    validate_python_sampler(&py_sampler)
+                        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+                    SharedPySampler::new(PySampler::Python(py_sampler))
+                }
             }
             None if shuffle => {
                 SharedPySampler::new(PySampler::Random(RandomSampler::from_entropy()))

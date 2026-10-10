@@ -7,8 +7,13 @@ use crate::sampler::Sampler;
 /// workload. The inside-out variant builds and shuffles in a single forward
 /// pass — no pre-fill, and random accesses stay within the already-written
 /// prefix `[0..i]` for better cache behaviour.
+///
+/// Successive epochs continue the same random stream, so each differs from
+/// the last. [`Sampler::set_epoch`] instead reseeds from `(seed, epoch)`,
+/// making that epoch's order reproducible on its own.
 #[derive(Debug)]
 pub struct RandomSampler {
+    seed: u64,
     rng: fastrand::Rng,
 }
 
@@ -16,19 +21,22 @@ impl RandomSampler {
     /// Deterministic seed. Use this for reproducible experiments.
     pub fn new(seed: u64) -> Self {
         Self {
+            seed,
             rng: fastrand::Rng::with_seed(seed),
         }
     }
 
     /// Seed from OS entropy. Use this when reproducibility is not required.
     pub fn from_entropy() -> Self {
-        Self {
-            rng: fastrand::Rng::new(),
-        }
+        Self::new(fastrand::u64(..))
     }
 }
 
 impl Sampler for RandomSampler {
+    fn set_epoch(&mut self, epoch: u64) {
+        self.rng = fastrand::Rng::with_seed(self.seed.wrapping_add(epoch));
+    }
+
     fn indices(&mut self, dataset_len: usize) -> Vec<usize> {
         let mut out = Vec::with_capacity(dataset_len);
         for i in 0..dataset_len {
@@ -83,6 +91,21 @@ mod tests {
         let epoch1 = s.indices(30);
         let epoch2 = s.indices(30);
         assert_ne!(epoch1, epoch2);
+    }
+
+    #[test]
+    fn set_epoch_makes_order_a_function_of_seed_and_epoch() {
+        let mut a = RandomSampler::new(5);
+        let mut b = RandomSampler::new(5);
+        b.indices(30); // advance b's stream; set_epoch must override it
+        a.set_epoch(3);
+        b.set_epoch(3);
+        assert_eq!(a.indices(30), b.indices(30));
+
+        a.set_epoch(3);
+        let epoch3 = a.indices(30);
+        a.set_epoch(4);
+        assert_ne!(epoch3, a.indices(30));
     }
 
     #[test]
