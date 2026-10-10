@@ -1,11 +1,14 @@
+use std::collections::VecDeque;
+
 use crate::loader as core_loader;
 use crate::sampler::{RandomSampler, SequentialSampler};
 use pyo3::exceptions::PyValueError;
+use pyo3::intern;
 use pyo3::prelude::*;
 
 use crate::python::collator::PyCollator;
 use crate::python::dataset::{Fetcher, PyDataset};
-use crate::python::iterator::{PyDataloaderIter, PyIterInner};
+use crate::python::iterator::{PyDataloaderIter, PyIterInner, preserving_exception};
 use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
 
 type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollator>;
@@ -13,6 +16,11 @@ type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollat
 #[pyclass(name = "PyDataloader", module = "dataloader_rs", unsendable)]
 pub struct PyDataloader {
     inner: CorePyLoader,
+    /// Event loop thread for async datasets, created on first use and kept
+    /// for the loader's lifetime (see `dataloader_rs._async`).
+    async_loop: Option<Py<PyAny>>,
+    num_workers: usize,
+    prefetch_depth: usize,
 }
 
 #[pymethods]
@@ -74,18 +82,58 @@ impl PyDataloader {
             .collator(PyCollator::new(collate_fn))
             .build();
 
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            async_loop: None,
+            num_workers,
+            prefetch_depth,
+        })
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
         let mut loader = slf.borrow_mut(py);
+
+        let fetcher = Fetcher::new(loader.inner.dataset(), py)?;
+        if fetcher.is_async(py)? {
+            // Async dataset: batches are awaited concurrently on one event
+            // loop thread; worker threads are not used.
+            let async_mod = py.import(intern!(py, "dataloader_rs._async"))?;
+            let runner = match &loader.async_loop {
+                Some(runner) => runner.clone_ref(py),
+                None => {
+                    let runner = async_mod
+                        .getattr(intern!(py, "LoopThread"))?
+                        .call0()?
+                        .unbind();
+                    loader.async_loop = Some(runner.clone_ref(py));
+                    runner
+                }
+            };
+            let chunks = loader.inner.epoch_chunks();
+            let window = loader.num_workers.max(1) + loader.prefetch_depth;
+            let collator = loader.inner.collator().clone();
+            drop(loader);
+            return Ok(PyDataloaderIter {
+                _owner: slf,
+                inner: PyIterInner::Async {
+                    remaining: chunks.len(),
+                    chunks: chunks.into_iter(),
+                    pending: VecDeque::with_capacity(window),
+                    window,
+                    runner,
+                    fetch_batch: async_mod.getattr(intern!(py, "fetch_batch"))?.unbind(),
+                    batched: fetcher.is_batched(),
+                    method: fetcher.method().clone_ref(py),
+                    collator,
+                },
+            });
+        }
 
         if !loader.inner.has_workers() {
             // Direct path (num_workers=0): call Python directly inside __next__
             // using the py token already held — zero extra GIL acquisitions.
             let chunks = loader.inner.epoch_chunks();
             let remaining = chunks.len();
-            let fetcher = Fetcher::new(loader.inner.dataset(), py)?;
             let collator = loader.inner.collator().clone();
             drop(loader);
             return Ok(PyDataloaderIter {
@@ -111,5 +159,17 @@ impl PyDataloader {
 
     fn __len__(&self) -> usize {
         self.inner.batch_len()
+    }
+}
+
+impl Drop for PyDataloader {
+    fn drop(&mut self) {
+        if let Some(runner) = self.async_loop.take() {
+            Python::attach(|py| {
+                preserving_exception(py, || {
+                    let _ = runner.call_method0(py, intern!(py, "close"));
+                });
+            });
+        }
     }
 }

@@ -54,6 +54,40 @@ class ArrayDataset(PyDataset):
         return list(self.array[indices])
 ```
 
+### Async datasets
+
+For data behind network calls (object stores, HTTP APIs, databases), make
+`__getitem__` or `__getitems__` an `async def`. Batches are then awaited
+concurrently on one event loop thread owned by the loader: every sample of a
+batch at once, and up to `max(num_workers, 1) + prefetch_depth` batches ahead,
+without a thread per request. The loop persists across epochs, so clients that
+bind to a loop on first use (e.g. an `aiohttp.ClientSession` created lazily)
+keep working.
+
+```python
+import aiohttp
+
+class RemoteImages(PyDataset):
+    def __init__(self, urls: list[str]) -> None:
+        super().__init__()
+        self.urls = urls
+        self.session = None
+
+    def __len__(self) -> int:
+        return len(self.urls)
+
+    async def __getitem__(self, index: int) -> bytes:
+        if self.session is None:          # created on the loader's event loop
+            self.session = aiohttp.ClientSession()
+        async with self.session.get(self.urls[index]) as response:
+            return await response.read()
+
+loader = PyDataloader(RemoteImages(urls), batch_size=64, prefetch_depth=4)
+```
+
+Exceptions keep their type, and a failed batch does not end the epoch. To cap
+the number of concurrent requests, use an `asyncio.Semaphore` in the dataset.
+
 ### 2 — Iterate
 
 ```python

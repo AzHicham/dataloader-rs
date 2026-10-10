@@ -52,6 +52,10 @@ class PyDataset:
         """
         ...
 
+    # ``__getitem__`` and ``__getitems__`` may also be ``async def``: batches are
+    # then awaited concurrently on an event loop thread owned by the loader
+    # (up to ``max(num_workers, 1) + prefetch_depth`` batches in flight).
+    #
     # Optional: define ``__getitems__(self, indices: list[int]) -> Sequence[Any]``
     # to fetch a whole batch in one call. When present, the loader calls it once
     # per batch instead of ``__getitem__`` per index; it must return one sample

@@ -1,4 +1,7 @@
+use std::collections::VecDeque;
+
 use pyo3::exceptions::PyRuntimeError;
+use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -21,6 +24,23 @@ pub(crate) enum PyIterInner {
     },
     /// Parallel (num_workers>0): threaded prefetch with crossbeam channel.
     Threaded(Option<CorePyDataloaderIter>),
+    /// Async dataset: up to `window` batches awaited concurrently on the
+    /// loader's event loop thread, returned in sampler order.
+    Async {
+        chunks: std::vec::IntoIter<Vec<usize>>,
+        remaining: usize,
+        /// `concurrent.futures.Future`s of submitted batches, in order.
+        pending: VecDeque<Py<PyAny>>,
+        window: usize,
+        /// `dataloader_rs._async.LoopThread`.
+        runner: Py<PyAny>,
+        /// `dataloader_rs._async.fetch_batch`.
+        fetch_batch: Py<PyAny>,
+        /// Bound async `__getitems__` (batched) or `__getitem__`.
+        method: Py<PyAny>,
+        batched: bool,
+        collator: PyCollator,
+    },
 }
 
 #[pyclass(name = "PyDataloaderIter", module = "dataloader_rs", unsendable)]
@@ -63,6 +83,52 @@ impl PyDataloaderIter {
                 Ok(Some(out))
             }
 
+            PyIterInner::Async {
+                chunks,
+                remaining,
+                pending,
+                window,
+                runner,
+                fetch_batch,
+                method,
+                batched,
+                collator,
+            } => {
+                let submit = |py: Python<'_>, indices: Vec<usize>| -> PyResult<Py<PyAny>> {
+                    let coro = fetch_batch.call1(py, (&*method, indices, *batched))?;
+                    runner.call_method1(py, intern!(py, "submit"), (coro,))
+                };
+                // Keep the window full: submit batches before waiting.
+                while pending.len() < *window
+                    && let Some(indices) = chunks.next()
+                {
+                    pending.push_back(submit(py, indices)?);
+                }
+                // The batch being awaited counts towards the window; the next
+                // call refills it.
+                let Some(future) = pending.pop_front() else {
+                    return Ok(None);
+                };
+                *remaining -= 1;
+
+                // `Future.result()` waits on a lock, releasing the GIL, and
+                // re-raises the dataset's exception with its own type.
+                let samples = future.call_method0(py, intern!(py, "result"))?;
+                let items = samples
+                    .bind(py)
+                    .try_iter()?
+                    .map(|sample| sample.map(Bound::unbind))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let batch = collator
+                    .collate_with_py(py, items)
+                    .map_err(|e: crate::error::Error| PyRuntimeError::new_err(e.to_string()))?;
+                let out = match batch {
+                    PyBatch::Ready(obj) => obj,
+                    PyBatch::Items(items) => PyList::new(py, items)?.unbind().into_any(),
+                };
+                Ok(Some(out))
+            }
+
             PyIterInner::Threaded(inner_opt) => {
                 let Some(mut inner) = inner_opt.take() else {
                     return Ok(None);
@@ -93,7 +159,9 @@ impl PyDataloaderIter {
 
     fn __len__(&self) -> usize {
         match &self.inner {
-            PyIterInner::Direct { remaining, .. } => *remaining,
+            PyIterInner::Direct { remaining, .. } | PyIterInner::Async { remaining, .. } => {
+                *remaining
+            }
             PyIterInner::Threaded(inner) => inner.as_ref().map_or(0, |it| it.len()),
         }
     }
@@ -104,10 +172,35 @@ impl Drop for PyDataloaderIter {
     /// worker blocked in `Python::attach` (inside `__getitem__` or
     /// `collate_fn`) can only finish once this thread lets go of the GIL.
     fn drop(&mut self) {
-        if let PyIterInner::Threaded(inner) = &mut self.inner
-            && let Some(inner) = inner.take()
-        {
-            Python::attach(|py| py.detach(|| drop(inner)));
+        match &mut self.inner {
+            PyIterInner::Threaded(inner) => {
+                if let Some(inner) = inner.take() {
+                    Python::attach(|py| py.detach(|| drop(inner)));
+                }
+            }
+            // Batches fetched ahead are no longer wanted.
+            PyIterInner::Async { pending, .. } => Python::attach(|py| {
+                preserving_exception(py, || {
+                    for future in pending.drain(..) {
+                        let _ = future.call_method0(py, intern!(py, "cancel"));
+                    }
+                });
+            }),
+            PyIterInner::Direct { .. } => {}
         }
+    }
+}
+
+/// Run `f`, which calls into Python, from a destructor.
+///
+/// A destructor can run while an exception is propagating (e.g. the
+/// temporary in `next(iter(loader))` is freed as `next` raises). Calling
+/// Python with that exception still set is invalid and turns it into a
+/// `SystemError`, so set it aside and restore it afterwards.
+pub(crate) fn preserving_exception(py: Python<'_>, f: impl FnOnce()) {
+    let pending = PyErr::take(py);
+    f();
+    if let Some(err) = pending {
+        err.restore(py);
     }
 }
