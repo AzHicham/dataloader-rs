@@ -35,6 +35,16 @@ impl<S: Sampler> BatchSampler<S> {
         self.drop_last = drop_last;
     }
 
+    /// Number of batches in one epoch, without advancing the sampler.
+    pub fn len(&self, dataset_len: usize) -> usize {
+        let n = self.sampler.len(dataset_len);
+        if self.drop_last {
+            n / self.batch_size
+        } else {
+            n.div_ceil(self.batch_size)
+        }
+    }
+
     /// Return one epoch of grouped batch indices.
     pub fn batch_indices(&mut self, dataset_len: usize) -> Vec<Vec<usize>> {
         let indices = self.sampler.indices(dataset_len);
