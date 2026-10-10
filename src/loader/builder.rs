@@ -46,7 +46,9 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         self
     }
 
-    /// Maximum number of batches to keep prefetched. Default: `1`.
+    /// Number of batches workers may run ahead of the consumer. At most
+    /// `num_workers + prefetch_depth` batches are in flight or buffered.
+    /// Default: `1`.
     pub fn prefetch_depth(mut self, n: usize) -> Self {
         assert!(n > 0, "prefetch_depth must be > 0");
         self.prefetch_depth = n;
@@ -59,22 +61,23 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         self
     }
 
-    /// Number of independent worker threads for inter-batch concurrency.
+    /// Number of batches processed concurrently — PyTorch's `num_workers`.
     ///
-    /// Each worker pulls full batches from a shared work queue and processes
-    /// them independently — mirroring PyTorch's `num_workers` semantics.
-    /// `0` (default) processes batches directly in `Iterator::next` with no
-    /// spawned threads.
+    /// Batches run as tasks on the loader's thread pool, which has
+    /// `max(num_workers, intra_workers)` threads. `0` (default) processes
+    /// batches directly in `Iterator::next` with no spawned threads.
     pub fn num_workers(mut self, n: usize) -> Self {
         self.inter_workers = n;
         self
     }
 
-    /// Number of rayon threads for intra-batch item-level parallelism.
+    /// Fetch the items of each batch in parallel, with at least `n` threads.
     ///
-    /// When `> 0`, each worker fetches items within its batch in parallel
-    /// using a shared rayon thread pool.  Useful for CPU-bound Rust datasets.
-    /// `0` (default) fetches items sequentially via [`Dataset::get_batch`].
+    /// When `> 0`, items within a batch are fetched in parallel on the same
+    /// pool that runs batches (sized `max(num_workers, intra_workers)`), so
+    /// batch- and item-level work share threads instead of oversubscribing
+    /// the CPU. Useful for CPU-bound Rust datasets. `0` (default) fetches
+    /// items sequentially via [`Dataset::get_batch`].
     pub fn intra_workers(mut self, n: usize) -> Self {
         self.intra_workers = n;
         self
@@ -136,15 +139,17 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         S: Sampler,
         C: Collator<D::Item>,
     {
-        let pool = if self.intra_workers > 0 {
-            let tp = rayon::ThreadPoolBuilder::new()
-                .num_threads(self.intra_workers)
+        // One pool for batch-level and item-level parallelism, so the two
+        // never oversubscribe the CPU and idle threads steal either kind.
+        let threads = self.inter_workers.max(self.intra_workers);
+        let pool = (threads > 0).then(|| {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .thread_name(|i| format!("dataloader-{i}"))
                 .build()
                 .expect("failed to build rayon thread pool");
-            Some(Arc::new(tp))
-        } else {
-            None
-        };
+            Arc::new(pool)
+        });
 
         DataLoader {
             dataset: Arc::new(self.dataset),
@@ -152,6 +157,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             collator: Arc::new(self.collator),
             prefetch_depth: self.prefetch_depth,
             inter_workers: self.inter_workers,
+            parallel_items: self.intra_workers > 0,
             pool,
         }
     }
