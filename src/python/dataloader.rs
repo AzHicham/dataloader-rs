@@ -19,6 +19,8 @@ pub struct PyDataloader {
     /// Event loop thread for async datasets, created on first use and kept
     /// for the loader's lifetime (see `dataloader_rs._async`).
     async_loop: Option<Py<PyAny>>,
+    /// `asyncio.Semaphore(max_concurrency)` shared by all epochs, if set.
+    async_limit: Option<Py<PyAny>>,
     num_workers: usize,
     prefetch_depth: usize,
 }
@@ -34,10 +36,12 @@ impl PyDataloader {
         sampler=None,
         num_workers=0,
         collate_fn=None,
-        drop_last=false
+        drop_last=false,
+        max_concurrency=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
+        py: Python<'_>,
         dataset: PyDataset,
         batch_size: usize,
         prefetch_depth: usize,
@@ -46,6 +50,7 @@ impl PyDataloader {
         num_workers: usize,
         collate_fn: Option<Py<PyAny>>,
         drop_last: bool,
+        max_concurrency: Option<usize>,
     ) -> PyResult<Self> {
         if batch_size == 0 {
             return Err(PyValueError::new_err("batch_size must be > 0"));
@@ -58,6 +63,22 @@ impl PyDataloader {
                 "sampler and shuffle are mutually exclusive",
             ));
         }
+        let async_limit = match max_concurrency {
+            None => None,
+            Some(0) => return Err(PyValueError::new_err("max_concurrency must be > 0")),
+            Some(n) => {
+                if !Fetcher::new(&dataset, py)?.is_async(py)? {
+                    return Err(PyValueError::new_err(
+                        "max_concurrency requires an async def __getitem__ or __getitems__",
+                    ));
+                }
+                let semaphore = py
+                    .import(intern!(py, "asyncio"))?
+                    .getattr(intern!(py, "Semaphore"))?
+                    .call1((n,))?;
+                Some(semaphore.unbind())
+            }
+        };
 
         let sampler = match sampler {
             Some(py_sampler) => {
@@ -85,6 +106,7 @@ impl PyDataloader {
         Ok(Self {
             inner,
             async_loop: None,
+            async_limit,
             num_workers,
             prefetch_depth,
         })
@@ -112,10 +134,12 @@ impl PyDataloader {
             let chunks = loader.inner.epoch_chunks();
             let window = loader.num_workers.max(1) + loader.prefetch_depth;
             let collator = loader.inner.collator().clone();
+            let limit = loader.async_limit.as_ref().map(|l| l.clone_ref(py));
             drop(loader);
             return Ok(PyDataloaderIter {
                 _owner: slf,
                 inner: PyIterInner::Async {
+                    limit,
                     remaining: chunks.len(),
                     chunks: chunks.into_iter(),
                     pending: VecDeque::with_capacity(window),

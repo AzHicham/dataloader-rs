@@ -165,3 +165,59 @@ def test_sync_datasets_are_unaffected():
             return index
 
     assert list(DataLoader(SyncDs(), batch_size=2)) == [[0, 1], [2]]
+
+
+# ── max_concurrency ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("limit", [1, 3, 5])
+def test_max_concurrency_caps_getitem_calls_in_flight(limit):
+    ds = AsyncItemDs(40, latency=0.005)
+    loader = DataLoader(ds, batch_size=8, prefetch_depth=4, max_concurrency=limit)
+    assert [x for batch in loader for x in batch] == list(range(40))
+    assert ds.peak == limit, f"peak {ds.peak} with max_concurrency={limit}"
+
+
+def test_max_concurrency_counts_getitems_calls():
+    class CountingBatchDs(AsyncBatchDs):
+        def __init__(self, n):
+            super().__init__(n)
+            self.in_flight = 0
+            self.peak = 0
+
+        async def __getitems__(self, indices):
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+            await asyncio.sleep(0.005)
+            self.in_flight -= 1
+            return indices
+
+    ds = CountingBatchDs(40)
+    loader = DataLoader(ds, batch_size=4, prefetch_depth=8, max_concurrency=2)
+    assert [x for batch in loader for x in batch] == list(range(40))
+    assert ds.peak == 2
+
+
+def test_max_concurrency_is_shared_across_epochs():
+    ds = AsyncItemDs(16, latency=0.002)
+    loader = DataLoader(ds, batch_size=4, max_concurrency=2)
+    for _ in range(3):
+        assert len(list(loader)) == 4
+    assert ds.peak == 2
+
+
+def test_max_concurrency_requires_async_dataset():
+    class SyncDs(PyDataset):
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            return index
+
+    with pytest.raises(ValueError, match="requires an async def"):
+        DataLoader(SyncDs(), max_concurrency=4)
+
+
+def test_max_concurrency_must_be_positive():
+    with pytest.raises(ValueError, match="max_concurrency must be > 0"):
+        DataLoader(AsyncItemDs(2), max_concurrency=0)

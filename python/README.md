@@ -86,7 +86,12 @@ loader = PyDataloader(RemoteImages(urls), batch_size=64, prefetch_depth=4)
 ```
 
 Exceptions keep their type, and a failed batch does not end the epoch. To cap
-the number of concurrent requests, use an `asyncio.Semaphore` in the dataset.
+the number of concurrent requests, pass `max_concurrency=` (it counts
+`__getitem__` calls, or `__getitems__` calls for batched datasets):
+
+```python
+loader = PyDataloader(RemoteImages(urls), batch_size=64, prefetch_depth=4, max_concurrency=32)
+```
 
 ### 2 — Iterate
 

@@ -103,6 +103,10 @@ class PyDataloader:
     prefetch_depth:
         Maximum number of pre-computed batches kept in the internal buffer.
         Only meaningful when ``num_workers > 0``. Default: ``1``.
+    max_concurrency:
+        For async datasets only: maximum number of ``__getitem__`` (or
+        ``__getitems__``) calls awaited at once, across batches and epochs.
+        Default: ``None`` (every sample of the batches in flight at once).
 
     Example
     -------
@@ -122,6 +126,7 @@ class PyDataloader:
         num_workers: int = 0,
         collate_fn: Callable[[list[Any]], Any] | None = None,
         drop_last: bool = False,
+        max_concurrency: int | None = None,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""

@@ -36,6 +36,8 @@ pub(crate) enum PyIterInner {
         runner: Py<PyAny>,
         /// `dataloader_rs._async.fetch_batch`.
         fetch_batch: Py<PyAny>,
+        /// `asyncio.Semaphore` capping dataset calls in flight, if any.
+        limit: Option<Py<PyAny>>,
         /// Bound async `__getitems__` (batched) or `__getitem__`.
         method: Py<PyAny>,
         batched: bool,
@@ -90,12 +92,14 @@ impl PyDataloaderIter {
                 window,
                 runner,
                 fetch_batch,
+                limit,
                 method,
                 batched,
                 collator,
             } => {
                 let submit = |py: Python<'_>, indices: Vec<usize>| -> PyResult<Py<PyAny>> {
-                    let coro = fetch_batch.call1(py, (&*method, indices, *batched))?;
+                    let coro =
+                        fetch_batch.call1(py, (&*method, indices, *batched, limit.as_ref()))?;
                     runner.call_method1(py, intern!(py, "submit"), (coro,))
                 };
                 // Keep the window full: submit batches before waiting.

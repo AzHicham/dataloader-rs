@@ -30,13 +30,24 @@ class LoopThread:
             self.loop.call_soon_threadsafe(self.loop.stop)
 
 
-async def fetch_batch(fetch, indices, batched):
-    """Fetch one batch: one ``await fetch(indices)``, or every item concurrently."""
+async def _limited(limit, fetch, arg):
+    if limit is None:
+        return await fetch(arg)
+    async with limit:
+        return await fetch(arg)
+
+
+async def fetch_batch(fetch, indices, batched, limit=None):
+    """Fetch one batch: one ``await fetch(indices)``, or every item concurrently.
+
+    *limit* is an optional ``asyncio.Semaphore`` shared by all batches of a
+    loader, capping dataset calls in flight (``max_concurrency``).
+    """
     if batched:
-        samples = list(await fetch(indices))
+        samples = list(await _limited(limit, fetch, indices))
         if len(samples) != len(indices):
             raise ValueError(
                 f"__getitems__ returned {len(samples)} samples for {len(indices)} indices"
             )
         return samples
-    return list(await asyncio.gather(*(fetch(index) for index in indices)))
+    return list(await asyncio.gather(*(_limited(limit, fetch, index) for index in indices)))
