@@ -113,3 +113,25 @@ def test_error_then_next_epoch_works():
     # But the second batch (indices 4-7) should still succeed.
     second = next(it)
     assert second == [4, 5, 6, 7]
+
+
+# ── Dataset __len__ errors ────────────────────────────────────────────────────
+
+
+class _BadLenDs(ListDataset):
+    def __len__(self):
+        raise OSError("index file missing")
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_dataset_len_error_raises_from_iter(num_workers):
+    """A raising __len__ must raise its own exception, not a Rust panic."""
+    loader = DataLoader(_BadLenDs(range(4)), num_workers=num_workers)
+    with pytest.raises(OSError, match="index file missing"):
+        iter(loader)
+
+
+def test_dataset_len_error_raises_from_len():
+    loader = DataLoader(_BadLenDs(range(4)))
+    with pytest.raises(OSError, match="index file missing"):
+        len(loader)
