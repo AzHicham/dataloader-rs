@@ -217,3 +217,15 @@ def test_dataset_len_error_raises_from_len():
     loader = DataLoader(_BadLenDs(range(4)))
     with pytest.raises(OSError, match="index file missing"):
         len(loader)
+# ── A failed batch does not end the epoch ─────────────────────────────────────
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_iteration_continues_after_failed_batch(num_workers):
+    """After a batch raises, next() returns the remaining batches in order."""
+    loader = DataLoader(FailingDs(16, fail_index=5), batch_size=4, num_workers=num_workers)
+    it = iter(loader)
+    assert next(it) == [0, 1, 2, 3]
+    with pytest.raises(RuntimeError, match="boom at index 5"):
+        next(it)
+    assert list(it) == [[8, 9, 10, 11], [12, 13, 14, 15]]
