@@ -122,3 +122,12 @@ harness = false
 [[bench]]
 name    = "bench_sampler"
 harness = false
+
+[[bench]]
+name    = "bench_real_world"
+harness = false
+
+[[bench]]
+name              = "bench_real_world_async"
+harness           = false
+required-features = ["async"]

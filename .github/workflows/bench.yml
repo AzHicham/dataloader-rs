@@ -35,6 +35,8 @@ jobs:
           - bench_prefetch_depth
           - bench_inter_workers
           - bench_intra_workers
+          - bench_real_world
+          - bench_real_world_async
 
     steps:
       - uses: actions/checkout@v6.0.3
@@ -51,7 +53,7 @@ jobs:
         #   test <name> ... bench: <ns> ns/iter (+/- <dev>)
         # Criterion 0.3.4+ supports this format.
         run: |
-          cargo bench --bench ${{ matrix.bench }} \
+          cargo bench --features async --bench ${{ matrix.bench }} \
             -- --output-format bencher \
             | tee ${{ matrix.bench }}.txt
 

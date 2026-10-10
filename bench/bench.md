@@ -243,6 +243,93 @@ catches up at N=100k for shuffle. The gap is tiny relative to dataset fetch time
 
 ---
 
+## Real-world workloads
+
+The benchmarks above isolate loader overhead with synthetic datasets. These run
+the per-sample work real datasets do — reading files, augmenting images,
+waiting on the network, running Python code. The work is written once
+(`bench/real_world.py`) and used by both loaders, so only the loading differs:
+scheduling, parallelism, prefetching, collation, and moving samples to the
+consumer. Each case times whole epochs, iterator creation included, which is
+what a training loop pays.
+
+**Machine:** cloud container, 4 vCPU (Intel Xeon @ 2.10 GHz), Linux x86_64
+**Python:** CPython 3.13.16 (GIL), torch 2.11.0+cpu, numpy 2.5.3
+**Run:** `python bench/bench_real_world.py` — 1 warm-up + 5 timed epochs,
+median, `batch_size=32`, `collate_fn=np.stack` for array samples.
+
+| workload | per-sample work | items | workers |
+|---|---|---|---|
+| `local_files` | read a 128 KB file, normalise to float32 | 2 048 | 4 |
+| `image_augment` | random crop 224, flip, normalise a decoded 3×256×256 image | 1 024 | 4 |
+| `remote` | 10 ms network round trip (`time.sleep`; async: `asyncio.sleep`) | 512 | 16 |
+| `python_cpu` | pure-Python tokenisation (holds the GIL) | 2 048 | 4 |
+
+### Python — dataloader_rs vs torch.utils.data.DataLoader (items/s)
+
+| workload | ours `w=0` | ours | ours async | torch | torch persistent | best ours vs torch |
+|---|---:|---:|---:|---:|---:|---:|
+| `local_files` | 5 539 | 5 108 | — | 1 197 | 1 215 | **4.6×** |
+| `image_augment` | 3 772 | 5 473 | — | 1 245 | 912 | **4.4×** |
+| `remote` | 98 | 1 570 | **10 576** | 1 219 | 1 556 | **8.7×** (async) |
+| `python_cpu` | 19 150 | 15 954 | — | 20 139 | **31 899** | 0.6× |
+
+What the numbers say:
+
+- **Array samples (`local_files`, `image_augment`): 4–5× faster.** torch's
+  worker processes must serialise every sample (a 0.5 MB array here) back to
+  the main process; threads hand over a reference. For large samples that
+  transfer, not the work, dominates torch's epoch.
+- **Threads only help as much as the dataset releases the GIL.** Reading and
+  normalising one 128 KB file is short enough that the GIL-held parts dominate:
+  4 workers do not beat `w=0`. The heavier image transform scales 1.45× with
+  4 workers.
+- **Network-bound (`remote`): async wins by an order of magnitude.** With
+  blocking calls both loaders are capped at one request per worker
+  (~16 / 10 ms); `async def __getitem__` keeps 128 requests in flight
+  (`max_concurrency=128`) on one thread: 8.7× torch.
+- **Pure-Python CPU (`python_cpu`): torch wins.** Code that holds the GIL cannot
+  run in parallel on threads; torch's processes can (1.6× with persistent
+  workers). Use free-threaded Python (3.13t / 3.14t) for this case.
+
+### Rust (Criterion, `benches/bench_real_world*.rs`)
+
+`cargo bench --features async --bench bench_real_world --bench bench_real_world_async`
+
+**`local_files`** — read a 64 KB file + normalise to `Vec<f32>`, 1 024 items:
+
+| num_workers | default glibc malloc | malloc trimming disabled¹ |
+|---:|---:|---:|
+| 0 | 105 ms | 26 ms |
+| 2 | 13–20 ms | 12.9 ms |
+| 4 | 17–25 ms | **6.6 ms** (3.9×) |
+| 8 | 30–33 ms | 12.5 ms |
+
+¹ `GLIBC_TUNABLES=glibc.malloc.trim_threshold=4294967295:glibc.malloc.mmap_threshold=33554432`.
+With default settings, each 256 KB sample buffer allocated and freed on the
+main thread makes glibc return memory to the OS and fault it back in every
+batch, which inflates `num_workers=0` 4× (worker threads use separate arenas
+that churn less). This is an allocator effect, not the loader: datasets that
+produce large per-sample buffers should use mimalloc/jemalloc or these tunables.
+With it removed, scaling is near-linear up to the 4 cores; 8 workers
+oversubscribe this machine.
+
+**`remote_2ms`** — 2 ms network round trip per sample, 512 items:
+
+| mode | in flight | epoch | throughput |
+|---|---:|---:|---:|
+| thread pool | 4 | 274 ms | 1.9 K/s |
+| thread pool | 16 | 69 ms | 7.4 K/s |
+| thread pool | 64 | 18.3 ms | 28 K/s |
+| async (`max_concurrency`) | 16 | 103 ms | 5.0 K/s |
+| async (`max_concurrency`) | 64 | 26 ms | 19.7 K/s |
+| async (`max_concurrency`) | 256 | **6.7 ms** | **77 K/s** |
+
+Blocking I/O needs one thread per request in flight; async reaches 256 in
+flight on 2 runtime threads, 2.7× the 64-thread pool.
+
+---
+
 ## Summary
 
 
