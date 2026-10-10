@@ -1,3 +1,4 @@
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -15,6 +16,10 @@ pub(super) struct WorkItem {
     pub(super) batch_idx: usize,
     pub(super) indices: Vec<usize>,
 }
+
+/// Message sent from a worker to the consumer: the batch position plus either
+/// the batch result or, if the dataset/collator panicked, the panic payload.
+pub(super) type WorkerMsg<B> = (usize, std::thread::Result<Result<B>>);
 
 /// Fetch items for one batch (optionally in parallel) then collate them.
 pub(super) fn process_batch<D, C>(
@@ -40,11 +45,14 @@ where
 }
 
 /// Per-worker loop: drain the work queue, process each batch, send results.
+///
+/// A panic in the dataset or collator is caught and forwarded to the
+/// consumer, which re-raises it; the worker then stops.
 pub(super) fn worker_loop<D, C>(
     dataset: &D,
     collator: &C,
     work_rx: Receiver<WorkItem>,
-    result_tx: Sender<(usize, Result<C::Batch>)>,
+    result_tx: Sender<WorkerMsg<C::Batch>>,
     pool: Option<Arc<rayon::ThreadPool>>,
     cancel: Arc<AtomicBool>,
 ) where
@@ -56,8 +64,11 @@ pub(super) fn worker_loop<D, C>(
         if cancel.load(Ordering::Acquire) {
             break;
         }
-        let result = process_batch(dataset, &item.indices, collator, pool.as_deref());
-        if result_tx.send((item.batch_idx, result)).is_err() {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            process_batch(dataset, &item.indices, collator, pool.as_deref())
+        }));
+        let panicked = result.is_err();
+        if result_tx.send((item.batch_idx, result)).is_err() || panicked {
             break;
         }
     }
