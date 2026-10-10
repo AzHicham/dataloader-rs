@@ -5,7 +5,7 @@ use pyo3::types::PyList;
 
 use crate::python::collator::{PyBatch, PyCollator};
 use crate::python::dataloader::PyDataloader;
-use crate::python::dataset::PyDataset;
+use crate::python::dataset::{Fetcher, PyDataset};
 use crate::python::into_py_err;
 
 type CorePyDataloaderIter = crate::loader::DataLoaderIter<PyDataset, PyCollator>;
@@ -16,8 +16,8 @@ pub(crate) enum PyIterInner {
     Direct {
         chunks: std::vec::IntoIter<Vec<usize>>,
         remaining: usize,
-        /// Cached bound `__getitem__` method — avoids one attribute lookup per item.
-        getitem: Py<PyAny>,
+        /// `__getitems__` or cached `__getitem__`, resolved once per epoch.
+        fetcher: Fetcher,
         /// Collator cloned at `__iter__` time so `__next__` skips borrowing `_owner`.
         collator: PyCollator,
     },
@@ -43,7 +43,7 @@ impl PyDataloaderIter {
             PyIterInner::Direct {
                 chunks,
                 remaining,
-                getitem,
+                fetcher,
                 collator,
             } => {
                 let Some(chunk) = chunks.next() else {
@@ -52,10 +52,7 @@ impl PyDataloaderIter {
                 *remaining -= 1;
 
                 // We already hold `py` — call Python directly with no extra GIL acquire.
-                // Use the cached bound method to skip one attribute lookup per item.
-                let items: PyResult<Vec<Py<PyAny>>> =
-                    chunk.iter().map(|&i| getitem.call1(py, (i,))).collect();
-                let items = items?;
+                let items = fetcher.fetch(py, &chunk)?;
 
                 let batch = collator.collate_with_py(py, items).map_err(into_py_err)?;
 
