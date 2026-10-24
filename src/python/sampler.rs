@@ -49,28 +49,10 @@ impl SharedPySampler {
     }
 }
 
-impl PySampler {
-    /// `len(sampler)` for a Python sampler that defines `__len__`; otherwise
-    /// the dataset length (a sampler without `__len__` cannot be measured
-    /// without consuming it).
-    fn py_len(&self, dataset_len: usize) -> usize {
-        match self {
-            Self::Python(py_sampler) => {
-                Python::attach(|py| py_sampler.bind(py).len()).unwrap_or(dataset_len)
-            }
-            _ => dataset_len,
-        }
-    }
-}
-
+// `len` keeps the trait default, which is right for the built-in samplers.
+// `PyDataloader.__len__` calls `len()` on a Python sampler itself so that a
+// missing or raising `__len__` reaches Python instead of being guessed.
 impl Sampler for SharedPySampler {
-    fn len(&self, dataset_len: usize) -> usize {
-        match self.inner.lock() {
-            Ok(guard) => guard.py_len(dataset_len),
-            Err(_) => dataset_len,
-        }
-    }
-
     fn indices(&mut self, dataset_len: usize) -> Vec<usize> {
         let Ok(mut guard) = self.inner.lock() else {
             return Vec::new();

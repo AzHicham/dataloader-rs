@@ -146,3 +146,30 @@ def test_len_counts_sampler_indices_with_drop_last():
     loader = DataLoader(ListDataset(range(10)), batch_size=2, sampler=[0, 1, 2], drop_last=True)
     assert len(loader) == 1
     assert len(list(loader)) == 1
+
+
+class _IterOnlySampler:
+    """Iterable sampler without __len__."""
+
+    def __iter__(self):
+        return iter([0, 1, 2])
+
+
+class _BadLenSampler(_IterOnlySampler):
+    def __len__(self):
+        raise OSError("sampler index missing")
+
+
+def test_len_raises_type_error_for_sampler_without_len():
+    """Like PyTorch: a sampler without __len__ gives a loader without len()."""
+    loader = DataLoader(ListDataset(range(10)), batch_size=2, sampler=_IterOnlySampler())
+    with pytest.raises(TypeError):
+        len(loader)
+    # Iteration does not need the length.
+    assert list(loader) == [[0, 1], [2]]
+
+
+def test_len_propagates_sampler_len_error():
+    loader = DataLoader(ListDataset(range(10)), batch_size=2, sampler=_BadLenSampler())
+    with pytest.raises(OSError, match="sampler index missing"):
+        len(loader)

@@ -77,6 +77,13 @@ where
         self.batch_sampler.batch_indices(self.dataset.len())
     }
 
+    /// Number of batches `n_indices` sampled indices are grouped into, for a
+    /// sampler whose length is measured outside the core.
+    #[cfg(feature = "python")]
+    pub(crate) fn num_batches(&self, n_indices: usize) -> usize {
+        self.batch_sampler.num_batches(n_indices)
+    }
+
     /// Total number of samples in the dataset.
     pub fn len(&self) -> usize {
         self.dataset.len()

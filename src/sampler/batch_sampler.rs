@@ -37,11 +37,15 @@ impl<S: Sampler> BatchSampler<S> {
 
     /// Number of batches in one epoch, without advancing the sampler.
     pub fn len(&self, dataset_len: usize) -> usize {
-        let n = self.sampler.len(dataset_len);
+        self.num_batches(self.sampler.len(dataset_len))
+    }
+
+    /// Number of batches `n_indices` sampled indices are grouped into.
+    pub fn num_batches(&self, n_indices: usize) -> usize {
         if self.drop_last {
-            n / self.batch_size
+            n_indices / self.batch_size
         } else {
-            n.div_ceil(self.batch_size)
+            n_indices.div_ceil(self.batch_size)
         }
     }
 
