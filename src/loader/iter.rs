@@ -41,7 +41,7 @@ where
         dataset: &Arc<D>,
         collator: &Arc<C>,
         pool: &Arc<rayon::ThreadPool>,
-        parallel_items: bool,
+        items_in_parallel: usize,
         num_workers: usize,
         prefetch_depth: usize,
         chunks: Vec<Vec<usize>>,
@@ -50,7 +50,8 @@ where
         let epoch = Arc::new(Epoch::new(
             Arc::clone(dataset),
             Arc::clone(collator),
-            parallel_items.then(|| Arc::clone(pool)),
+            items_in_parallel,
+            Arc::clone(pool),
             chunks,
             // Batches in flight: one per worker plus the prefetch depth.
             num_workers + prefetch_depth,
@@ -123,6 +124,7 @@ where
         remaining: usize,
         dataset: Arc<D>,
         collator: Arc<C>,
+        items_in_parallel: usize,
         pool: Option<Arc<rayon::ThreadPool>>,
     },
     /// num_workers>0: batch tasks on the loader's rayon pool.
@@ -151,7 +153,7 @@ where
         dataset: &Arc<D>,
         collator: &Arc<C>,
         pool: Option<&Arc<rayon::ThreadPool>>,
-        parallel_items: bool,
+        items_in_parallel: usize,
         num_workers: usize,
         prefetch_depth: usize,
         chunks: Vec<Vec<usize>>,
@@ -161,7 +163,7 @@ where
                 dataset,
                 collator,
                 pool,
-                parallel_items,
+                items_in_parallel,
                 num_workers,
                 prefetch_depth,
                 chunks,
@@ -171,7 +173,8 @@ where
                 chunks: chunks.into_iter(),
                 dataset: Arc::clone(dataset),
                 collator: Arc::clone(collator),
-                pool: pool.filter(|_| parallel_items).cloned(),
+                items_in_parallel,
+                pool: pool.cloned(),
             },
         };
         Self { inner }
@@ -193,6 +196,7 @@ where
                 remaining,
                 dataset,
                 collator,
+                items_in_parallel,
                 pool,
             } => {
                 let indices = chunks.next()?;
@@ -201,6 +205,7 @@ where
                     &**dataset,
                     &indices,
                     &**collator,
+                    *items_in_parallel,
                     pool.as_deref(),
                 ))
             }

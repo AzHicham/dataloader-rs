@@ -55,10 +55,12 @@ and `.collator(…)` replace them and keep every other setting.
 |---|---|---|
 | `batch_size` | `1` | samples per batch (must be > 0) |
 | `drop_last` | `false` | drop a final batch smaller than `batch_size` |
-| `num_workers` | `0` | batches processed concurrently on the loader's pool; `0` processes batches inside `next()` |
-| `parallel_items` | `false` | fetch the items of each batch in parallel, on the same pool |
-| `num_threads` | `num_workers`, or CPUs with `parallel_items` | the pool's size, never below `num_workers` |
-| `prefetch_depth` | `1` | how far batches may run ahead: at most `num_workers + prefetch_depth` in flight or waiting (must be > 0) |
+| `num_workers` | `0` | batches processed in parallel; `0` processes batches inside `next()` |
+| `items_in_parallel` | `1` | items of one batch fetched in parallel (must be > 0); `1` = one `get_batch` call per batch |
+| `prefetch_depth` | `2` | how far batches may run ahead: at most `num_workers + prefetch_depth` in flight or waiting (must be > 0) |
+
+The loader's pool has `max(num_workers, 1) × items_in_parallel` threads (none with both at their
+defaults), so that many fetches run at once at most.
 | `pin_memory` | — | pin `tch::Tensor` batches (feature `torch-rs`) |
 
 ## The two paths
@@ -69,9 +71,8 @@ and `.collator(…)` replace them and keep every other setting.
   reused by every epoch); they claim batches in epoch order inside a window of
   `num_workers + prefetch_depth`, and the iterator returns them in order.
 
-With `parallel_items`, either path fetches each batch's items with `Dataset::get` in parallel on
-the same pool. `intra_workers(n)` is a deprecated alias for `parallel_items(n > 0)` +
-`num_threads(n)`.
+With `items_in_parallel = k > 1`, either path fetches each batch with `k` lanes on the pool,
+each calling `Dataset::get` for the batch's next item: at most `k` items of a batch in flight.
 
 The threads, the backpressure and the reorder buffer are described in
 [ARCHITECTURE.md, section 3](../../ARCHITECTURE.md#3-life-of-an-epoch).
@@ -92,8 +93,8 @@ The threads, the backpressure and the reorder buffer are described in
 |---|---|
 | samples cost microseconds (in memory, tiny decode) | `num_workers(0)`: the hand-off between threads would cost more than the work |
 | each sample costs about a millisecond or more (I/O, decode, augment) | `num_workers` up to the number of cores; `prefetch_depth` 2–8 |
-| few, large batches of CPU-bound items | `parallel_items(true)`, so one batch is spread over several cores |
-| blocking I/O (network, remote storage) | more threads than cores: `parallel_items(true).num_threads(64)` keeps 64 requests in flight |
+| few, large batches of CPU-bound items | `items_in_parallel` > 1, so one batch is spread over several cores |
+| blocking I/O (network, remote storage) | requests in flight = `num_workers × items_in_parallel`: `num_workers(4).items_in_parallel(16)` keeps 64 in flight |
 | many nearly free batches (`batch_size` ≤ 8, in-memory items) | `num_workers(0)`, or a larger `batch_size`: scheduling a batch costs about a microsecond |
 
 Measurements behind these rules: [BENCH.md](../../BENCH.md#4-results-rust).

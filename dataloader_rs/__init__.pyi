@@ -101,21 +101,18 @@ class PyDataloader:
     prefetch_depth:
         How many batches workers may run ahead of the consumer: at most
         ``num_workers + prefetch_depth`` batches are in flight or buffered.
-        Only meaningful when ``num_workers > 0``. Default: ``1``.
+        Only meaningful when ``num_workers > 0``. Default: ``2``.
     seed:
         Seed for ``shuffle=True``. Two loaders built with the same seed yield
         the same sequence of epoch orders; each epoch still differs from the
         previous one. Requires ``shuffle=True``. Default: ``None`` (seeded
         from OS entropy, not reproducible).
-    parallel_items:
-        Fetch the items of each batch concurrently on the loader's thread
-        pool, one ``__getitem__`` call per item (``__getitems__`` is not used).
-        For I/O-bound datasets (network, object storage) whose items would
-        otherwise be fetched one after another. Default: ``False``.
-    num_threads:
-        Size of the loader's thread pool, never below *num_workers*. With
-        *parallel_items*, about how many items are fetched at once. Default:
-        ``None`` (*num_workers*, or the number of CPUs with *parallel_items*).
+    items_in_parallel:
+        Number of items of one batch fetched in parallel, each with its own
+        ``__getitem__`` call (``__getitems__`` is then not used). For I/O-bound
+        datasets (network, object storage) whose items would otherwise be
+        fetched one after another. At most ``max(num_workers, 1) *
+        items_in_parallel`` items are in flight. Default: ``1``.
 
     Example
     -------
@@ -129,15 +126,14 @@ class PyDataloader:
         self,
         dataset: PyDataset,
         batch_size: int = 1,
-        prefetch_depth: int = 1,
+        prefetch_depth: int = 2,
         shuffle: bool = False,
         sampler: Iterable[int] | None = None,
         num_workers: int = 0,
         collate_fn: Callable[[list[Any]], Any] | None = None,
         drop_last: bool = False,
         seed: int | None = None,
-        parallel_items: bool = False,
-        num_threads: int | None = None,
+        items_in_parallel: int = 1,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""

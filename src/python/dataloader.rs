@@ -16,9 +16,9 @@ pub struct PyDataloader {
     inner: CorePyLoader,
     /// The user's sampler, kept to answer `len(loader)` with `len(sampler)`.
     py_sampler: Option<Py<PyAny>>,
-    /// Items of a batch are fetched in parallel; such epochs always use the
-    /// core iterator.
-    parallel_items: bool,
+    /// Items of one batch fetched in parallel; with more than one, epochs
+    /// always use the core iterator.
+    items_in_parallel: usize,
     /// Shared with `inner`; reports exceptions raised by a Python sampler.
     sampler: SharedPySampler,
 }
@@ -29,15 +29,14 @@ impl PyDataloader {
     #[pyo3(signature = (
         dataset,
         batch_size=1,
-        prefetch_depth=1,
+        prefetch_depth=2,
         shuffle=false,
         sampler=None,
         num_workers=0,
         collate_fn=None,
         drop_last=false,
         seed=None,
-        parallel_items=false,
-        num_threads=None
+        items_in_parallel=1
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -51,8 +50,7 @@ impl PyDataloader {
         collate_fn: Option<Py<PyAny>>,
         drop_last: bool,
         seed: Option<u64>,
-        parallel_items: bool,
-        num_threads: Option<usize>,
+        items_in_parallel: usize,
     ) -> PyResult<Self> {
         if batch_size == 0 {
             return Err(PyValueError::new_err("batch_size must be > 0"));
@@ -68,8 +66,8 @@ impl PyDataloader {
         if seed.is_some() && !shuffle {
             return Err(PyValueError::new_err("seed only applies when shuffle=True"));
         }
-        if num_threads == Some(0) {
-            return Err(PyValueError::new_err("num_threads must be > 0"));
+        if items_in_parallel == 0 {
+            return Err(PyValueError::new_err("items_in_parallel must be > 0"));
         }
 
         let py_sampler = sampler.as_ref().map(|s| s.clone_ref(py));
@@ -85,19 +83,14 @@ impl PyDataloader {
             None => SharedPySampler::new(PySampler::Sequential(SequentialSampler)),
         };
 
-        // With parallel_items, the pool's threads call `__getitem__` for the
-        // items of a batch concurrently, each attaching to the interpreter.
-        let builder = core_loader::DataLoader::builder(dataset)
+        // With items_in_parallel > 1, lanes on the pool call `__getitem__` for
+        // the items of a batch concurrently, each attaching to the interpreter.
+        let inner = core_loader::DataLoader::builder(dataset)
             .batch_size(batch_size)
             .prefetch_depth(prefetch_depth)
             .drop_last(drop_last)
             .num_workers(num_workers)
-            .parallel_items(parallel_items);
-        let builder = match num_threads {
-            Some(n) => builder.num_threads(n),
-            None => builder,
-        };
-        let inner = builder
+            .items_in_parallel(items_in_parallel)
             .sampler(sampler.clone())
             .collator(PyCollator::new(collate_fn))
             .build();
@@ -106,7 +99,7 @@ impl PyDataloader {
             inner,
             py_sampler,
             sampler,
-            parallel_items,
+            items_in_parallel,
         })
     }
 
@@ -116,7 +109,7 @@ impl PyDataloader {
         // of letting the core panic on it.
         len_py(loader.inner.dataset(), py)?;
 
-        if !loader.inner.has_workers() && !loader.parallel_items {
+        if !loader.inner.has_workers() && loader.items_in_parallel == 1 {
             // Direct path (num_workers=0): call Python directly inside __next__
             // using the py token already held — zero extra GIL acquisitions.
             let chunks = loader.inner.epoch_chunks();
@@ -139,9 +132,9 @@ impl PyDataloader {
         }
 
         // Core iterator: batch tasks on the loader's pool (one Python::attach
-        // per batch via get_batch), or with parallel_items one attach per item
-        // on the pool's threads. `__next__` waits with the interpreter
-        // released, which item-level work needs even with num_workers=0.
+        // per batch via get_batch), or with items_in_parallel > 1 one attach
+        // per item in the batch's lanes. `__next__` waits with the interpreter
+        // released, which item lanes need even with num_workers=0.
         let inner = loader.inner.iter();
         if let Some(err) = loader.sampler.take_error() {
             // Join the (idle) workers with the GIL released.

@@ -14,14 +14,14 @@ pub struct DataLoader<D, S: Sampler, C> {
     pub(super) batch_sampler: BatchSampler<S>,
     pub(super) collator: Arc<C>,
     pub(super) prefetch_depth: usize,
-    /// Number of batches processed concurrently (inter-batch concurrency).
-    /// `0` means the direct path: batches are processed in `Iterator::next`.
+    /// Batches processed in parallel. `0` means the direct path: batches are
+    /// processed in `Iterator::next`.
     pub(super) num_workers: usize,
-    /// Fetch the items of a batch in parallel on `pool`.
-    pub(super) parallel_items: bool,
-    /// The single rayon pool running both batch tasks and item-level work,
-    /// sized by `num_threads`. `None` when `num_workers` is `0` and
-    /// `parallel_items` is off.
+    /// Items of one batch fetched in parallel; `1` uses `Dataset::get_batch`.
+    pub(super) items_in_parallel: usize,
+    /// The rayon pool running batch tasks and item lanes, with
+    /// `max(num_workers, 1) * items_in_parallel` threads. `None` when both
+    /// settings are at their defaults.
     pub(super) pool: Option<LoaderPool>,
 }
 
@@ -50,13 +50,13 @@ impl LoaderPool {
         }
     }
 
-    /// The pool, rebuilt first if this process is a fork of the one that
-    /// built it.
     #[cfg(test)]
     pub(super) fn threads(&self) -> usize {
         self.threads
     }
 
+    /// The pool, rebuilt first if this process is a fork of the one that
+    /// built it.
     fn get(&mut self) -> &Arc<rayon::ThreadPool> {
         if self.pid != std::process::id() {
             // Leak the inherited pool: dropping it would signal threads that
@@ -95,7 +95,7 @@ where
             &self.dataset,
             &self.collator,
             self.pool.as_mut().map(LoaderPool::get),
-            self.parallel_items,
+            self.items_in_parallel,
             self.num_workers,
             self.prefetch_depth,
             chunks,
@@ -571,23 +571,23 @@ mod tests {
     }
 
     #[test]
-    fn parallel_items_produces_correct_results() {
+    fn items_in_parallel_produces_correct_results() {
         let n = 20;
         let mut loader = DataLoader::builder(CountingDs { len: n })
             .batch_size(4)
-            .parallel_items(true)
+            .items_in_parallel(2)
             .build();
         let seen: HashSet<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
         assert_eq!(seen.len(), n);
     }
 
     #[test]
-    fn parallel_items_with_num_workers() {
+    fn items_in_parallel_with_num_workers() {
         let n = 24;
         let mut loader = DataLoader::builder(CountingDs { len: n })
             .batch_size(4)
             .num_workers(2)
-            .parallel_items(true)
+            .items_in_parallel(2)
             .build();
         let seen: HashSet<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
         assert_eq!(seen.len(), n);
@@ -667,11 +667,11 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "dataset panicked at 5")]
-    fn parallel_items_panic_propagates_to_consumer() {
+    fn items_in_parallel_panic_propagates_to_consumer() {
         let mut loader = DataLoader::builder(PanicDs)
             .batch_size(4)
             .num_workers(2)
-            .parallel_items(true)
+            .items_in_parallel(2)
             .build();
         for batch in loader.iter() {
             let _ = batch;
@@ -770,8 +770,7 @@ mod tests {
         let mut loader = DataLoader::builder(ThreadNameDs(Default::default()))
             .batch_size(8)
             .num_workers(2)
-            .parallel_items(true)
-            .num_threads(3)
+            .items_in_parallel(3)
             .build();
         loader.iter().for_each(|b| drop(b.unwrap()));
 
@@ -780,10 +779,7 @@ mod tests {
             names.iter().all(|n| n.starts_with("dataloader-")),
             "items fetched outside the loader pool: {names:?}"
         );
-        assert!(
-            names.len() <= 3,
-            "pool must have num_threads = 3 threads: {names:?}"
-        );
+        assert!(names.len() <= 6, "pool must have 2 x 3 threads: {names:?}");
     }
 
     fn pool_threads<S: Sampler, C>(loader: &DataLoader<CountingDs, S, C>) -> Option<usize> {
@@ -791,8 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn pool_size_follows_num_workers_and_num_threads() {
-        let cpus = std::thread::available_parallelism().map_or(1, usize::from);
+    fn pool_size_is_workers_times_items_in_parallel() {
         let ds = || CountingDs { len: 8 };
         assert_eq!(pool_threads(&DataLoader::builder(ds()).build()), None);
         assert_eq!(
@@ -800,46 +795,65 @@ mod tests {
             Some(3)
         );
         assert_eq!(
-            pool_threads(&DataLoader::builder(ds()).parallel_items(true).build()),
-            Some(cpus)
+            pool_threads(&DataLoader::builder(ds()).items_in_parallel(4).build()),
+            Some(4)
         );
         assert_eq!(
             pool_threads(
                 &DataLoader::builder(ds())
                     .num_workers(2)
-                    .num_threads(5)
+                    .items_in_parallel(5)
                     .build()
             ),
-            Some(5)
-        );
-        // Never fewer threads than batches in flight.
-        assert_eq!(
-            pool_threads(
-                &DataLoader::builder(ds())
-                    .num_workers(4)
-                    .num_threads(2)
-                    .build()
-            ),
-            Some(4)
+            Some(10)
         );
     }
 
-    #[test]
-    #[allow(deprecated)]
-    fn deprecated_intra_workers_maps_to_new_options() {
-        let loader = DataLoader::builder(CountingDs { len: 8 })
-            .num_workers(2)
-            .intra_workers(3)
-            .build();
-        assert!(loader.parallel_items);
-        assert_eq!(pool_threads(&loader), Some(3));
+    /// Sleeps per item and records the most `get` calls running at once.
+    struct ConcurrencyDs {
+        running: AtomicUsize,
+        peak: AtomicUsize,
+    }
 
-        let loader = DataLoader::builder(CountingDs { len: 8 })
-            .num_workers(2)
-            .intra_workers(0)
+    impl Dataset for ConcurrencyDs {
+        type Item = usize;
+        fn get(&self, index: usize) -> Result<usize> {
+            let now = self.running.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak.fetch_max(now, Ordering::SeqCst);
+            thread::sleep(Duration::from_millis(10));
+            self.running.fetch_sub(1, Ordering::SeqCst);
+            Ok(index)
+        }
+        fn len(&self) -> usize {
+            24
+        }
+    }
+
+    #[test]
+    fn items_in_parallel_bounds_item_concurrency() {
+        let ds = || ConcurrencyDs {
+            running: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+        };
+        // One batch at a time (direct path): exactly 3 items in flight.
+        let mut loader = DataLoader::builder(ds())
+            .batch_size(12)
+            .items_in_parallel(3)
             .build();
-        assert!(!loader.parallel_items);
-        assert_eq!(pool_threads(&loader), Some(2));
+        let items: Vec<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
+        assert_eq!(items, (0..24).collect::<Vec<_>>());
+        assert_eq!(loader.dataset().peak.load(Ordering::SeqCst), 3);
+
+        // Two batches in parallel, 2 items each: at most 4 in flight.
+        let mut loader = DataLoader::builder(ds())
+            .batch_size(12)
+            .num_workers(2)
+            .items_in_parallel(2)
+            .build();
+        let items: Vec<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
+        assert_eq!(items, (0..24).collect::<Vec<_>>());
+        let peak = loader.dataset().peak.load(Ordering::SeqCst);
+        assert!((2..=4).contains(&peak), "peak {peak}");
     }
 
     #[test]

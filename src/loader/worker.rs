@@ -1,11 +1,10 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
-    Arc,
+    Arc, Mutex, PoisonError,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
 use crossbeam_channel::Sender;
-use rayon::prelude::*;
 
 use crate::{collator::Collator, dataset::Dataset, error::Result};
 
@@ -14,11 +13,15 @@ use crate::{collator::Collator, dataset::Dataset, error::Result};
 /// payload.
 pub(super) type WorkerMsg<B> = (usize, std::thread::Result<Result<B>>);
 
-/// Fetch items for one batch (optionally in parallel) then collate them.
+/// Fetch the items of one batch, then collate them.
+///
+/// With `items_in_parallel == 1` the batch is one `Dataset::get_batch` call;
+/// otherwise it is fetched by lanes on `pool` (see [`fetch_in_lanes`]).
 pub(super) fn process_batch<D, C>(
     dataset: &D,
     indices: &[usize],
     collator: &C,
+    items_in_parallel: usize,
     pool: Option<&rayon::ThreadPool>,
 ) -> Result<C::Batch>
 where
@@ -26,17 +29,60 @@ where
     C: Collator<D::Item>,
 {
     let items = match pool {
-        // From inside the pool `install` runs inline; either way the items
-        // are spread over the same pool by work-stealing.
-        Some(pool) => pool.install(|| {
-            indices
-                .par_iter()
-                .map(|&i| dataset.get(i))
-                .collect::<Result<Vec<_>>>()
-        })?,
-        None => dataset.get_batch(indices)?,
+        Some(pool) if items_in_parallel > 1 && indices.len() > 1 => {
+            fetch_in_lanes(dataset, indices, items_in_parallel, pool)?
+        }
+        _ => dataset.get_batch(indices)?,
     };
     collator.collate(items)
+}
+
+/// Fetch `indices` with at most `lanes` concurrent `Dataset::get` calls.
+///
+/// Each lane takes the batch's next item until none is left, so a fast lane
+/// takes more items and uneven items still balance, while the batch never has
+/// more than `lanes` items in flight. After an error, lanes stop taking items
+/// and the first error by position is returned. A panic in a lane is resumed
+/// here once every lane has finished.
+fn fetch_in_lanes<D: Dataset>(
+    dataset: &D,
+    indices: &[usize],
+    lanes: usize,
+    pool: &rayon::ThreadPool,
+) -> Result<Vec<D::Item>> {
+    let next = AtomicUsize::new(0);
+    let failed = AtomicBool::new(false);
+    let slots: Vec<Mutex<Option<Result<D::Item>>>> =
+        indices.iter().map(|_| Mutex::new(None)).collect();
+    pool.scope(|scope| {
+        for _ in 0..lanes.min(indices.len()) {
+            scope.spawn(|_| {
+                while !failed.load(Ordering::Relaxed) {
+                    let position = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(&index) = indices.get(position) else {
+                        break;
+                    };
+                    let item = dataset.get(index);
+                    if item.is_err() {
+                        failed.store(true, Ordering::Relaxed);
+                    }
+                    *slots[position]
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) = Some(item);
+                }
+            });
+        }
+    });
+    let mut items = Vec::with_capacity(indices.len());
+    for slot in slots {
+        match slot.into_inner().unwrap_or_else(PoisonError::into_inner) {
+            Some(Ok(item)) => items.push(item),
+            Some(Err(e)) => return Err(e),
+            // Not fetched: a lane failed first, and its error comes later.
+            None => {}
+        }
+    }
+    Ok(items)
 }
 
 /// State of one epoch, shared by the consumer and the batch tasks running on
@@ -54,8 +100,9 @@ where
 {
     dataset: Arc<D>,
     collator: Arc<C>,
-    /// Pool for item-level parallelism inside a batch, if enabled.
-    item_pool: Option<Arc<rayon::ThreadPool>>,
+    /// Items of one batch fetched in parallel, on `pool`.
+    items_in_parallel: usize,
+    pool: Arc<rayon::ThreadPool>,
     chunks: Vec<Vec<usize>>,
     next_claim: AtomicUsize,
     /// Mirror of the consumer's position, published after each batch.
@@ -78,7 +125,8 @@ where
     pub(super) fn new(
         dataset: Arc<D>,
         collator: Arc<C>,
-        item_pool: Option<Arc<rayon::ThreadPool>>,
+        items_in_parallel: usize,
+        pool: Arc<rayon::ThreadPool>,
         chunks: Vec<Vec<usize>>,
         window: usize,
         max_tasks: usize,
@@ -87,7 +135,8 @@ where
         Self {
             dataset,
             collator,
-            item_pool,
+            items_in_parallel,
+            pool,
             chunks,
             next_claim: AtomicUsize::new(0),
             next_out: AtomicUsize::new(0),
@@ -180,7 +229,8 @@ where
                         &*self.dataset,
                         &self.chunks[batch_idx],
                         &*self.collator,
-                        self.item_pool.as_deref(),
+                        self.items_in_parallel,
+                        Some(&self.pool),
                     )
                 }));
                 // A panic is forwarded for the consumer to re-raise (rayon

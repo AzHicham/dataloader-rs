@@ -18,7 +18,7 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 iter(loader)
   ├─ len(dataset)                     raises if __len__ raises
   ├─ sampler → batches of indices     a Python sampler is iterated here, under the interpreter
-  ├─ num_workers == 0, no parallel_items → Direct    __next__ fetches + collates itself
+  ├─ num_workers == 0, items_in_parallel == 1 → Direct    __next__ fetches + collates itself
   └─ otherwise → Threaded              the Rust core; one attach per batch, or per item
 ```
 
@@ -27,8 +27,8 @@ iter(loader)
 - **Threaded**: the core's worker threads call `Dataset::get_batch` on `Py<PyDatasetBase>`, which
   attaches to the interpreter once for the whole batch and resolves the `Fetcher` there.
   `__next__` releases the interpreter (`py.detach`) while it waits on the channel.
-- **`parallel_items`**: the epoch uses the core iterator even with `num_workers = 0`; the pool's
-  threads fetch a batch's items with one `Dataset::get` (one attach, one `__getitem__`) each.
+- **`items_in_parallel > 1`**: the epoch uses the core iterator even with `num_workers = 0`; the
+  batch's lanes fetch its items with one `Dataset::get` (one attach, one `__getitem__`) each.
 
 ## Rules this code keeps
 

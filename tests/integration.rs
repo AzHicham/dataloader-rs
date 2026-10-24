@@ -5,9 +5,9 @@
 //!
 //! Organisation:
 //!   - Shared dataset / collator definitions
-//!   - Sequential path (num_workers=0, parallel_items off)
+//!   - Sequential path (num_workers=0, items_in_parallel=1)
 //!   - Parallel inter-batch path (num_workers > 0)
-//!   - Item-level parallelism (parallel_items)
+//!   - Item-level parallelism (items_in_parallel > 1)
 //!   - Sampler tests
 //!   - Error propagation
 //!   - Edge cases
@@ -169,7 +169,7 @@ impl Collator<usize> for ErrCollator {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Sequential path (num_workers=0, parallel_items off)
+// Sequential path (num_workers=0, items_in_parallel=1)
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -426,13 +426,12 @@ fn par_sum_collator_matches_sequential() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn intra_sum_collator_exact_values() {
-    // Same expected sums as the sequential test — parallel_items must not
+fn items_in_parallel_sum_collator_exact_values() {
+    // Same expected sums as the sequential test — items_in_parallel must not
     // change which indices end up in which batch, only how they are fetched.
     let mut loader = DataLoader::builder(RangeDs(12))
         .batch_size(4)
-        .parallel_items(true)
-        .num_threads(4)
+        .items_in_parallel(4)
         .collator(SumCollator)
         .build();
     let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
@@ -440,13 +439,12 @@ fn intra_sum_collator_exact_values() {
 }
 
 #[test]
-fn intra_inter_sum_collator_exact_values() {
-    // Both intra and inter workers active; sums must still match the sequential result.
+fn items_in_parallel_with_workers_sum_collator_exact_values() {
+    // num_workers and items_in_parallel both active; sums must still match the sequential result.
     let mut loader = DataLoader::builder(RangeDs(12))
         .batch_size(4)
         .num_workers(2)
-        .parallel_items(true)
-        .num_threads(2)
+        .items_in_parallel(2)
         .collator(SumCollator)
         .build();
     let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
@@ -673,12 +671,12 @@ fn par_actually_concurrent() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Item-level path (parallel_items)
+// Item-level path (items_in_parallel > 1)
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn intra_same_items_as_seq() {
-    // inter=2, intra=4 must produce the same item set as the sequential path.
+fn items_in_parallel_same_items_as_seq() {
+    // num_workers=2, items_in_parallel=4 must produce the same item set as the sequential path.
     let seed = 55u64;
     let n = 24;
     let bs = 6;
@@ -692,8 +690,7 @@ fn intra_same_items_as_seq() {
         .batch_size(bs)
         .sampler(RandomSampler::new(seed))
         .num_workers(2)
-        .parallel_items(true)
-        .num_threads(4)
+        .items_in_parallel(4)
         .build();
 
     let seq_items: HashSet<usize> = seq.iter().flat_map(|b| b.unwrap()).collect();
@@ -702,9 +699,9 @@ fn intra_same_items_as_seq() {
 }
 
 #[test]
-fn intra_actually_parallel() {
+fn items_in_parallel_actually_parallel() {
     // Verify that items within a batch are fetched concurrently by the rayon
-    // pool when parallel_items is on.
+    // pool when items_in_parallel > 1.
     let peak = Arc::new(AtomicUsize::new(0));
     let in_flight = Arc::new(AtomicUsize::new(0));
 
@@ -717,8 +714,7 @@ fn intra_actually_parallel() {
     let mut loader = DataLoader::builder(ds)
         .batch_size(8) // 8 items/batch that each sleep briefly
         .num_workers(1)
-        .parallel_items(true)
-        .num_threads(4)
+        .items_in_parallel(4)
         .build();
 
     for batch in &mut loader {
@@ -732,14 +728,13 @@ fn intra_actually_parallel() {
 }
 
 #[test]
-fn intra_with_large_batch() {
-    // bs=64, intra=8 — verify correctness with a large batch size.
+fn items_in_parallel_with_large_batch() {
+    // bs=64, items_in_parallel=8 — verify correctness with a large batch size.
     let n = 128;
     let mut loader = DataLoader::builder(RangeDs(n))
         .batch_size(64)
         .num_workers(2)
-        .parallel_items(true)
-        .num_threads(8)
+        .items_in_parallel(8)
         .build();
     let mut items: Vec<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
     items.sort_unstable();

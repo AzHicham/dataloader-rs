@@ -166,6 +166,9 @@ and the scheduler saturates physical cores.
 
 ### 4.4 `intra_workers` — rayon intra-batch parallelism (HeavyCpuDs, N=128, bs=64, inter=2)
 
+v0.1.0 ran item-level work on a second rayon pool of `intra_workers` threads. That setting is now
+`items_in_parallel` on the loader's single pool (suite `bench_items_in_parallel`).
+
 
 | intra_workers     | time / epoch | speedup vs 0     |
 | ----------------- | ------------ | ---------------- |

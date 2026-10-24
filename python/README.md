@@ -5,7 +5,8 @@ are threads, not processes: samples are handed over by reference instead of bein
 makes it about **7× faster than PyTorch on array samples** — with no PyTorch dependency.
 
 - **PyTorch's arguments**: `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`,
-  `drop_last`, plus `seed` for reproducible shuffling and `prefetch_depth`.
+  `drop_last`, plus `seed` for reproducible shuffling, `prefetch_depth`, and `items_in_parallel`
+  to fetch the items of a batch concurrently.
 - **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
 - **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
 - **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
@@ -115,12 +116,11 @@ dataset read-only, or protect shared state with a lock.
 | `shuffle` | `False` | a new random order every epoch; exclusive with `sampler` |
 | `seed` | `None` | seed for `shuffle=True` (requires it): same seed, same sequence of epoch orders |
 | `sampler` | `None` | any iterable of `int` indices, iterated at the start of each epoch |
-| `num_workers` | `0` | worker threads; `0` loads each batch in the calling thread |
-| `prefetch_depth` | `1` | how far ahead workers may load: at most `num_workers + prefetch_depth` batches in progress or waiting (with `num_workers > 0`, > 0) |
+| `num_workers` | `0` | batches loaded in parallel; `0` loads each batch in the calling thread |
+| `prefetch_depth` | `2` | how far ahead workers may load: at most `num_workers + prefetch_depth` batches in progress or waiting (with `num_workers > 0`, > 0) |
 | `collate_fn` | `None` | `list[sample] -> batch`; without it a batch is a `list` |
 | `drop_last` | `False` | drop a final batch smaller than `batch_size` |
-| `parallel_items` | `False` | fetch the items of each batch concurrently, one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)) |
-| `num_threads` | `None` | size of the thread pool, never below `num_workers`; default `num_workers`, or the number of CPUs with `parallel_items` |
+| `items_in_parallel` | `1` | items of one batch fetched in parallel, one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)) |
 
 `len(loader)` is the number of batches per epoch; `len(iterator)` the number left in the current
 one.
@@ -160,8 +160,9 @@ loader = PyDataloader(dataset, batch_size=8, sampler=Weighted(weights))
 
 ## Workers, threads and the GIL
 
-`num_workers > 0` gives the loader a pool of `num_workers` threads, created once and reused by
-every epoch; they load batches ahead while your loop runs and the loader returns them in order.
+`num_workers > 0` loads that many batches in parallel on a thread pool of
+`num_workers × items_in_parallel` threads, created once and reused by every epoch; they load
+batches ahead while your loop runs and the loader returns them in order.
 
 - **Regular CPython**: the threads share the GIL. Work that releases it — file reads, NumPy,
   image decoding, hashing, most C extensions — runs in parallel; pure-Python code in
@@ -190,22 +191,20 @@ every epoch; they load batches ahead while your loop runs and the loader returns
 
 By default a worker fetches the items of its batch one after another, so a dataset that waits
 on the network (an object store, an HTTP API, a database) keeps only `num_workers` requests in
-flight. With `parallel_items=True`, the items of each batch are fetched concurrently on the
-loader's thread pool, one `__getitem__` call per item, and `num_threads` sets how many requests
-are in flight:
+flight. With `items_in_parallel=k`, up to `k` items of each batch are fetched concurrently, one
+`__getitem__` call each, so `num_workers × items_in_parallel` requests are in flight:
 
 ```python
 loader = PyDataloader(
     S3Images(keys),
     batch_size=32,
-    num_workers=4,  # batches in progress
-    parallel_items=True,  # items of a batch fetched concurrently
-    num_threads=64,  # about 64 requests in flight
+    num_workers=4,  # 4 batches in parallel
+    items_in_parallel=16,  # 16 items of each batch at once: 64 requests in flight
 )
 ```
 
 Waiting on I/O releases the GIL, so this works on regular CPython too. `__getitems__` is not used
-in this mode: each item is its own call.
+when `items_in_parallel > 1`: each item is its own call.
 
 ## Errors
 

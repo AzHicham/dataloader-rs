@@ -34,7 +34,7 @@ jobs:
           - bench_batch_size
           - bench_prefetch_depth
           - bench_inter_workers
-          - bench_intra_workers
+          - bench_items_in_parallel
           - bench_real_world
 
     steps:

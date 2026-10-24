@@ -125,19 +125,20 @@ def bench(args) -> list[BenchResult]:
             ),
         )
         if name == "remote":
-            # Item-level concurrency: each batch's items fetched on 64 threads.
+            # Item-level concurrency: REMOTE_IN_FLIGHT requests, spread as
+            # `workers` batches x `items` items of each batch.
+            items = max(1, REMOTE_IN_FLIGHT // workers)
             add(
-                "ours parallel_items",
+                "ours items_in_parallel",
                 lambda: PyDataloader(
                     ours_dataset(name, n, root),
                     batch_size=BATCH_SIZE,
                     num_workers=workers,
                     prefetch_depth=2 * workers,
-                    parallel_items=True,
-                    num_threads=REMOTE_IN_FLIGHT,
+                    items_in_parallel=items,
                     collate_fn=stack_collate,
                 ),
-                param=f"t={REMOTE_IN_FLIGHT}",
+                param=f"{workers}x{items}",
             )
         if DataLoader is None:
             continue
@@ -178,14 +179,14 @@ def bench(args) -> list[BenchResult]:
 
 def print_table(results: list[BenchResult]) -> None:
     print()
-    print(f"{'workload':<17} {'loader':<20} {'workers':<8} {'items/s':>10} {'vs torch':>9}")
+    print(f"{'workload':<17} {'loader':<22} {'workers':<8} {'items/s':>10} {'vs torch':>9}")
     print("-" * 68)
     for group in dict.fromkeys(r.group for r in results):
         rows = [r for r in results if r.group == group]
         torch_rate = next((r.items_per_s for r in rows if r.name == "torch"), None)
         for r in rows:
             ratio = f"{r.items_per_s / torch_rate:.2f}x" if torch_rate else ""
-            print(f"{group:<17} {r.name:<20} {r.param:<8} {r.items_per_s:>10.0f} {ratio:>9}")
+            print(f"{group:<17} {r.name:<22} {r.param:<8} {r.items_per_s:>10.0f} {ratio:>9}")
         print()
 
 

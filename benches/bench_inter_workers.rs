@@ -4,7 +4,7 @@
 //!   dataset    = HeavyCpuDs(256)   — CPU-bound, benefits from parallelism
 //!   batch_size = 16                — 16 batches total
 //!   prefetch_depth = 32            — 2× max workers, never starves workers
-//!   parallel_items = false         — isolate batch-level effect only
+//!   items_in_parallel = 1          — isolate batch-level effect only
 //!
 //! SWEPT:
 //!   num_workers in [0, 1, 2, 4, 8]
@@ -36,7 +36,6 @@ fn bench_inter_workers(c: &mut Criterion) {
                 let mut loader = DataLoader::builder(HeavyCpuDs(N))
                     .batch_size(BS)
                     .num_workers(w)
-                    .parallel_items(false)
                     .prefetch_depth(PREFETCH)
                     .collator(CatCollator)
                     .build();

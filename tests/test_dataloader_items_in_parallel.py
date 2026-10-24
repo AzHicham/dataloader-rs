@@ -1,8 +1,9 @@
-"""Item-level parallelism: ``parallel_items=True`` and ``num_threads``.
+"""Item-level parallelism: ``items_in_parallel``.
 
-The items of each batch are fetched concurrently on the loader's thread pool,
-each with its own ``__getitem__`` call — for I/O-bound datasets (network,
-object storage) where one batch would otherwise wait for its items one by one.
+With ``items_in_parallel=n > 1``, up to ``n`` items of each batch are fetched
+concurrently, each with its own ``__getitem__`` call — for I/O-bound datasets
+(network, object storage) where a batch would otherwise wait for its items one
+by one.
 """
 
 import threading
@@ -40,14 +41,13 @@ class SlowDs(PyDataset):
 
 
 @pytest.mark.parametrize("num_workers", [0, 2])
-def test_parallel_items_same_batches_as_sequential(num_workers):
+def test_items_in_parallel_same_batches_as_sequential(num_workers):
     expected = list(DataLoader(ListDataset(range(50)), batch_size=8))
     loader = DataLoader(
         ListDataset(range(50)),
         batch_size=8,
         num_workers=num_workers,
-        parallel_items=True,
-        num_threads=4,
+        items_in_parallel=4,
     )
     assert list(loader) == expected
     assert list(loader) == expected, "a second epoch must match too"
@@ -56,21 +56,19 @@ def test_parallel_items_same_batches_as_sequential(num_workers):
 @pytest.mark.parametrize("num_workers", [0, 1])
 def test_items_of_one_batch_run_concurrently(num_workers):
     ds = SlowDs(16)
-    loader = DataLoader(
-        ds, batch_size=16, num_workers=num_workers, parallel_items=True, num_threads=8
-    )
+    loader = DataLoader(ds, batch_size=16, num_workers=num_workers, items_in_parallel=4)
     assert list(loader) == [list(range(16))]
-    assert ds.max_running > 1, "items of a batch were fetched one at a time"
+    assert ds.max_running == 4, f"expected 4 items in flight, saw {ds.max_running}"
 
 
-def test_without_parallel_items_a_batch_is_fetched_sequentially():
+def test_by_default_a_batch_is_fetched_sequentially():
     ds = SlowDs(8)
     assert list(DataLoader(ds, batch_size=8, num_workers=1)) == [list(range(8))]
     assert ds.max_running == 1
 
 
 @pytest.mark.parametrize("num_workers", [0, 2])
-def test_parallel_items_keeps_exception_types(num_workers):
+def test_items_in_parallel_keeps_exception_types(num_workers):
     class KeyErrorDs(ListDataset):
         def __getitem__(self, idx):
             if idx == 5:
@@ -78,21 +76,21 @@ def test_parallel_items_keeps_exception_types(num_workers):
             return super().__getitem__(idx)
 
     loader = DataLoader(
-        KeyErrorDs(range(8)), batch_size=4, num_workers=num_workers, parallel_items=True
+        KeyErrorDs(range(8)), batch_size=4, num_workers=num_workers, items_in_parallel=2
     )
     with pytest.raises(KeyError, match="missing 5"):
         list(loader)
 
 
-def test_parallel_items_fetches_with_getitem_even_if_getitems_exists():
+def test_items_in_parallel_fetches_with_getitem_even_if_getitems_exists():
     class BatchedDs(ListDataset):
         def __getitems__(self, indices):
-            raise AssertionError("__getitems__ must not be used with parallel_items")
+            raise AssertionError("__getitems__ must not be used with items_in_parallel > 1")
 
-    loader = DataLoader(BatchedDs(range(6)), batch_size=3, parallel_items=True, num_threads=2)
+    loader = DataLoader(BatchedDs(range(6)), batch_size=3, items_in_parallel=2)
     assert list(loader) == [[0, 1, 2], [3, 4, 5]]
 
 
-def test_rejects_zero_num_threads():
-    with pytest.raises(ValueError, match="num_threads must be > 0"):
-        DataLoader(ListDataset(range(4)), parallel_items=True, num_threads=0)
+def test_rejects_zero_items_in_parallel():
+    with pytest.raises(ValueError, match="items_in_parallel must be > 0"):
+        DataLoader(ListDataset(range(4)), items_in_parallel=0)

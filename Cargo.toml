@@ -88,7 +88,7 @@ name    = "bench_inter_workers"
 harness = false
 
 [[bench]]
-name    = "bench_intra_workers"
+name    = "bench_items_in_parallel"
 harness = false
 
 [[bench]]

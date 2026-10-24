@@ -38,7 +38,7 @@ assert_eq!(Squares(10).get(3).unwrap(), 9);
 
 | Method | Required | Called |
 |---|---|---|
-| `get(&self, index)` | yes | per item: by `get_batch`'s default, and by the item-parallel path (`parallel_items`) on several threads at once |
+| `get(&self, index)` | yes | per item: by `get_batch`'s default, and by the item lanes (`items_in_parallel > 1`) on several threads at once |
 | `len(&self)` | yes | at every `iter()`, to size the epoch |
 | `get_batch(&self, indices)` | no, defaults to `get` per index | once per batch when items are not fetched in parallel; override it to amortise per-batch setup (one lock, one query, one file open) |
 | `is_empty(&self)` | no | convenience |
