@@ -243,6 +243,89 @@ catches up at N=100k for shuffle. The gap is tiny relative to dataset fetch time
 
 ---
 
+## Real-world workloads
+
+The benchmarks above isolate loader overhead with synthetic datasets. These run
+the per-sample work real datasets do — reading files, augmenting images,
+waiting on the network, running Python code. The work is written once
+(`bench/real_world.py`) and used by both loaders, so only the loading differs:
+scheduling, parallelism, prefetching, collation, and moving samples to the
+consumer. Each case times whole epochs, iterator creation included, which is
+what a training loop pays.
+
+**Machine:** laptop, Intel Core i9-13900H (20 threads), Linux x86_64
+**Python:** CPython 3.13.3 (GIL), torch 2.14.1+cpu, numpy 2.5.4
+**Run:** `python bench/bench_real_world.py --workers 4` — 1 warm-up + 5 timed
+epochs, median, `batch_size=32`, `collate_fn=np.stack` for array samples.
+
+| workload | per-sample work | items | workers |
+|---|---|---|---|
+| `local_files` | read a 128 KB file, normalise to float32 | 2 048 | 4 |
+| `image_augment` | random crop 224, flip, normalise a decoded 3×256×256 image | 1 024 | 4 |
+| `remote` | 10 ms network round trip (`time.sleep`) | 512 | 16 |
+| `python_cpu` | pure-Python tokenisation (holds the GIL) | 2 048 | 4 |
+
+### Python — dataloader_rs vs torch.utils.data.DataLoader (items/s)
+
+| workload | ours `w=0` | ours | torch | torch persistent | best ours vs torch |
+|---|---:|---:|---:|---:|---:|
+| `local_files` | 7 439 | **11 041** | 1 581 | 1 656 | **7.0×** |
+| `image_augment` | 4 837 | **8 682** | 1 274 | 1 357 | **6.8×** |
+| `remote` | 99 | **1 573** | 1 352 | 1 563 | 1.2× |
+| `python_cpu` | 26 265 | 25 924 | 41 694 | **65 036** | 0.6× |
+
+What the numbers say:
+
+- **Array samples (`local_files`, `image_augment`): about 7× faster.** torch's
+  worker processes must serialise every sample (a 0.5 MB array here) back to
+  the main process; threads hand over a reference. For large samples that
+  transfer, not the work, dominates torch's epoch. Even `w=0` beats torch's
+  4 worker processes.
+- **Threads help as far as the dataset releases the GIL.** File reads and
+  numpy release it: 4 workers are 1.5× (`local_files`) and 1.8×
+  (`image_augment`) faster than `w=0`; the GIL-held Python parts cap the rest.
+- **Network-bound (`remote`): both loaders are capped by their workers.** With
+  blocking calls each worker has one request in flight (16 / 10 ms ≈ 1.6 K/s),
+  so throughput follows `num_workers`, not the loader.
+- **Pure-Python CPU (`python_cpu`): torch wins.** Code that holds the GIL cannot
+  run in parallel on threads; torch's processes can (1.6× with persistent
+  workers, 2.5× ours). Use free-threaded Python (3.14t) for this case.
+
+### Rust (Criterion, `benches/bench_real_world.rs`)
+
+`cargo bench --bench bench_real_world`
+
+**`local_files`** — read a 64 KB file + normalise to `Vec<f32>`, 1 024 items:
+
+| num_workers | default glibc malloc | malloc trimming disabled¹ |
+|---:|---:|---:|
+| 0 | 75.7 ms | 18.2 ms |
+| 2 | 30.3 ms | 14.9 ms |
+| 4 | 23.8 ms | 15.3 ms |
+| 8 | 22.7 ms | **12.3 ms** |
+
+¹ `GLIBC_TUNABLES=glibc.malloc.trim_threshold=4294967295:glibc.malloc.mmap_threshold=33554432`.
+With default settings, each 256 KB sample buffer allocated and freed on the
+main thread makes glibc return memory to the OS and fault it back in every
+batch, which inflates `num_workers=0` 4× (worker threads use separate arenas
+that churn less). This is an allocator effect, not the loader: datasets that
+produce large per-sample buffers should use mimalloc/jemalloc or these
+tunables. With it removed, the work is light enough that reading files and
+allocating, not the loader, limit scaling (1.5× at 8 workers).
+
+**`remote_2ms`** — 2 ms network round trip per sample, 512 items:
+
+| threads (requests in flight) | epoch | throughput |
+|---:|---:|---:|
+| 4 | 266 ms | 1.9 K/s |
+| 16 | 66.8 ms | 7.7 K/s |
+| 64 | 17.2 ms | 29.8 K/s |
+
+Blocking I/O needs one thread per request in flight; throughput scales
+linearly with the thread count.
+
+---
+
 ## Summary
 
 

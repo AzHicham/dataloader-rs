@@ -35,6 +35,7 @@ jobs:
           - bench_prefetch_depth
           - bench_inter_workers
           - bench_intra_workers
+          - bench_real_world
 
     steps:
       - uses: actions/checkout@v7.0.1
