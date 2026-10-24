@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792835561660,
+  "lastUpdate": 1792835657454,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Python benchmarks (3.14t)": [
@@ -976,6 +976,128 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0010234547678651682",
             "extra": "mean: 42.098771799987844 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "noreply@anthropic.com",
+            "name": "Claude",
+            "username": "claude"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "7f7655a682d0a0c230761c3432d8ffe5bce07267",
+          "message": "feat(python): add seed= for reproducible shuffling\n\nshuffle=True always seeded from OS entropy, so runs could not be\nreproduced. PyDataloader now takes seed=; with it, two loaders yield the\nsame sequence of epoch orders (each epoch still differs from the last).\nseed without shuffle=True is rejected rather than silently ignored.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_017eJkQ4peEFnnwbBFmW44KN",
+          "timestamp": "2026-10-24T10:53:05+01:00",
+          "tree_id": "5c3e48e6e30be81ec34c503c58c502dd23b40adc",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/7f7655a682d0a0c230761c3432d8ffe5bce07267"
+        },
+        "date": 1792835656610,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[1]",
+            "value": 1491.4416603369923,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000027058674796056375",
+            "extra": "mean: 670.4921999926228 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[64]",
+            "value": 5344.832562394076,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001290559200129262",
+            "extra": "mean: 187.0966000012686 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[4096]",
+            "value": 5357.83937638629,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015054652542268145",
+            "extra": "mean: 186.64239999566234 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[1]",
+            "value": 2.398435686520316,
+            "unit": "iter/sec",
+            "range": "stddev: 0.05965403187232724",
+            "extra": "mean: 416.93842599999584 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[64]",
+            "value": 248.01485192288854,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0003783554203231752",
+            "extra": "mean: 4.032016600001498 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[4096]",
+            "value": 989.0963991116739,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004444587969006815",
+            "extra": "mean: 1.0110238000038407 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[1]",
+            "value": 10.330838320174,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0005589038836095716",
+            "extra": "mean: 96.79756559999646 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[4]",
+            "value": 10.335034321512074,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008824441044982742",
+            "extra": "mean: 96.7582660000005 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[16]",
+            "value": 13.530492855859391,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0009973319453967543",
+            "extra": "mean: 73.90713780000624 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_sequential",
+            "value": 2156.11757394519,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015482489940488938",
+            "extra": "mean: 463.7966000018423 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_shuffle",
+            "value": 2011.899986060479,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008210006872299558",
+            "extra": "mean: 497.0425999943018 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[0]",
+            "value": 5.415021998586426,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00015245300944241916",
+            "extra": "mean: 184.67145660000028 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[1]",
+            "value": 5.230435015949939,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000380334216934755",
+            "extra": "mean: 191.1886863999939 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[4]",
+            "value": 13.456255328675564,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003360169283685084",
+            "extra": "mean: 74.31488000000854 msec\nrounds: 5"
           }
         ]
       }
