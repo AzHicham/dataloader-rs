@@ -205,7 +205,9 @@ Measured on an Intel Core i9-13900H (20 threads); method, every table and the ca
 
 ## Building and testing
 
-Prerequisites: Rust ≥ 1.91, Python ≥ 3.13, [uv](https://docs.astral.sh/uv/).
+Prerequisites: Rust ≥ 1.91, [uv](https://docs.astral.sh/uv/). The development environment uses
+free-threaded CPython 3.14t (`.python-version`), like CI and the published wheels; for a GIL build
+prefix commands with `uv run --python 3.13`.
 
 ```bash
 # Rust

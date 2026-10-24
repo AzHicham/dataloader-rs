@@ -36,5 +36,5 @@ cargo test --all-features            # as CI does; torch-rs downloads libtorch
 uv sync --group dev
 uv run maturin develop --features python
 uv run pytest                       # tests/; benchmark cases in bench/ are deselected
-uv run --python 3.14t python -X gil=0 -m pytest   # free-threaded, as CI
+uv run --python 3.13 pytest        # with the GIL (default: free-threaded 3.14t, as CI)
 ```
