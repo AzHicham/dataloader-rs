@@ -60,7 +60,7 @@ loader = PyDataloader(
     shuffle=True,
     seed=0,  # reproducible order, a new permutation every epoch
     num_workers=4,  # 4 worker threads
-    prefetch_depth=4,  # up to 4 finished batches waiting
+    prefetch_depth=4,  # load up to 4 batches ahead of the 4 in progress
     collate_fn=np.stack,  # one (32, ...) array per batch
     drop_last=True,
 )
@@ -110,7 +110,7 @@ dataset read-only, or protect shared state with a lock.
 | `seed` | `None` | seed for `shuffle=True` (requires it): same seed, same sequence of epoch orders |
 | `sampler` | `None` | any iterable of `int` indices, iterated at the start of each epoch |
 | `num_workers` | `0` | worker threads; `0` loads each batch in the calling thread |
-| `prefetch_depth` | `1` | finished batches that may wait for you (with `num_workers > 0`, > 0) |
+| `prefetch_depth` | `1` | how far ahead workers may load: at most `num_workers + prefetch_depth` batches in progress or waiting (with `num_workers > 0`, > 0) |
 | `collate_fn` | `None` | `list[sample] -> batch`; without it a batch is a `list` |
 | `drop_last` | `False` | drop a final batch smaller than `batch_size` |
 
@@ -152,8 +152,8 @@ loader = PyDataloader(dataset, batch_size=8, sampler=Weighted(weights))
 
 ## Workers, threads and the GIL
 
-`num_workers > 0` starts that many threads for each epoch; they load batches ahead while your loop
-runs and the loader returns them in order.
+`num_workers > 0` gives the loader a pool of `num_workers` threads, created once and reused by
+every epoch; they load batches ahead while your loop runs and the loader returns them in order.
 
 - **Regular CPython**: the threads share the GIL. Work that releases it — file reads, NumPy,
   image decoding, hashing, most C extensions — runs in parallel; pure-Python code in
@@ -165,8 +165,10 @@ runs and the loader returns them in order.
   uv run --python 3.14t python -X gil=0 train.py
   ```
 
-- **Breaking out of a loop** stops the workers; batches already being loaded are finished and
-  discarded.
+- **Breaking out of a loop** returns immediately; batches already being loaded finish in the
+  background and are discarded.
+- **`multiprocessing` with `fork`**: a child process can use a loader its parent already
+  iterated; the loader rebuilds its threads there.
 
 ## Errors
 
@@ -186,7 +188,7 @@ runs and the loader returns them in order.
 | `torch.utils.data.Dataset` | subclass `PyDataset` (same `__len__` / `__getitem__` / `__getitems__`) |
 | `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`, `drop_last` | same |
 | `generator=` for a reproducible shuffle | `seed=` |
-| `prefetch_factor` (per worker) | `prefetch_depth` (total finished batches waiting) |
+| `prefetch_factor` (per worker) | `prefetch_depth` (total, beyond the `num_workers` batches in progress) |
 | worker processes, `persistent_workers`, `worker_init_fn`, `multiprocessing_context` | threads: nothing to start, copy or initialise per worker |
 | `pin_memory`, `timeout`, `batch_sampler`, `IterableDataset` | not supported |
 | default collation into tensors | a `list`; pass `collate_fn` (e.g. `np.stack`, `torch.stack`) |
