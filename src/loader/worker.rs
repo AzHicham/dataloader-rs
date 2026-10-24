@@ -132,11 +132,23 @@ where
     }
 
     fn try_reserve_task(&self) -> bool {
-        self.tasks
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
-                (n < self.max_tasks).then_some(n + 1)
-            })
-            .is_ok()
+        // A plain CAS loop rather than `fetch_update`, which newer clippy
+        // rewrites to `try_update` (Rust 1.95+, above the MSRV).
+        let mut running = self.tasks.load(Ordering::SeqCst);
+        loop {
+            if running >= self.max_tasks {
+                return false;
+            }
+            match self.tasks.compare_exchange_weak(
+                running,
+                running + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => return true,
+                Err(current) => running = current,
+            }
+        }
     }
 
     /// Start batch tasks on `pool` until `max_tasks` run or nothing is
