@@ -23,6 +23,7 @@ Requires Python ≥ 3.13.
 - [Batches and `collate_fn`](#batches-and-collate_fn)
 - [Samplers](#samplers)
 - [Workers, threads and the GIL](#workers-threads-and-the-gil)
+- [I/O-bound datasets](#io-bound-datasets)
 - [Errors](#errors)
 - [Coming from `torch.utils.data.DataLoader`](#coming-from-torchutilsdatadataloader)
 - [Performance](#performance)
@@ -118,6 +119,8 @@ dataset read-only, or protect shared state with a lock.
 | `prefetch_depth` | `1` | how far ahead workers may load: at most `num_workers + prefetch_depth` batches in progress or waiting (with `num_workers > 0`, > 0) |
 | `collate_fn` | `None` | `list[sample] -> batch`; without it a batch is a `list` |
 | `drop_last` | `False` | drop a final batch smaller than `batch_size` |
+| `parallel_items` | `False` | fetch the items of each batch concurrently, one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)) |
+| `num_threads` | `None` | size of the thread pool, never below `num_workers`; default `num_workers`, or the number of CPUs with `parallel_items` |
 
 `len(loader)` is the number of batches per epoch; `len(iterator)` the number left in the current
 one.
@@ -170,10 +173,39 @@ every epoch; they load batches ahead while your loop runs and the loader returns
   uv run --python 3.14t python -X gil=0 train.py
   ```
 
+- **Shared Python objects on free-threaded CPython**: an object's reference count is cheap only for
+  the thread that created it; other threads update it atomically. Threads that all read the same
+  dict or list millions of times per second (a vocabulary, a lookup table) contend on it and stop
+  scaling: a pure-Python tokeniser over one shared vocabulary runs *slower* on 8 threads than on 1
+  with 3.14t. Give each thread its own copy of hot lookup tables (`threading.local`), or on 3.15t
+  key them with interned strings (`sys.intern`), which no longer carry this cost. Processes
+  (PyTorch's workers) never share objects, so they do not see this.
+
 - **Breaking out of a loop** returns immediately; batches already being loaded finish in the
   background and are discarded.
 - **`multiprocessing` with `fork`**: a child process can use a loader its parent already
   iterated; the loader rebuilds its threads there.
+
+## I/O-bound datasets
+
+By default a worker fetches the items of its batch one after another, so a dataset that waits
+on the network (an object store, an HTTP API, a database) keeps only `num_workers` requests in
+flight. With `parallel_items=True`, the items of each batch are fetched concurrently on the
+loader's thread pool, one `__getitem__` call per item, and `num_threads` sets how many requests
+are in flight:
+
+```python
+loader = PyDataloader(
+    S3Images(keys),
+    batch_size=32,
+    num_workers=4,  # batches in progress
+    parallel_items=True,  # items of a batch fetched concurrently
+    num_threads=64,  # about 64 requests in flight
+)
+```
+
+Waiting on I/O releases the GIL, so this works on regular CPython too. `__getitems__` is not used
+in this mode: each item is its own call.
 
 ## Errors
 
