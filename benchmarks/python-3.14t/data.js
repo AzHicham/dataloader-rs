@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792835277129,
+  "lastUpdate": 1792835561660,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Python benchmarks (3.14t)": [
@@ -854,6 +854,128 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.00043032850215460924",
             "extra": "mean: 46.38558100000125 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "noreply@anthropic.com",
+            "name": "Claude",
+            "username": "claude"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "23977015d3a0bbc0afc7833bc3fde07149797a81",
+          "message": "fix: re-raise worker panics instead of silently ending the epoch\n\nA panic in Dataset::get or Collator::collate killed its worker thread; its\nbatch never arrived and, once the other workers drained the queue, the\nconsumer saw a closed channel and ended the epoch early with no error.\n\nWorkers now catch the panic, forward the payload, and stop. The consumer\nre-raises it with resume_unwind, matching num_workers(0) where the panic\nalready happens on the caller's thread. The Python iterator joins workers\nwith the GIL released before re-raising, so a panic cannot deadlock.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_017eJkQ4peEFnnwbBFmW44KN",
+          "timestamp": "2026-10-24T10:51:02+01:00",
+          "tree_id": "ca28965d39cc5c5f40bf7abfa1a3a4458f5b8780",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/23977015d3a0bbc0afc7833bc3fde07149797a81"
+        },
+        "date": 1792835561334,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[1]",
+            "value": 2337.96281144031,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000006530135814265543",
+            "extra": "mean: 427.7227999978095 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[64]",
+            "value": 7902.71442448235,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000005216615152893073",
+            "extra": "mean: 126.53879999788842 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[4096]",
+            "value": 8334.805815637947,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013054511169678472",
+            "extra": "mean: 119.9788000008084 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[1]",
+            "value": 3.051203519218114,
+            "unit": "iter/sec",
+            "range": "stddev: 0.1470891687929574",
+            "extra": "mean: 327.7395275999993 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[64]",
+            "value": 476.66578006956325,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0002758991424154427",
+            "extra": "mean: 2.0979059999945093 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[4096]",
+            "value": 1447.5466978502361,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000022340358696025637",
+            "extra": "mean: 690.8240000029764 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[1]",
+            "value": 23.06186793473253,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0011968133190660508",
+            "extra": "mean: 43.36162200000899 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[4]",
+            "value": 22.63836394861363,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001027250343270253",
+            "extra": "mean: 44.17280340001071 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[16]",
+            "value": 23.240708681905264,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0013910908133558158",
+            "extra": "mean: 43.027947799998856 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_sequential",
+            "value": 3065.773095969402,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001406164145770278",
+            "extra": "mean: 326.1820000034277 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_shuffle",
+            "value": 2913.0789672659766,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00000848001861454054",
+            "extra": "mean: 343.27939998775037 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[0]",
+            "value": 8.020146235207811,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0013175295363731614",
+            "extra": "mean: 124.68600580000384 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[1]",
+            "value": 7.771347907857378,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001749184265633827",
+            "extra": "mean: 128.67780619999394 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[4]",
+            "value": 23.753662096153807,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0010234547678651682",
+            "extra": "mean: 42.098771799987844 msec\nrounds: 5"
           }
         ]
       }
