@@ -140,22 +140,33 @@ class OursPythonCpu(PythonCpuWork, PyDataset):
     pass
 
 
+# torch twins live at module level so they pickle: since Python 3.14, torch's
+# worker processes start with forkserver (not fork) and receive the dataset
+# pickled. torch stays optional: without it these names are not defined.
+try:
+    from torch.utils.data import Dataset as _TorchDataset
+except ImportError:
+    _TorchDataset = None
+
+if _TorchDataset is not None:
+
+    class TorchLocalFiles(LocalFilesWork, _TorchDataset):
+        pass
+
+    class TorchImageAugment(ImageAugmentWork, _TorchDataset):
+        pass
+
+    class TorchRemote(RemoteWork, _TorchDataset):
+        pass
+
+    class TorchPythonCpu(PythonCpuWork, _TorchDataset):
+        pass
+
+
 def torch_datasets():
-    """Torch counterparts, built lazily so torch stays optional."""
-    from torch.utils.data import Dataset
-
-    class TorchLocalFiles(LocalFilesWork, Dataset):
-        pass
-
-    class TorchImageAugment(ImageAugmentWork, Dataset):
-        pass
-
-    class TorchRemote(RemoteWork, Dataset):
-        pass
-
-    class TorchPythonCpu(PythonCpuWork, Dataset):
-        pass
-
+    """Torch counterparts of the workloads (requires torch)."""
+    if _TorchDataset is None:
+        raise ImportError("torch is required for the torch baselines")
     return {
         "local_files": TorchLocalFiles,
         "image_augment": TorchImageAugment,
