@@ -5,6 +5,12 @@ edition     = "2024"
 description = "High-performance DataLoader for Rust with a PyTorch-like interface"
 license     = "MIT"
 rust-version = "1.91"
+repository  = "https://github.com/AzHicham/dataloader-rs"
+homepage    = "https://github.com/AzHicham/dataloader-rs"
+documentation = "https://docs.rs/dataloader-rs"
+readme      = "README.md"
+keywords    = ["dataloader", "machine-learning", "pytorch", "batching", "parallel"]
+categories  = ["science", "concurrency", "data-structures"]
 
 [lib]
 crate-type = ["rlib", "cdylib"]
