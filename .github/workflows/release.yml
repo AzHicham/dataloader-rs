@@ -46,8 +46,8 @@ jobs:
           # creating tags, GitHub releases, or pushing anything.
           dry_run: ${{ github.ref_name == 'dev' }}
           extra_plugins: |
-            @semantic-release/changelog@6.0.3
-            @semantic-release/git@10.0.1
-            @semantic-release/exec@6.0.3
-            conventional-changelog-conventionalcommits@7.0.2
-            @saithodev/semantic-release-backmerge@3.2.1
+            @semantic-release/changelog@7.0.0
+            @semantic-release/git@11.0.1
+            @semantic-release/exec@7.1.0
+            conventional-changelog-conventionalcommits@10.4.1
+            @saithodev/semantic-release-backmerge@4.0.1
