@@ -1,330 +1,229 @@
 # dataloader-rs
 
-A high-performance DataLoader for Rust with a PyTorch-compatible Python API.
-
-[![CI](https://github.com/AzHicham/dataloader-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AzHicham/dataloader-rs/actions/workflows/ci.yml)
+[![CI](https://github.com/AzHicham/dataloader-rs/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/AzHicham/dataloader-rs/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/dataloader-rs)](https://crates.io/crates/dataloader-rs)
+[![docs.rs](https://img.shields.io/docsrs/dataloader-rs)](https://docs.rs/dataloader-rs)
 [![PyPI](https://img.shields.io/pypi/v/dataloader-rs)](https://pypi.org/project/dataloader-rs/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![MSRV](https://img.shields.io/badge/rustc-1.91%2B-orange.svg)](#minimum-supported-rust-version)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Typed, streaming batch pipeline with a familiar builder API. Supports sequential
-and parallel (inter-batch threads + intra-batch rayon) execution, pluggable
-samplers and collators, and Python bindings via PyO3.
+PyTorch's `DataLoader` model — dataset, sampler, collator, loader — as a typed Rust library,
+with a Python binding that runs the same pipeline on threads instead of worker processes.
 
-See [bench/bench.md](bench/bench.md) for performance comparisons against
-`torch.utils.data.DataLoader`.
+- **Familiar model, typed end to end**: `DataLoader<Dataset, Sampler, Collator>` is generic and
+  monomorphized; batches come out in epoch order as `Result<Batch>`.
+- **Threads, not processes**: workers share the dataset through `Arc`, so samples are handed
+  over by reference instead of being pickled across processes. On array samples the Python
+  binding is about **7× `torch.utils.data.DataLoader`** ([BENCH.md](BENCH.md)).
+- **Two levels of parallelism**: `num_workers` batches in flight, and the items of each batch
+  fetched in parallel on a rayon pool (`intra_workers`).
+- **Bounded, ordered prefetch**: workers run at most `prefetch_depth` batches ahead; a reorder
+  buffer restores epoch order.
+- **Failures surface**: a dataset or collator error is returned for its batch, a panic is
+  re-raised on the consumer, and Python exceptions keep their type.
+- **Python binding**: `PyDataloader` mirrors the PyTorch arguments (`batch_size`, `shuffle`,
+  `sampler`, `collate_fn`, `drop_last`, `seed`, `__getitems__`) and supports free-threaded
+  CPython 3.14t.
+- **No unsafe code**: `#![forbid(unsafe_code)]`.
 
----
+## Contents
 
-## Rust quick start
+- [Quick start: Rust](#quick-start-rust)
+- [Quick start: Python](#quick-start-python)
+- [Concepts](#concepts)
+- [Configuration](#configuration)
+- [Feature flags](#feature-flags)
+- [Performance](#performance)
+- [Documentation](#documentation)
+- [Project layout](#project-layout)
+- [Building and testing](#building-and-testing)
+- [Minimum supported Rust version](#minimum-supported-rust-version)
+- [License](#license)
 
-Add to `Cargo.toml`:
+## Quick start: Rust
 
 ```toml
 [dependencies]
 dataloader-rs = "0.1"
 ```
 
-### Define a dataset
-
 ```rust
-use dataloader_rs::{Dataset, error::Result};
+use dataloader_rs::{DataLoader, Dataset, RandomSampler, error::Result};
 
-struct ImageDataset {
-    paths: Vec<std::path::PathBuf>,
-}
+/// One sample per file; `get` is called from worker threads.
+struct Files(Vec<std::path::PathBuf>);
 
-impl Dataset for ImageDataset {
+impl Dataset for Files {
     type Item = Vec<u8>;
 
     fn get(&self, index: usize) -> Result<Vec<u8>> {
-        Ok(std::fs::read(&self.paths[index])?)
+        Ok(std::fs::read(&self.0[index])?)
     }
 
     fn len(&self) -> usize {
-        self.paths.len()
+        self.0.len()
     }
 }
-```
 
-### Build a DataLoader and iterate
+fn main() -> Result<()> {
+    let paths = std::fs::read_dir("data")?
+        .map(|entry| entry.map(|e| e.path()))
+        .collect::<std::io::Result<Vec<_>>>()?;
 
-```rust
-use dataloader_rs::{DataLoader, RandomSampler};
+    let mut loader = DataLoader::builder(Files(paths))
+        .batch_size(32)
+        .sampler(RandomSampler::new(42)) // reproducible shuffle
+        .num_workers(4)                  // 4 batches in flight
+        .prefetch_depth(8)               // run up to 8 batches ahead
+        .drop_last(true)
+        .build();
 
-let mut loader = DataLoader::builder(ImageDataset { paths })
-    .batch_size(32)
-    .sampler(RandomSampler::new(42))  // reproducible shuffle
-    .num_workers(4)                   // inter-batch worker threads
-    .intra_workers(2)                 // rayon threads per batch
-    .prefetch_depth(8)                // batches in-flight
-    .drop_last(true)
-    .build();
-
-for batch in &mut loader {
-    let batch: Vec<Vec<u8>> = batch?;
-    // train, write to disk, etc.
-}
-```
-
-### Custom collator
-
-```rust
-use dataloader_rs::collator::Collator;
-
-struct StackCollator;
-
-impl Collator<Vec<f32>> for StackCollator {
-    type Batch = Vec<Vec<f32>>;
-
-    fn collate(&self, items: Vec<Vec<f32>>) -> dataloader_rs::error::Result<Self::Batch> {
-        Ok(items)
+    for epoch in 0..3 {
+        for batch in &mut loader {
+            let batch: Vec<Vec<u8>> = batch?; // VecCollator: a Vec of samples
+            println!("epoch {epoch}: {} samples", batch.len());
+        }
     }
+    Ok(())
 }
 ```
 
----
+`cargo run --example basic` runs a complete example.
 
-## Python quick start
-
-Install:
+## Quick start: Python
 
 ```bash
 pip install dataloader-rs
 ```
 
-Or build from source (requires a Rust toolchain):
-
-```bash
-pip install maturin
-maturin develop --features python
-```
-
-### Define a dataset
-
 ```python
-from dataloader_rs import PyDataset
+from dataloader_rs import PyDataloader, PyDataset
 
 
-class MyDataset(PyDataset):
-    def __init__(self, paths: list[str]):
+class Files(PyDataset):
+    def __init__(self, paths: list[str]) -> None:
         super().__init__()
         self.paths = paths
 
     def __len__(self) -> int:
         return len(self.paths)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int) -> bytes:
         with open(self.paths[index], "rb") as f:
             return f.read()
-```
 
-### Build a DataLoader and iterate
 
-```python
-from dataloader_rs import PyDataloader
-
-loader = PyDataloader(
-    MyDataset(paths),
-    batch_size=32,
-    shuffle=True,
-    num_workers=4,
-    prefetch_depth=8,
-    drop_last=True,
-)
-
-for batch in loader:
-    # batch: list[bytes]
+loader = PyDataloader(Files(paths), batch_size=32, shuffle=True, seed=0, num_workers=4)
+for batch in loader:  # a list of 32 `bytes`, or whatever collate_fn returns
     ...
 ```
 
-### Custom collate function
+The full Python guide — arguments, samplers, `collate_fn`, `__getitems__`, errors, threads and
+the GIL — is [python/README.md](python/README.md).
 
-```python
-import numpy as np
+## Concepts
 
+| Piece | Trait / type | Provided | Guide |
+|---|---|---|---|
+| Dataset | `Dataset`: `get(index)`, `len()`, optional `get_batch(indices)` | — (yours) | [src/README.md](src/README.md) |
+| Sampler | `Sampler`: the index order of one epoch | `SequentialSampler`, `RandomSampler`, `DistributedSampler` | [src/sampler](src/sampler/README.md) |
+| Collator | `Collator<Item>`: merge a batch's samples | `VecCollator` (default), `DefaultCollator`, `TorchPinnedCollator` | [src/collator](src/collator/README.md) |
+| Loader | `DataLoader` / `DataLoaderBuilder` / `DataLoaderIter` | — | [src/loader](src/loader/README.md) |
 
-def numpy_collate(items: list[bytes]) -> np.ndarray:
-    return np.stack([np.frombuffer(b, dtype=np.uint8) for b in items])
+One epoch: the sampler produces indices, `BatchSampler` cuts them into batches of `batch_size`,
+each batch is fetched (`Dataset::get_batch`, or `get` per item in parallel) and collated, and the
+iterator yields the batches in order. How the threads, the bounded prefetch and the reorder
+buffer fit together is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
+## Configuration
 
-loader = PyDataloader(MyDataset(paths), batch_size=32, num_workers=4, collate_fn=numpy_collate)
-```
+Every setting is a `DataLoaderBuilder` method; the Python argument of the same name maps to it.
 
-### Custom sampler
-
-Any iterable of indices is accepted:
-
-```python
-import random
-
-
-class WeightedSampler:
-    def __init__(self, weights: list[float]):
-        self.weights = weights
-
-    def __iter__(self):
-        population = list(range(len(self.weights)))
-        return iter(random.choices(population, weights=self.weights, k=len(population)))
-
-
-loader = PyDataloader(dataset, batch_size=32, sampler=WeightedSampler(weights))
-```
-
----
-
-## Architecture
-
-### Execution paths
-
-`DataLoader::iter()` selects one of two paths:
-
-```
-inter_workers == 0               inter_workers > 0
-┌─────────────────────┐          ┌──────────────────────────────┐
-│     Direct path     │          │        Parallel path          │
-│                     │          │                               │
-│  Process each batch │          │  N worker threads pull from   │
-│  inline in next()   │          │  unbounded work queue, push   │
-│                     │          │  results to bounded channel   │
-│  Zero allocation,   │          │  (capacity = prefetch_depth)  │
-│  no thread overhead │          │                               │
-└─────────────────────┘          └──────────────────────────────┘
-```
-
-Both paths can enable a **rayon thread pool** (`intra_workers > 0`) to fetch
-items within a single batch in parallel.
-
-### Key design points
-
-**Fully generic — monomorphized hot path.**
-`DataLoader<D, S, C>` is generic over dataset, sampler, and collator. Every
-code path is monomorphized — no virtual dispatch, no boxing, no dynamic
-allocation in the iteration loop.
-
-**Bounded channel as backpressure.**
-`prefetch_depth` is the exact capacity of the `crossbeam` result channel.
-Workers block when the channel is full, giving precise control over memory
-without over-prefetching.
-
-**Reorder buffer preserves epoch order.**
-Workers complete batches out of order. A `HashMap<batch_idx, Batch>` reorder
-buffer in the iterator reassembles results in epoch order regardless of
-scheduling.
-
-**No unsafe code.**
-The dataset and collator live behind `Arc`; each worker holds its own clone,
-so an iterator never borrows the loader and leaking it (e.g. `mem::forget`)
-cannot leave a worker reading freed memory. The crate is `#![forbid(unsafe_code)]`.
-
-**Python: GIL acquired once per batch.**
-`PyDataset::get_batch` acquires the Python thread state once for all items in
-a batch, reducing GIL overhead from O(batch\_size) to O(1) per batch in the
-threaded path.
-
-### Module layout
-
-```
-src/
-├── dataset.rs          Dataset + IterableDataset traits
-├── error.rs            Error / Result type
-├── sampler/
-│   ├── sequential.rs   SequentialSampler
-│   ├── random.rs       RandomSampler (inside-out Fisher-Yates, fastrand wyrand)
-│   ├── distributed.rs  DistributedSampler (padded strided sharding)
-│   └── batch_sampler.rs BatchSampler (chunks indices into batches)
-├── collator/
-│   ├── vec_collator.rs  VecCollator (collect items into Vec — default)
-│   ├── default_collator/ DefaultCollator (tensor stacking, ndarray, primitives)
-│   └── torch.rs         TorchPinnedCollator (pin_memory for tch tensors)
-└── loader/
-    ├── builder.rs      DataLoaderBuilder (type-safe builder)
-    ├── core.rs         DataLoader struct + IntoIterator
-    ├── iter.rs         DataLoaderIter, ParallelCore
-    └── worker.rs       process_batch, worker_loop
-```
-
----
-
-## Building & testing
-
-### Prerequisites
-
-- Rust stable ≥ 1.91
-- Python ≥ 3.13 (free-threaded 3.13t / 3.14t recommended for parallel benchmarks)
-- [uv](https://docs.astral.sh/uv/) for Python environment management
-
-### Rust
-
-```bash
-# Library
-cargo build
-
-# With Python bindings
-cargo build --features python
-
-# Tests
-cargo test
-cargo test --features python
-```
-
-### Python
-
-```bash
-# Install dev dependencies (maturin, pytest, torch, ...)
-uv sync --group dev
-
-# Build and install the extension in development mode
-uv run maturin develop --features python
-
-# Run all Python tests
-uv run pytest -v
-```
-
-### Benchmarks
-
-#### Rust (Criterion)
-
-```bash
-cargo bench                              # all benches
-cargo bench --bench bench_inter_workers  # single bench
-cargo bench -- num_workers/4            # filter within a bench
-cargo bench --bench bench_real_world     # file reads + network latency
-```
-
-HTML reports: `target/criterion/`.
-
-#### Python regression (pytest-benchmark)
-
-```bash
-uv run pytest bench/ -m bench \
-    --benchmark-enable \
-    --benchmark-warmup=on \
-    --benchmark-min-rounds=10 \
-    -v
-```
-
-#### Python vs PyTorch (full sweep)
-
-```bash
-uv run python bench/bench_batch_size.py    --warmup 2 --repeats 10
-uv run python bench/bench_inter_workers.py --warmup 2 --repeats 10
-uv run python bench/bench_prefetch_depth.py --warmup 2 --repeats 10
-uv run python bench/bench_sampler.py       --warmup 2 --repeats 10
-uv run python bench/bench_real_world.py    --workers 4  # real workloads vs torch
-```
-
----
-
-## Features
-
-| Feature | Default | Description |
+| Builder method | Default | Effect |
 |---|---|---|
-| `python` | ❌ | PyO3 bindings (`PyDataloader`, `PyDataset`) |
-| `ndarray` | ❌ | `DefaultCollator` for `ndarray::Array` types |
-| `torch-rs` | ❌ | `TorchPinnedCollator` for `tch::Tensor` + `pin_memory` |
+| `batch_size(n)` | `1` | samples per batch |
+| `drop_last(bool)` | `false` | drop a final batch smaller than `batch_size` |
+| `sampler(s)` | `SequentialSampler` | index order of each epoch |
+| `collator(c)` | `VecCollator` | how a batch's samples are merged |
+| `num_workers(n)` | `0` | worker threads, each processing whole batches; `0` processes batches inside `next()` |
+| `intra_workers(n)` | `0` | a rayon pool of `n` threads fetching the items of each batch in parallel |
+| `prefetch_depth(n)` | `1` | finished batches that may wait for the consumer (with `num_workers > 0`) |
+| `pin_memory(bool)` | — | pin `tch::Tensor` batches in host memory (feature `torch-rs`) |
 
----
+Rules of thumb: `num_workers = 0` is the fastest path for cheap samples (no thread hand-off);
+use workers once a batch costs more than a few tens of microseconds; `prefetch_depth` 2–8 is
+enough, beyond that it only holds memory ([BENCH.md](BENCH.md#4-results-rust)).
+
+## Feature flags
+
+| Feature | Default | Enables |
+|---|---|---|
+| `ndarray` | off | `DefaultCollator` for `ndarray::Array` (stacked on a new axis 0) |
+| `torch-rs` | off | `DefaultCollator` for `tch::Tensor` (stacked), `TorchPinnedCollator`, `pin_memory` |
+| `python` | off | the PyO3 module behind the `dataloader-rs` Python package |
+
+## Performance
+
+Measured on an Intel Core i9-13900H (20 threads); method, every table and the caveats are in
+[BENCH.md](BENCH.md). Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/dataloader-rs/benchmarks/rust/) and [Python 3.14t](https://azhicham.github.io/dataloader-rs/benchmarks/python-3.14t/).
+
+| Python workload, against `torch.utils.data.DataLoader` | Result |
+|---|---|
+| Array samples: read + normalise a file, augment an image (4 workers) | **≈ 7× faster** |
+| Sequential path (`num_workers=0`), any batch size | **1.5–61× faster** |
+| Parallel, dataset releasing the GIL (hashlib, NumPy, file I/O) | 2–6 % faster |
+| Pure-Python CPU work holding the GIL, regular CPython | torch 1.6× faster (processes); use 3.14t |
+
+## Documentation
+
+| Document | Content |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | execution paths, threads, backpressure, ordering, errors, panics, the Python binding |
+| [BENCH.md](BENCH.md) | what is measured and how, results, comparison with PyTorch, caveats, how to rerun |
+| [python/README.md](python/README.md) | the Python package (also its PyPI page) |
+| [src/README.md](src/README.md) | code map, and the `Dataset` contract |
+| [src/loader](src/loader/README.md), [src/sampler](src/sampler/README.md), [src/collator](src/collator/README.md), [src/python](src/python/README.md) | one guide per module (also on docs.rs) |
+| [bench/](bench/README.md), [benches/](benches/README.md), [tests/](tests/README.md), [examples/](examples/README.md) | what each script, suite and test file covers |
+| [CHANGELOG.md](CHANGELOG.md) | release notes (generated by semantic-release) |
+
+## Project layout
+
+| Path | What |
+|---|---|
+| [`src/`](src/README.md) | the crate: `dataset`, `sampler`, `collator`, `loader`, `python` |
+| [`dataloader_rs/`](dataloader_rs/__init__.pyi) | Python package: re-exports and type stubs |
+| [`python/`](python/README.md) | Python package README (PyPI) |
+| [`tests/`](tests/README.md) | Rust integration tests and the pytest suite |
+| [`benches/`](benches/README.md) | Criterion benchmarks (Rust) |
+| [`bench/`](bench/README.md) | Python benchmarks: pytest-benchmark guards and comparisons with PyTorch |
+| [`examples/`](examples/README.md) | runnable Rust examples |
+
+## Building and testing
+
+Prerequisites: Rust ≥ 1.91, Python ≥ 3.13, [uv](https://docs.astral.sh/uv/).
+
+```bash
+# Rust
+cargo build
+cargo test --features ndarray,python          # add torch-rs to test tch (downloads libtorch)
+
+# Python
+uv sync --group dev                            # maturin, pytest, numpy, torch
+uv run maturin develop --features python       # build the extension into the venv
+uv run pytest                                  # tests/ (benchmarks are deselected)
+
+# Lint, as CI does
+CI=1 prek run --all-files                      # ruff, ty, cargo fmt, clippy -D warnings
+```
+
+Benchmarks: [BENCH.md, section 9](BENCH.md#9-running-it-again).
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/); releases, the
+changelog, the crate and the wheels are published by semantic-release from `main`.
+
+## Minimum supported Rust version
+
+Rust **1.91** (`rust-version` in `Cargo.toml`), checked in CI by the `Rust tests (MSRV)` job.
 
 ## License
 
