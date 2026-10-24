@@ -72,7 +72,7 @@ def test_getitems_wrong_length_raises(num_workers):
             return indices[:-1]
 
     loader = DataLoader(ShortDs(4), batch_size=2, num_workers=num_workers)
-    with pytest.raises(Exception, match="__getitems__ returned 1 samples for 2 indices"):
+    with pytest.raises(ValueError, match="__getitems__ returned 1 samples for 2 indices"):
         next(iter(loader))
 
 
