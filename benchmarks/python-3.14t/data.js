@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792834152490,
+  "lastUpdate": 1792834400458,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Python benchmarks (3.14t)": [
@@ -610,6 +610,128 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0001772319422753632",
             "extra": "mean: 44.0998282000038 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "9de80d366f960009bd131a5384d8a25fb8cc952b",
+          "message": "fix(python): raise from len(loader) instead of guessing the sampler length\n\nlen(loader) with a Python sampler fell back to the dataset length whenever\nlen(sampler) failed, which lumped two cases together: a sampler without\n__len__ got a dataset-based count that can be wrong, and an exception\nraised by __len__ was silently dropped.\n\nPyDataloader keeps the user's sampler and __len__ now returns\nlen(sampler) batched, so a sampler without __len__ raises TypeError (as in\nPyTorch) and a raising __len__ propagates. SharedPySampler keeps the\nSampler::len default, which is right for the built-in samplers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T10:31:57+01:00",
+          "tree_id": "7f22cdc4aff076272bf7601b4bc4c271812d7194",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/9de80d366f960009bd131a5384d8a25fb8cc952b"
+        },
+        "date": 1792834399888,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[1]",
+            "value": 1083.997209353034,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000036843825070670096",
+            "extra": "mean: 922.5116000038724 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[64]",
+            "value": 4122.008143403099,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000004307090342067196",
+            "extra": "mean: 242.6002000021299 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[4096]",
+            "value": 3960.3897657543625,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008706790700652151",
+            "extra": "mean: 252.50039999775709 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[1]",
+            "value": 2.209948377161719,
+            "unit": "iter/sec",
+            "range": "stddev: 0.13708556920912796",
+            "extra": "mean: 452.4992575999988 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[64]",
+            "value": 306.93654492092054,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000227612448369285",
+            "extra": "mean: 3.258002399999782 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[4096]",
+            "value": 1175.0257213096822,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006123561997010297",
+            "extra": "mean: 851.0452000024316 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[1]",
+            "value": 21.010722044596495,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0012071663959341645",
+            "extra": "mean: 47.5947470000051 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[4]",
+            "value": 20.96072062823305,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003122921760456334",
+            "extra": "mean: 47.708283400001505 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[16]",
+            "value": 21.579333034262703,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000774767726279038",
+            "extra": "mean: 46.34063519999643 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_sequential",
+            "value": 1671.8941222858896,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013819330301965854",
+            "extra": "mean: 598.1240000011212 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_shuffle",
+            "value": 1590.175008299149,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011630094336432961",
+            "extra": "mean: 628.8616000006186 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[0]",
+            "value": 5.899531690336757,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00024861018136980824",
+            "extra": "mean: 169.50497980000137 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[1]",
+            "value": 5.73389070573582,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00009446322060908208",
+            "extra": "mean: 174.4016500000015 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[4]",
+            "value": 21.615734009781725,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006779627883768222",
+            "extra": "mean: 46.262597399999095 msec\nrounds: 5"
           }
         ]
       }
