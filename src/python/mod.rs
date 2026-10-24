@@ -1,3 +1,5 @@
+#![doc = include_str!("README.md")]
+
 mod collator;
 mod dataloader;
 mod dataset;
