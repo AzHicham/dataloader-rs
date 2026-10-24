@@ -289,6 +289,7 @@ uv run pytest -v
 cargo bench                              # all benches
 cargo bench --bench bench_inter_workers  # single bench
 cargo bench -- num_workers/4            # filter within a bench
+cargo bench --bench bench_real_world     # file reads + network latency
 ```
 
 HTML reports: `target/criterion/`.
@@ -310,6 +311,7 @@ uv run python bench/bench_batch_size.py    --warmup 2 --repeats 10
 uv run python bench/bench_inter_workers.py --warmup 2 --repeats 10
 uv run python bench/bench_prefetch_depth.py --warmup 2 --repeats 10
 uv run python bench/bench_sampler.py       --warmup 2 --repeats 10
+uv run python bench/bench_real_world.py    --workers 4  # real workloads vs torch
 ```
 
 ---
