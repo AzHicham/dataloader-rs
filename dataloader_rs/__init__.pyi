@@ -107,6 +107,15 @@ class PyDataloader:
         the same sequence of epoch orders; each epoch still differs from the
         previous one. Requires ``shuffle=True``. Default: ``None`` (seeded
         from OS entropy, not reproducible).
+    parallel_items:
+        Fetch the items of each batch concurrently on the loader's thread
+        pool, one ``__getitem__`` call per item (``__getitems__`` is not used).
+        For I/O-bound datasets (network, object storage) whose items would
+        otherwise be fetched one after another. Default: ``False``.
+    num_threads:
+        Size of the loader's thread pool, never below *num_workers*. With
+        *parallel_items*, about how many items are fetched at once. Default:
+        ``None`` (*num_workers*, or the number of CPUs with *parallel_items*).
 
     Example
     -------
@@ -127,6 +136,8 @@ class PyDataloader:
         collate_fn: Callable[[list[Any]], Any] | None = None,
         drop_last: bool = False,
         seed: int | None = None,
+        parallel_items: bool = False,
+        num_threads: int | None = None,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""

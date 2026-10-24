@@ -190,6 +190,10 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
   (`Dataset::get_batch`), not once per item. The pool's threads are created with the loader and
   reused by every epoch. The consumer releases the interpreter
   (`py.detach`) while it waits for the next batch, so workers can run.
+- **`parallel_items=True`**: the pool's threads call `__getitem__` for the items of a batch
+  concurrently, each attaching to the interpreter for its own call; such epochs always use the
+  core iterator, even with `num_workers = 0`, because the consumer must wait with the interpreter
+  released.
 
 On regular CPython the tasks' Python code is serialised by the GIL; work that releases it
 (file I/O, NumPy, hashlib) runs in parallel. On free-threaded CPython 3.14t all of it does.
