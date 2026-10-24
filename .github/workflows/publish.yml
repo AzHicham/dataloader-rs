@@ -12,7 +12,7 @@ env:
 
 jobs:
   # ── Build Python wheels (always — validates compilation on dev too) ───────
-  # 4 combinations: 2 platforms × 2 free-threaded interpreters (3.13t, 3.14t)
+  # 2 combinations: 2 platforms × free-threaded 3.14t
   build-wheels:
     name: Wheel (${{ matrix.target }}, ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
@@ -23,17 +23,7 @@ jobs:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             manylinux: auto
-            python: "3.13t"
-
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            manylinux: auto
             python: "3.14t"
-
-          - os: macos-14
-            target: aarch64-apple-darwin
-            macos_target: '11.0'
-            python: "3.13t"
 
           - os: macos-14
             target: aarch64-apple-darwin
