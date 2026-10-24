@@ -64,15 +64,11 @@ jobs:
   python-bench:
     name: Python benchmarks (${{ matrix.python }})
     runs-on: ubuntu-24.04
-    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - python: "3.13t"
-            experimental: false
           - python: "3.14t"
-            experimental: true
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -156,7 +152,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - python: "3.13t"
           - python: "3.14t"
     permissions:
       contents: write

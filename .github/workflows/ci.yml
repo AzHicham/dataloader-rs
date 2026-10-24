@@ -69,20 +69,15 @@ jobs:
       - name: cargo test
         run: cargo test --all-features
 
-  # ── Python tests (3.13 · 3.13t · 3.14t) ─────────────────────────────────
+  # ── Python tests (3.14t) ─────────────────────────────────────────────────
   test-python:
     name: Python tests (${{ matrix.python }})
     runs-on: ubuntu-24.04
-    # 3.14t is still experimental — don't fail the whole CI if it breaks.
-    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - python: "3.13t"
-            experimental: false
           - python: "3.14t"
-            experimental: true
 
     steps:
       - uses: actions/checkout@v7.0.1
