@@ -1,3 +1,5 @@
+#![doc = include_str!("README.md")]
+
 mod batch_sampler;
 mod distributed;
 mod random;

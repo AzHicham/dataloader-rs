@@ -1,3 +1,5 @@
+#![doc = include_str!("README.md")]
+
 use crate::error::Result;
 
 mod default_collator;

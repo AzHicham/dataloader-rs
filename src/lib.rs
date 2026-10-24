@@ -1,44 +1,26 @@
-//! High-performance DataLoader for Rust with a PyTorch-like interface.
+//! PyTorch's `DataLoader` model — dataset, sampler, collator, loader — as a typed Rust library.
 //!
-//! # Overview
-//!
-//! This crate provides a typed, streaming batch pipeline with four independent
-//! stages connected by a bounded async channel:
-//!
-//! ```text
-//! Sampler ──▶ index chunks ──▶ prefetch thread (rayon pool)
-//!                                    │
-//!                              collate batch
-//!                                    │
-//!                            bounded channel
-//!                                    │
-//!                            DataLoaderIter (consumer)
-//! ```
-//!
-//! ## Advantages over PyTorch's DataLoader
-//!
-//! | PyTorch problem | Rust solution |
-//! |---|---|
-//! | GIL blocks parallel transforms | Rayon: true parallelism, no GIL |
-//! | `pickle` IPC serialization | Shared `Arc<Dataset>` — zero-copy |
-//! | `fork`-based worker spawning | Long-lived thread pool |
-//! | Fixed `prefetch_factor` granularity | Bounded channel (exact depth) |
-//! | Python overhead per `__getitem__` | Monomorphized `Dataset::get` |
-//!
-//! # Quick start
+//! A [`DataLoader`] owns a [`Dataset`], a [`Sampler`] and a [`Collator`]; each
+//! [`iter`](DataLoader::iter) runs one epoch and yields `Result<Batch>` in epoch order, loading
+//! batches inline (`num_workers = 0`) or on worker threads, with item-level parallelism on a rayon
+//! pool (`intra_workers`).
 //!
 //! ```rust
-//! use dataloader_rs::{Dataset, DataLoader, RandomSampler, error::Result};
+//! use dataloader_rs::{DataLoader, Dataset, RandomSampler, error::Result};
 //!
-//! struct MyDataset;
+//! struct Squares(usize);
 //!
-//! impl Dataset for MyDataset {
-//!     type Item = u32;
-//!     fn get(&self, index: usize) -> Result<u32> { Ok(index as u32) }
-//!     fn len(&self) -> usize { 1000 }
+//! impl Dataset for Squares {
+//!     type Item = u64;
+//!     fn get(&self, index: usize) -> Result<u64> {
+//!         Ok((index as u64).pow(2))
+//!     }
+//!     fn len(&self) -> usize {
+//!         self.0
+//!     }
 //! }
 //!
-//! let mut loader = DataLoader::builder(MyDataset)
+//! let mut loader = DataLoader::builder(Squares(1000))
 //!     .batch_size(32)
 //!     .sampler(RandomSampler::new(42))
 //!     .num_workers(4)
@@ -47,19 +29,26 @@
 //!     .build();
 //!
 //! for batch in &mut loader {
-//!     let batch: Vec<u32> = batch.unwrap();
-//!     // pass to model, write to disk, etc.
-//!     let _ = batch;
+//!     let batch: Vec<u64> = batch.unwrap();
+//!     assert_eq!(batch.len(), 32);
 //! }
 //! ```
 //!
-//! # Future Python bindings
+//! | Module | Content |
+//! |---|---|
+//! | [`dataset`] | the [`Dataset`] contract |
+//! | [`sampler`] | index order: sequential, random, distributed, batching |
+//! | [`collator`] | batch assembly: `Vec`, PyTorch-like `DefaultCollator`, pinned tensors |
+//! | [`loader`] | [`DataLoader`], its builder and iterator, the worker threads |
+//! | [`error`] | [`Error`] and [`Result`] |
 //!
-//! The generic `DataLoader<D, S, C>` is the Rust-facing API.  Future PyO3
-//! bindings will introduce a type-erased `PyDataLoader` that wraps a
-//! `Box<dyn Iterator<Item = Result<PyObject>> + Send>`.  The design here
-//! deliberately avoids lifetime parameters on public structs and requires
-//! `'static` bounds everywhere so that wrapping is straightforward.
+//! Features: `ndarray` and `torch-rs` add collation of `ndarray::Array` and `tch::Tensor`;
+//! `python` builds the PyO3 module behind the `dataloader-rs` Python package.
+//!
+//! Design, threads and failure handling:
+//! [ARCHITECTURE.md](https://github.com/AzHicham/dataloader-rs/blob/dev/ARCHITECTURE.md).
+//! Benchmarks against PyTorch:
+//! [BENCH.md](https://github.com/AzHicham/dataloader-rs/blob/dev/BENCH.md).
 
 // The dataset and collator are shared with worker threads through `Arc`, so
 // the crate needs no unsafe code at all.
