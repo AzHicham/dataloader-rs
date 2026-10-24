@@ -495,7 +495,8 @@ uv run python bench/bench_sampler.py        --warmup 2 --repeats 10
 uv run python bench/bench_real_world.py     --workers 4
 ```
 
-For the free-threaded build: `uv run --python 3.14t python -X gil=0 bench/...`.
+These run on free-threaded CPython 3.14t, the repository's default (`.python-version`). For the
+GIL comparison: `uv run --python 3.13 python bench/...`.
 
 ### 9.4 Comparing two versions
 

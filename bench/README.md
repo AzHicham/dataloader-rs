@@ -39,7 +39,7 @@ uv run pytest bench/ -m bench --benchmark-enable --benchmark-warmup=on --benchma
 ```bash
 uv run python bench/bench_real_world.py --workers 4 --repeats 5
 uv run python bench/bench_batch_size.py --warmup 2 --repeats 10
-uv run --python 3.14t python -X gil=0 bench/bench_inter_workers.py   # free-threaded
+uv run --python 3.13 python bench/bench_inter_workers.py   # with the GIL (default: 3.14t)
 ```
 
 Each script prints a table and a CSV; `--help` lists its options.
