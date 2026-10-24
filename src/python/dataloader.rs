@@ -14,6 +14,8 @@ type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollat
 #[pyclass(name = "PyDataloader", module = "dataloader_rs", unsendable)]
 pub struct PyDataloader {
     inner: CorePyLoader,
+    /// The user's sampler, kept to answer `len(loader)` with `len(sampler)`.
+    py_sampler: Option<Py<PyAny>>,
 }
 
 #[pymethods]
@@ -31,6 +33,7 @@ impl PyDataloader {
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
+        py: Python<'_>,
         dataset: PyDataset,
         batch_size: usize,
         prefetch_depth: usize,
@@ -52,6 +55,7 @@ impl PyDataloader {
             ));
         }
 
+        let py_sampler = sampler.as_ref().map(|s| s.clone_ref(py));
         let sampler = match sampler {
             Some(py_sampler) => {
                 validate_python_sampler(&py_sampler)
@@ -75,7 +79,7 @@ impl PyDataloader {
             .collator(PyCollator::new(collate_fn))
             .build();
 
-        Ok(Self { inner })
+        Ok(Self { inner, py_sampler })
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
@@ -116,8 +120,16 @@ impl PyDataloader {
         })
     }
 
+    /// Batches per epoch. With a Python sampler this is `len(sampler)`
+    /// batched, so a sampler without `__len__` raises `TypeError` like
+    /// PyTorch, and an exception from `__len__` propagates.
     fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
-        len_py(self.inner.dataset(), py)?;
-        Ok(self.inner.batch_len())
+        match &self.py_sampler {
+            Some(sampler) => Ok(self.inner.num_batches(sampler.bind(py).len()?)),
+            None => {
+                len_py(self.inner.dataset(), py)?;
+                Ok(self.inner.batch_len())
+            }
+        }
     }
 }

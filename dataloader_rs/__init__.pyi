@@ -118,5 +118,10 @@ class PyDataloader:
         ...
 
     def __len__(self) -> int:
-        """Return the number of batches per epoch (respecting *drop_last*)."""
+        """Return the number of batches per epoch (respecting *drop_last*).
+
+        With a custom *sampler* this is based on ``len(sampler)``: a sampler
+        without ``__len__`` raises :class:`TypeError`, and an exception raised
+        by its ``__len__`` propagates.
+        """
         ...
