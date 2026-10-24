@@ -5,10 +5,32 @@ build-backend = "maturin"
 [project]
 name = "dataloader-rs"
 version = "0.1.0"
-description = "PyO3 bindings for dataloader-rs with a PyTorch-like DataLoader API"
+description = "A PyTorch-style DataLoader with a Rust core: worker threads instead of processes"
 requires-python = ">=3.13"
 readme = "python/README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["dataloader", "pytorch", "machine-learning", "data-loading", "rust"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/AzHicham/dataloader-rs"
+Documentation = "https://github.com/AzHicham/dataloader-rs/blob/dev/python/README.md"
+Benchmarks = "https://github.com/AzHicham/dataloader-rs/blob/dev/BENCH.md"
+Changelog = "https://github.com/AzHicham/dataloader-rs/blob/dev/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
