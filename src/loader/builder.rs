@@ -5,7 +5,7 @@ use crate::collator::TorchPinnedCollator;
 use crate::{
     collator::{Collator, VecCollator},
     dataset::Dataset,
-    loader::core::DataLoader,
+    loader::core::{DataLoader, LoaderPool},
     sampler::{BatchSampler, Sampler, SequentialSampler},
 };
 
@@ -142,14 +142,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         // One pool for batch-level and item-level parallelism, so the two
         // never oversubscribe the CPU and idle threads steal either kind.
         let threads = self.inter_workers.max(self.intra_workers);
-        let pool = (threads > 0).then(|| {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .thread_name(|i| format!("dataloader-{i}"))
-                .build()
-                .expect("failed to build rayon thread pool");
-            Arc::new(pool)
-        });
+        let pool = (threads > 0).then(|| LoaderPool::new(threads));
 
         DataLoader {
             dataset: Arc::new(self.dataset),

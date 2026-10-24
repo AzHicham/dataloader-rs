@@ -21,7 +21,45 @@ pub struct DataLoader<D, S: Sampler, C> {
     pub(super) parallel_items: bool,
     /// The single rayon pool running both batch tasks and item-level work,
     /// sized `max(num_workers, intra_workers)`. `None` when both are `0`.
-    pub(super) pool: Option<Arc<rayon::ThreadPool>>,
+    pub(super) pool: Option<LoaderPool>,
+}
+
+/// The loader's rayon pool, rebuilt after a `fork()`.
+///
+/// A forked child inherits the pool but none of its threads, so batch tasks
+/// spawned on it would never run and the epoch would hang (e.g. Python
+/// `multiprocessing` with the `fork` start method).
+pub(super) struct LoaderPool {
+    pool: Arc<rayon::ThreadPool>,
+    threads: usize,
+    pid: u32,
+}
+
+impl LoaderPool {
+    pub(super) fn new(threads: usize) -> Self {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .thread_name(|i| format!("dataloader-{i}"))
+            .build()
+            .expect("failed to build rayon thread pool");
+        Self {
+            pool: Arc::new(pool),
+            threads,
+            pid: std::process::id(),
+        }
+    }
+
+    /// The pool, rebuilt first if this process is a fork of the one that
+    /// built it.
+    fn get(&mut self) -> &Arc<rayon::ThreadPool> {
+        if self.pid != std::process::id() {
+            // Leak the inherited pool: dropping it would signal threads that
+            // do not exist here, through locks a parent thread may have held
+            // at fork time.
+            std::mem::forget(std::mem::replace(self, Self::new(self.threads)));
+        }
+        &self.pool
+    }
 }
 
 impl<D: Dataset> DataLoader<D, SequentialSampler, VecCollator> {
@@ -50,7 +88,7 @@ where
         DataLoaderIter::new(
             &self.dataset,
             &self.collator,
-            self.pool.as_ref(),
+            self.pool.as_mut().map(LoaderPool::get),
             self.parallel_items,
             self.inter_workers,
             self.prefetch_depth,
