@@ -5,6 +5,14 @@ on:
     types: [published]
   push:
     branches: [dev]
+  # Build every wheel before merging a change to packaging or to this workflow.
+  # Uploads stay release-only (publish-pypi; publish-crates is a dry run here).
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/publish.yml
+      - Cargo.toml
+      - pyproject.toml
 
 env:
   CARGO_TERM_COLOR: always
