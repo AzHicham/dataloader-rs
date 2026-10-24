@@ -88,7 +88,8 @@ class PyDataloader:
         An iterable of ``int`` indices that determines the draw order.
         Mutually exclusive with *shuffle*. Default: ``None`` (sequential).
     num_workers:
-        Number of background threads used to prefetch batches in parallel.
+        Number of batches processed in parallel on the loader's thread pool
+        (``num_workers`` threads, created once and reused across epochs).
         ``0`` (default) processes batches on the calling thread.
     collate_fn:
         A callable ``(list[sample]) -> batch`` that merges individual samples
@@ -98,7 +99,8 @@ class PyDataloader:
         If ``True``, drop the last batch when the dataset size is not divisible
         by *batch_size*. Default: ``False``.
     prefetch_depth:
-        Maximum number of pre-computed batches kept in the internal buffer.
+        How many batches workers may run ahead of the consumer: at most
+        ``num_workers + prefetch_depth`` batches are in flight or buffered.
         Only meaningful when ``num_workers > 0``. Default: ``1``.
     seed:
         Seed for ``shuffle=True``. Two loaders built with the same seed yield
