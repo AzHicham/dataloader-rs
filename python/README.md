@@ -1,8 +1,9 @@
 # dataloader-rs for Python
 
 A `DataLoader` for Python with the `torch.utils.data.DataLoader` interface and a Rust core. Workers
-are threads, not processes: samples are handed over by reference instead of being pickled, which
-makes it about **7× faster than PyTorch on array samples** — with no PyTorch dependency.
+are threads, not processes: samples are handed over by reference instead of being pickled, an
+epoch starts in milliseconds, and against PyTorch it is **≈ 5× faster on the loader's own
+overhead and ≈ 3× on network-bound datasets** — with no PyTorch dependency.
 
 - **PyTorch's arguments**: `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`,
   `drop_last`, plus `seed` for reproducible shuffling, `prefetch_depth`, and `items_in_parallel`
@@ -231,10 +232,12 @@ when `items_in_parallel > 1`: each item is its own call.
 
 ## Performance
 
-On an Intel Core i9-13900H, against `torch.utils.data.DataLoader` with the same dataset code:
-≈ 7× faster on array samples (file reads, image augmentation), 1.5–61× faster without workers,
-and slower (torch 1.6×) on pure-Python CPU work under the GIL, where processes win — use 3.14t.
-Every number, the method and the caveats:
+Against `torch.utils.data.DataLoader` with the same dataset code, on 4 cores of an Intel Core
+i9-13900H: 4.9–5.9× faster on the loader's own overhead, ≈ 3× on network-bound datasets
+(`items_in_parallel`), first batches in milliseconds against 12–334 ms for torch's fresh worker
+processes, parity to 1.6× on array samples (file reads, NumPy augmentation), and slower on
+pure-Python CPU work, where processes share nothing (torch 1.1–3.2×; closest on 3.15t with
+per-thread tables). Every number, the method and the caveats:
 [BENCH.md](https://github.com/AzHicham/dataloader-rs/blob/dev/BENCH.md).
 
 Source, issues and the Rust crate: [github.com/AzHicham/dataloader-rs](https://github.com/AzHicham/dataloader-rs).
