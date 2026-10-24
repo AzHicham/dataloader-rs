@@ -116,7 +116,7 @@ where
     D: Dataset,
     C: Collator<D::Item>,
 {
-    /// inter_workers=0: process batches on the calling thread, zero allocation.
+    /// num_workers=0: process batches on the calling thread, zero allocation.
     /// Concrete types + monomorphized `process_batch` — no virtual dispatch.
     Direct {
         chunks: std::vec::IntoIter<Vec<usize>>,
@@ -125,7 +125,7 @@ where
         collator: Arc<C>,
         pool: Option<Arc<rayon::ThreadPool>>,
     },
-    /// inter_workers>0: batch tasks on the loader's rayon pool.
+    /// num_workers>0: batch tasks on the loader's rayon pool.
     Parallel(ParallelCore<D, C>),
 }
 

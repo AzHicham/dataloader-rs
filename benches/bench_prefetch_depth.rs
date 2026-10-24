@@ -5,10 +5,10 @@
 //!                                    pipeline fill effect is visible; if items
 //!                                    are too heavy, all depths saturate equally
 //!   batch_size = 8                — 16 batches total
-//!   inter_workers  = 4            — workers that can outpace consumer; shallow
+//!   num_workers    = 4            — workers that can outpace consumer; shallow
 //!                                    depth will starve consumer, deep depth
 //!                                    allows overlap
-//!   intra_workers  = 0            — isolate prefetch effect only
+//!   parallel_items = false        — isolate prefetch effect only
 //!
 //! SWEPT:
 //!   prefetch_depth in [1, 2, 4, 8, 16]
@@ -38,7 +38,7 @@ fn bench_prefetch_depth(c: &mut Criterion) {
             let mut loader = DataLoader::builder(LightCpuDs(N))
                 .batch_size(BS)
                 .num_workers(INTER)
-                .intra_workers(0)
+                .parallel_items(false)
                 .prefetch_depth(d)
                 .collator(CatCollator)
                 .build();

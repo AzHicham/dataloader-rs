@@ -17,10 +17,12 @@ pub struct DataLoaderBuilder<D, S, C> {
     batch_size: usize,
     drop_last: bool,
     prefetch_depth: usize,
-    /// Number of independent worker threads (inter-batch concurrency).
-    inter_workers: usize,
-    /// Number of rayon threads for intra-batch item-level parallelism.
-    intra_workers: usize,
+    /// Batches processed concurrently.
+    num_workers: usize,
+    /// Fetch the items of a batch in parallel on the pool.
+    parallel_items: bool,
+    /// Pool size requested with [`num_threads`](Self::num_threads).
+    num_threads: Option<usize>,
 }
 
 impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
@@ -32,8 +34,9 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
             batch_size: 1,
             drop_last: false,
             prefetch_depth: 1,
-            inter_workers: 0,
-            intra_workers: 0,
+            num_workers: 0,
+            parallel_items: false,
+            num_threads: None,
         }
     }
 }
@@ -63,23 +66,48 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
 
     /// Number of batches processed concurrently — PyTorch's `num_workers`.
     ///
-    /// Batches run as tasks on the loader's thread pool, which has
-    /// `max(num_workers, intra_workers)` threads. `0` (default) processes
-    /// batches directly in `Iterator::next` with no spawned threads.
+    /// Batches run as tasks on the loader's thread pool (see
+    /// [`num_threads`](Self::num_threads)). `0` (default) processes batches
+    /// directly in `Iterator::next` with no spawned threads.
     pub fn num_workers(mut self, n: usize) -> Self {
-        self.inter_workers = n;
+        self.num_workers = n;
         self
     }
 
-    /// Fetch the items of each batch in parallel, with at least `n` threads.
+    /// Fetch the items of each batch in parallel. Default: `false`.
     ///
-    /// When `> 0`, items within a batch are fetched in parallel on the same
-    /// pool that runs batches (sized `max(num_workers, intra_workers)`), so
-    /// batch- and item-level work share threads instead of oversubscribing
-    /// the CPU. Useful for CPU-bound Rust datasets. `0` (default) fetches
-    /// items sequentially via [`Dataset::get_batch`].
+    /// Items are fetched with [`Dataset::get`] on the loader's thread pool,
+    /// the same one that runs batches, so batch- and item-level work share
+    /// threads instead of oversubscribing the CPU. Useful for CPU-bound Rust
+    /// datasets. When `false`, items are fetched sequentially via
+    /// [`Dataset::get_batch`].
+    pub fn parallel_items(mut self, enabled: bool) -> Self {
+        self.parallel_items = enabled;
+        self
+    }
+
+    /// Size of the loader's thread pool, never below `num_workers`.
+    ///
+    /// Default: `num_workers`, or the number of available CPUs when
+    /// [`parallel_items`](Self::parallel_items) is enabled. The pool is built
+    /// once and reused by every epoch; it is not created when `num_workers` is
+    /// `0` and `parallel_items` is off.
+    pub fn num_threads(mut self, n: usize) -> Self {
+        assert!(n > 0, "num_threads must be > 0");
+        self.num_threads = Some(n);
+        self
+    }
+
+    /// Fetch the items of each batch in parallel with a pool of at least `n`
+    /// threads.
+    ///
+    /// Equivalent to `parallel_items(n > 0)` plus `num_threads(n)` when
+    /// `n > 0`. The pool is shared with batch-level work and items use every
+    /// idle thread, so `n` only sets the pool size, not a per-batch limit.
+    #[deprecated(note = "use `parallel_items(true)` and `num_threads(n)` instead")]
     pub fn intra_workers(mut self, n: usize) -> Self {
-        self.intra_workers = n;
+        self.parallel_items = n > 0;
+        self.num_threads = (n > 0).then_some(n);
         self
     }
 
@@ -99,8 +127,9 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_size: self.batch_size,
             drop_last: self.drop_last,
             prefetch_depth: self.prefetch_depth,
-            inter_workers: self.inter_workers,
-            intra_workers: self.intra_workers,
+            num_workers: self.num_workers,
+            parallel_items: self.parallel_items,
+            num_threads: self.num_threads,
         }
     }
 
@@ -113,8 +142,9 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_size: self.batch_size,
             drop_last: self.drop_last,
             prefetch_depth: self.prefetch_depth,
-            inter_workers: self.inter_workers,
-            intra_workers: self.intra_workers,
+            num_workers: self.num_workers,
+            parallel_items: self.parallel_items,
+            num_threads: self.num_threads,
         }
     }
 
@@ -127,8 +157,9 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_size: self.batch_size,
             drop_last: self.drop_last,
             prefetch_depth: self.prefetch_depth,
-            inter_workers: self.inter_workers,
-            intra_workers: self.intra_workers,
+            num_workers: self.num_workers,
+            parallel_items: self.parallel_items,
+            num_threads: self.num_threads,
         }
     }
 
@@ -141,7 +172,15 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     {
         // One pool for batch-level and item-level parallelism, so the two
         // never oversubscribe the CPU and idle threads steal either kind.
-        let threads = self.inter_workers.max(self.intra_workers);
+        let default_threads = if self.parallel_items {
+            std::thread::available_parallelism().map_or(1, usize::from)
+        } else {
+            self.num_workers
+        };
+        let threads = self
+            .num_threads
+            .unwrap_or(default_threads)
+            .max(self.num_workers);
         let pool = (threads > 0).then(|| LoaderPool::new(threads));
 
         DataLoader {
@@ -149,8 +188,8 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             batch_sampler: BatchSampler::new(self.sampler, self.batch_size, self.drop_last),
             collator: Arc::new(self.collator),
             prefetch_depth: self.prefetch_depth,
-            inter_workers: self.inter_workers,
-            parallel_items: self.intra_workers > 0,
+            num_workers: self.num_workers,
+            parallel_items: self.parallel_items,
             pool,
         }
     }
