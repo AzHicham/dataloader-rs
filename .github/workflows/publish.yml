@@ -21,7 +21,6 @@ env:
 jobs:
   # ── Build Python wheels (always — validates compilation on dev too) ───────
   # 6 combinations: 3 platforms × free-threaded 3.14t and 3.15t.
-  # Linux arm64 runs on ubuntu-24.04-arm: GitHub has no 26.04 arm image yet.
   build-wheels:
     name: Wheel (${{ matrix.platform.target }}, ${{ matrix.python }})
     runs-on: ${{ matrix.platform.os }}
@@ -33,7 +32,7 @@ jobs:
           - os: ubuntu-26.04
             target: x86_64-unknown-linux-gnu
             manylinux: "2_28"
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             target: aarch64-unknown-linux-gnu
             manylinux: "2_28"
           - os: macos-15
