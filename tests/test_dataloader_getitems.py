@@ -88,6 +88,20 @@ def test_getitems_exception_propagates(num_workers):
 
 
 @pytest.mark.parametrize("num_workers", [0, 2])
+def test_getitems_set_to_none_falls_back_to_getitem(num_workers):
+    """Like PyTorch, a falsy __getitems__ disables batched fetching."""
+
+    class OptOutDs(BatchedDs):
+        __getitems__ = None
+
+        def __getitem__(self, index):
+            return index + 100
+
+    loader = DataLoader(OptOutDs(3), batch_size=2, num_workers=num_workers)
+    assert list(loader) == [[100, 101], [102]]
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
 def test_datasets_without_getitems_still_use_getitem(num_workers):
     class PlainDs(PyDataset):
         def __len__(self):

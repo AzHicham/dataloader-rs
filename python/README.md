@@ -37,7 +37,8 @@ Optionally implement `__getitems__(indices)` to fetch a whole batch in one call
 (PyTorch's batched-fetch protocol). When defined, the loader calls it once per
 batch with the list of indices instead of calling `__getitem__` per index — useful
 for vectorised reads such as numpy fancy indexing or one database query per batch.
-It must return one sample per index, in order:
+It must return one sample per index, in order. As in PyTorch, setting
+`__getitems__ = None` (e.g. in a subclass) turns batched fetching off:
 
 ```python
 class ArrayDataset(PyDataset):

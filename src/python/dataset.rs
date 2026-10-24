@@ -48,7 +48,8 @@ pub(crate) fn get_item_py(
 ///
 /// Mirrors PyTorch's fetcher: a dataset defining `__getitems__(indices)` is
 /// called once per batch with the list of indices and returns the list of
-/// samples; otherwise `__getitem__` is called once per index.
+/// samples; otherwise `__getitem__` is called once per index. As in PyTorch,
+/// a falsy `__getitems__` (e.g. set to `None`) counts as not defined.
 pub(crate) enum Fetcher {
     /// Bound `__getitems__` method.
     Batched(Py<PyAny>),
@@ -60,8 +61,8 @@ impl Fetcher {
     pub(crate) fn new(dataset: &PyDataset, py: Python<'_>) -> PyResult<Self> {
         let dataset = dataset.bind(py);
         Ok(match dataset.getattr_opt(intern!(py, "__getitems__"))? {
-            Some(getitems) => Self::Batched(getitems.unbind()),
-            None => Self::PerItem(dataset.getattr(intern!(py, "__getitem__"))?.unbind()),
+            Some(getitems) if getitems.is_truthy()? => Self::Batched(getitems.unbind()),
+            _ => Self::PerItem(dataset.getattr(intern!(py, "__getitem__"))?.unbind()),
         })
     }
 
