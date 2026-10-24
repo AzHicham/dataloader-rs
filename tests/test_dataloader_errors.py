@@ -203,7 +203,16 @@ def test_sampler_non_integer_index_surfaces(num_workers):
         iter(loader)
 
 
-def test_sampler_error_does_not_break_next_epoch():
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_sampler_negative_index_surfaces(num_workers):
+    """A negative index cannot be a dataset position: raise, do not stop silently."""
+    loader = DataLoader(ListDataset(range(8)), sampler=[0, -1, 2], num_workers=num_workers)
+    with pytest.raises(OverflowError):
+        iter(loader)
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_sampler_error_does_not_break_next_epoch(num_workers):
     """After a failed epoch, a sampler that recovers must work again."""
 
     class FlakySampler:
@@ -215,7 +224,9 @@ def test_sampler_error_does_not_break_next_epoch():
             return iter(range(4))
 
     sampler = FlakySampler()
-    loader = DataLoader(ListDataset(range(4)), sampler=sampler, batch_size=2)
+    loader = DataLoader(
+        ListDataset(range(4)), sampler=sampler, batch_size=2, num_workers=num_workers
+    )
     sampler.fail = True
     with pytest.raises(ValueError, match="this epoch fails"):
         iter(loader)
