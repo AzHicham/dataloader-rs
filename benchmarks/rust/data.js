@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792836585738,
+  "lastUpdate": 1792842749740,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -2399,6 +2399,246 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 537919,
             "range": "± 14324",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "37a0c7de5173a2148ce040d31cfa858d13d3c6c0",
+          "message": "refactor(python): leave no silent path from sampler errors to an empty epoch\n\nPySampler still implemented Sampler, and its Python branch turned any\nexception into an empty Vec (unwrap_or_default); only a comment kept\ncallers on SharedPySampler, which records the error. Drop that impl and\nlet SharedPySampler::indices handle every variant itself.\n\nTests: a negative index raises OverflowError, and a loader recovers after\na failed epoch with num_workers=2 as well as 0.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T12:48:17+01:00",
+          "tree_id": "c1e52f0e6d0093f3324ca74a3eef99cf13cf666f",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/37a0c7de5173a2148ce040d31cfa858d13d3c6c0"
+        },
+        "date": 1792842749175,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 153216,
+            "range": "± 998",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 44734,
+            "range": "± 289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 23153,
+            "range": "± 207",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 11753,
+            "range": "± 71",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 7149,
+            "range": "± 47",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 5962,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 4674,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1126546,
+            "range": "± 14081",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 314394,
+            "range": "± 3705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 201621,
+            "range": "± 3687",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 174792,
+            "range": "± 2676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 143315,
+            "range": "± 2312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 141733,
+            "range": "± 9395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 136839,
+            "range": "± 5619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/0",
+            "value": 2158698,
+            "range": "± 17104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/1",
+            "value": 2269908,
+            "range": "± 12576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/2",
+            "value": 1264440,
+            "range": "± 122501",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/4",
+            "value": 742875,
+            "range": "± 8101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/8",
+            "value": 812933,
+            "range": "± 8527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/0",
+            "value": 648262,
+            "range": "± 3011",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/1",
+            "value": 1175879,
+            "range": "± 29397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/2",
+            "value": 684083,
+            "range": "± 22325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/4",
+            "value": 539240,
+            "range": "± 12929",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/8",
+            "value": 533898,
+            "range": "± 38850",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/inter4_intra4",
+            "value": 628253,
+            "range": "± 13661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 197247,
+            "range": "± 10993",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 198968,
+            "range": "± 10256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 192968,
+            "range": "± 11380",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 182338,
+            "range": "± 3174",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/16",
+            "value": 182393,
+            "range": "± 4804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2723,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 4675,
+            "range": "± 352",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 28389,
+            "range": "± 156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 48288,
+            "range": "± 938",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 294780,
+            "range": "± 4289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 539033,
+            "range": "± 4943",
             "unit": "ns/iter"
           }
         ]
