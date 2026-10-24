@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792834117402,
+  "lastUpdate": 1792834150659,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Python benchmarks (3.13t)": [
@@ -488,6 +488,128 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0003987571083741361",
             "extra": "mean: 40.6754160000105 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "noreply@anthropic.com",
+            "name": "Claude",
+            "username": "claude"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "ed1032ee6c80e74fbac261b30a7b8af94672b7a1",
+          "message": "fix: raise a failing dataset __len__ instead of panicking\n\nDataset::len is infallible, so PyDataset::len panicked when __len__\nraised; Python saw a PanicException (a BaseException, which\n`except Exception` does not catch) instead of the real error.\n\nPyDataloader.__iter__ and __len__ now call __len__ fallibly first and\npropagate its exception.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_017eJkQ4peEFnnwbBFmW44KN",
+          "timestamp": "2026-10-24T10:25:30+01:00",
+          "tree_id": "fcc315d1c8da18eccd4a701facfe51c56aeb595a",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/ed1032ee6c80e74fbac261b30a7b8af94672b7a1"
+        },
+        "date": 1792834149854,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[1]",
+            "value": 1004.1757645001763,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00003061201113440275",
+            "extra": "mean: 995.8415999989256 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[64]",
+            "value": 3530.826587697847,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015748380988321263",
+            "extra": "mean: 283.21979999930136 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[4096]",
+            "value": 3671.5086523317545,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011325382303948878",
+            "extra": "mean: 272.3675999959596 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[1]",
+            "value": 2.3640666431937576,
+            "unit": "iter/sec",
+            "range": "stddev: 0.1166008762609767",
+            "extra": "mean: 422.99991959999943 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[64]",
+            "value": 306.69454070215943,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00037380152713876644",
+            "extra": "mean: 3.2605732000007492 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[4096]",
+            "value": 1285.75491555927,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00010913722653560335",
+            "extra": "mean: 777.7532000062592 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[1]",
+            "value": 21.419537065628123,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0013599725772471367",
+            "extra": "mean: 46.686349800000926 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[4]",
+            "value": 21.586271103947276,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0010202825076314136",
+            "extra": "mean: 46.3257408000004 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[16]",
+            "value": 21.879362785963274,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008728640050100883",
+            "extra": "mean: 45.70517020000011 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_sequential",
+            "value": 1489.215695622831,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000021118310641551345",
+            "extra": "mean: 671.494399998096 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_shuffle",
+            "value": 1414.2519257868023,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001627579075909071",
+            "extra": "mean: 707.0876000000226 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[0]",
+            "value": 5.894740092526965,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00009095725828397055",
+            "extra": "mean: 169.642763600001 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[1]",
+            "value": 5.805818395888409,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00006828686656774377",
+            "extra": "mean: 172.24100580000652 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[4]",
+            "value": 21.956515691541473,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000808746655389306",
+            "extra": "mean: 45.544567000001734 msec\nrounds: 5"
           }
         ]
       }
