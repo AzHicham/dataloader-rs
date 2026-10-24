@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792842749740,
+  "lastUpdate": 1792868073858,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -2639,6 +2639,288 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 539033,
             "range": "± 4943",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "bd3cd1d56260fc3ee511491348c07133560e7edd",
+          "message": "docs(bench): re-measure the real-world workloads on dev\n\nThe recorded numbers came from a build that included the unmerged\nsingle-pool and async work. Re-run both benchmarks on dev (i9-13900H,\nCPython 3.13 GIL, torch 2.14.1, 4 workers) and update the conclusions:\narray samples are about 7x torch, 4 threads now beat w=0 by 1.5-1.8x,\nremote is capped by workers in both loaders, and torch keeps its 1.6x on\nGIL-bound Python. The glibc allocator effect on num_workers=0 (4.2x)\nreproduces. List the new benchmarks in the README.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T19:49:53+01:00",
+          "tree_id": "44631d6e44fba9654175f55394aeede728beaf93",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/bd3cd1d56260fc3ee511491348c07133560e7edd"
+        },
+        "date": 1792868073515,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 121661,
+            "range": "± 708",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 34241,
+            "range": "± 724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 17915,
+            "range": "± 250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 9789,
+            "range": "± 73",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 5685,
+            "range": "± 47",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 4644,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 3761,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1071627,
+            "range": "± 38333",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 261740,
+            "range": "± 2734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 153535,
+            "range": "± 2040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 127303,
+            "range": "± 1898",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 101089,
+            "range": "± 10028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 99469,
+            "range": "± 1231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 99602,
+            "range": "± 8169",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/0",
+            "value": 2158460,
+            "range": "± 11016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/1",
+            "value": 2264406,
+            "range": "± 15782",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/2",
+            "value": 1261461,
+            "range": "± 19920",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/4",
+            "value": 740942,
+            "range": "± 7483",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/8",
+            "value": 810905,
+            "range": "± 73178",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/0",
+            "value": 457466,
+            "range": "± 6325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/1",
+            "value": 844920,
+            "range": "± 24916",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/2",
+            "value": 484277,
+            "range": "± 17612",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/4",
+            "value": 352339,
+            "range": "± 20850",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/8",
+            "value": 322433,
+            "range": "± 6281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/inter4_intra4",
+            "value": 387516,
+            "range": "± 15336",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 134223,
+            "range": "± 2114",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 133543,
+            "range": "± 3804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 134519,
+            "range": "± 3717",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 119325,
+            "range": "± 6469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/16",
+            "value": 118005,
+            "range": "± 1630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/0",
+            "value": 139146355,
+            "range": "± 1610584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/2",
+            "value": 67620891,
+            "range": "± 2345281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/4",
+            "value": 25891094,
+            "range": "± 6720727",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/8",
+            "value": 42323396,
+            "range": "± 1654351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/4",
+            "value": 266378402,
+            "range": "± 530874",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/16",
+            "value": 67421957,
+            "range": "± 113973",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/64",
+            "value": 17938345,
+            "range": "± 324563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2752,
+            "range": "± 130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 4927,
+            "range": "± 98",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 26630,
+            "range": "± 208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 50866,
+            "range": "± 3123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 299171,
+            "range": "± 3049",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 544163,
+            "range": "± 4005",
             "unit": "ns/iter"
           }
         ]
