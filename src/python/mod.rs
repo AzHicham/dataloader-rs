@@ -4,6 +4,7 @@ mod collator;
 mod dataloader;
 mod dataset;
 mod iterator;
+mod pool;
 mod sampler;
 
 use dataloader::PyDataloader;

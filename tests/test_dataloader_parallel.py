@@ -8,9 +8,11 @@ Tests verify:
   - custom collate_fn applied correctly in parallel mode
   - large prefetch_depth does not corrupt results
   - a forked child can still iterate a loader the parent already used
+  - the interpreter exits cleanly with loaders still alive
 """
 
 import multiprocessing
+import subprocess
 import sys
 
 import pytest
@@ -184,3 +186,45 @@ def test_par_forked_child_can_iterate():
         pytest.fail("forked child hung iterating the loader")
     assert child.exitcode == 0
     assert queue.get(timeout=5) == 5
+
+
+# ── interpreter shutdown ──────────────────────────────────────────────────────
+
+_DS = """
+from dataloader_rs import PyDataloader, PyDataset
+
+class Ds(PyDataset):
+    def __len__(self):
+        return 64
+
+    def __getitem__(self, index):
+        return index
+"""
+
+_EXIT_SCRIPTS = {
+    # Pool threads start while the interpreter shuts down: the process's
+    # first attach from Rust happens during finalization.
+    "fresh_loader": _DS + "loader = PyDataloader(Ds(), batch_size=4, num_workers=4)\nprint('ok')\n",
+    # Pools whose threads hold a thread state, one epoch left unfinished.
+    "used_loaders": _DS
+    + """
+loaders = [PyDataloader(Ds(), batch_size=4, num_workers=2, items_in_parallel=k) for k in (1, 3)]
+for loader in loaders:
+    assert sum(len(batch) for batch in loader) == 64
+it = iter(loaders[0])
+next(it)
+print("ok")
+""",
+}
+
+
+@pytest.mark.parametrize("script", sorted(_EXIT_SCRIPTS))
+def test_par_interpreter_exits_cleanly_with_live_loaders(script):
+    """Pool threads attach to the interpreter; shutdown must neither hang, abort nor panic."""
+    result = subprocess.run(
+        [sys.executable, "-c", _EXIT_SCRIPTS[script]], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+    assert "Fatal Python error" not in result.stderr
+    assert "panicked" not in result.stderr

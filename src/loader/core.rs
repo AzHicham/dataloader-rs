@@ -25,6 +25,10 @@ pub struct DataLoader<D, S: Sampler, C> {
     pub(super) pool: Option<LoaderPool>,
 }
 
+/// Main function of a pool thread: runs `ThreadBuilder::run`, possibly
+/// inside some per-thread setup.
+pub(crate) type ThreadMain = fn(rayon::ThreadBuilder);
+
 /// The loader's rayon pool, rebuilt after a `fork()`.
 ///
 /// A forked child inherits the pool but none of its threads, so batch tasks
@@ -33,19 +37,35 @@ pub struct DataLoader<D, S: Sampler, C> {
 pub(super) struct LoaderPool {
     pool: Arc<rayon::ThreadPool>,
     threads: usize,
+    thread_main: Option<ThreadMain>,
     pid: u32,
 }
 
 impl LoaderPool {
-    pub(super) fn new(threads: usize) -> Self {
+    pub(super) fn new(threads: usize, thread_main: Option<ThreadMain>) -> Self {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .thread_name(|i| format!("dataloader-{i}"))
+            .spawn_handler(move |thread| {
+                let mut builder = std::thread::Builder::new();
+                if let Some(name) = thread.name() {
+                    builder = builder.name(name.to_owned());
+                }
+                if let Some(size) = thread.stack_size() {
+                    builder = builder.stack_size(size);
+                }
+                builder.spawn(move || match thread_main {
+                    Some(main) => main(thread),
+                    None => thread.run(),
+                })?;
+                Ok(())
+            })
             .build()
             .expect("failed to build rayon thread pool");
         Self {
             pool: Arc::new(pool),
             threads,
+            thread_main,
             pid: std::process::id(),
         }
     }
@@ -62,7 +82,8 @@ impl LoaderPool {
             // Leak the inherited pool: dropping it would signal threads that
             // do not exist here, through locks a parent thread may have held
             // at fork time.
-            std::mem::forget(std::mem::replace(self, Self::new(self.threads)));
+            let fresh = Self::new(self.threads, self.thread_main);
+            std::mem::forget(std::mem::replace(self, fresh));
         }
         &self.pool
     }

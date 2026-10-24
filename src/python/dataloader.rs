@@ -7,6 +7,7 @@ use crate::python::collator::PyCollator;
 use crate::python::dataset::{Fetcher, PyDataset, len_py};
 use crate::python::into_py_err;
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
+use crate::python::pool::run_attached;
 use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
 
 type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollator>;
@@ -91,6 +92,7 @@ impl PyDataloader {
             .drop_last(drop_last)
             .num_workers(num_workers)
             .items_in_parallel(items_in_parallel)
+            .thread_main(run_attached)
             .sampler(sampler.clone())
             .collator(PyCollator::new(collate_fn))
             .build();

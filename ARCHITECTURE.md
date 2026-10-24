@@ -189,8 +189,10 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
   `__getitem__` (looked up once per epoch) per index; then `collate_fn`, or a `list`.
 - **`num_workers > 0`**: each batch task attaches to the interpreter **once per batch**
   (`Dataset::get_batch`), not once per item. The pool's threads are created with the loader and
-  reused by every epoch. The consumer releases the interpreter
-  (`py.detach`) while it waits for the next batch, so workers can run.
+  reused by every epoch, and each keeps one Python thread state for its whole life
+  (`python/pool.rs`): a task's attach only re-activates it, where creating and destroying a thread
+  state per attach would cost about 100 µs on free-threaded builds. The consumer releases the
+  interpreter (`py.detach`) while it waits for the next batch, so workers can run.
 - **`items_in_parallel > 1`**: a batch's lanes call `__getitem__` concurrently, each attaching to
   the interpreter for its own call (`__getitems__` is not used); such epochs always use the core
   iterator, even with `num_workers = 0`, because the consumer must wait with the interpreter
