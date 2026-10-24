@@ -12,23 +12,25 @@ env:
 
 jobs:
   # ── Build Python wheels (always — validates compilation on dev too) ───────
-  # 2 combinations: 2 platforms × free-threaded 3.14t
+  # 6 combinations: 3 platforms × free-threaded 3.14t and 3.15t.
+  # Linux arm64 runs on ubuntu-24.04-arm: GitHub has no 26.04 arm image yet.
   build-wheels:
-    name: Wheel (${{ matrix.target }}, ${{ matrix.python }})
-    runs-on: ${{ matrix.os }}
+    name: Wheel (${{ matrix.platform.target }}, ${{ matrix.python }})
+    runs-on: ${{ matrix.platform.os }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
+        python: ["3.14t", "3.15t"]
+        platform:
+          - os: ubuntu-26.04
             target: x86_64-unknown-linux-gnu
-            manylinux: auto
-            python: "3.14t"
-
-          - os: macos-14
+            manylinux: "2_28"
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
+          - os: macos-15
             target: aarch64-apple-darwin
-            macos_target: '11.0'
-            python: "3.14t"
+            macos_target: "11.0"
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -37,7 +39,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2.9.3
         with:
-          key: publish-${{ matrix.target }}-${{ matrix.python }}
+          key: publish-${{ matrix.platform.target }}-${{ matrix.python }}
 
       - uses: astral-sh/setup-uv@v10.3.2
 
@@ -57,18 +59,18 @@ jobs:
       - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target }}
-          manylinux: ${{ matrix.manylinux || '' }}
+          target: ${{ matrix.platform.target }}
+          manylinux: ${{ matrix.platform.manylinux || '' }}
           args: >-
             --release --features python --out dist
             --interpreter ${{ runner.os == 'macOS' && steps.pypath.outputs.path || matrix.python }}
           sccache: true
         env:
-          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_target || '' }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.platform.macos_target || '' }}
 
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: wheel-${{ matrix.target }}-${{ matrix.python }}
+          name: wheel-${{ matrix.platform.target }}-${{ matrix.python }}
           path: dist/*.whl
 
   # ── Publish to PyPI — real releases only ─────────────────────────────────

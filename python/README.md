@@ -9,8 +9,8 @@ makes it about **7× faster than PyTorch on array samples** — with no PyTorch 
 - **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
 - **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
 - **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
-- **Free-threaded Python**: built for CPython 3.14t, where worker threads run Python code in
-  parallel.
+- **Free-threaded Python**: built for CPython 3.14t and 3.15t, where worker threads run Python
+  code in parallel.
 
 Requires Python ≥ 3.13.
 
@@ -33,7 +33,12 @@ Requires Python ≥ 3.13.
 pip install dataloader-rs
 ```
 
-From source (needs a Rust toolchain): `pip install maturin && maturin develop --release --features python`.
+| Wheels | Platforms |
+|---|---|
+| free-threaded CPython 3.14t, 3.15t | Linux x86_64 and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
+
+Other interpreters and platforms build from the source distribution, which needs a Rust
+toolchain; from a checkout: `pip install maturin && maturin develop --release --features python`.
 
 ## Quick start
 
@@ -158,7 +163,7 @@ every epoch; they load batches ahead while your loop runs and the loader returns
 - **Regular CPython**: the threads share the GIL. Work that releases it — file reads, NumPy,
   image decoding, hashing, most C extensions — runs in parallel; pure-Python code in
   `__getitem__` does not.
-- **Free-threaded CPython 3.14t**: no GIL, so pure-Python code runs in parallel too.
+- **Free-threaded CPython 3.14t / 3.15t**: no GIL, so pure-Python code runs in parallel too.
 
   ```bash
   uv python install 3.14t
