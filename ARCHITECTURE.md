@@ -52,19 +52,18 @@ dataset and the collator.
 
 ### 3.1 The pool
 
-`build()` creates **one rayon pool per loader** when `num_workers > 0` or `parallel_items` is on,
-with `num_threads` threads (default: `num_workers`, or the number of CPUs with
-`parallel_items`; never fewer than `num_workers`). The pool lives as long as the loader and is
-reused by every epoch; its threads are named `dataloader-N`.
+Two settings decide the parallelism, and nothing else does:
 
-| Setting | Meaning |
-|---|---|
-| `num_workers(n)` | at most `n` batches in flight; `0` selects the direct path |
-| `parallel_items(true)` | the items of a batch are fetched in parallel on the same pool |
-| `num_threads(t)` | the pool's size |
-| `prefetch_depth(d)` | how far ahead of the consumer batches may run: at most `n + d` in flight or buffered |
+| Setting | Meaning | Default |
+|---|---|---|
+| `num_workers(n)` | batches processed in parallel; `0` processes batches in `next()` | `0` |
+| `items_in_parallel(k)` | items of one batch fetched in parallel | `1` |
+| `prefetch_depth(d)` | how far ahead of the consumer batches may run: at most `n + d` in flight or buffered | `2` |
 
-`intra_workers(n)` is a deprecated alias for `parallel_items(n > 0)` plus `num_threads(n)`.
+When either parallel setting is above its default, `build()` creates **one rayon pool per
+loader** with `max(n, 1) × k` threads, so at most that many fetches run at once. The pool lives
+as long as the loader and is reused by every epoch; its threads are named `dataloader-N`. Sizing
+it for the machine is the caller's choice.
 
 ### 3.2 Choosing a path
 
@@ -119,12 +118,14 @@ until their turn. The window also bounds this buffer.
 and an occasional task spawn per batch. That is negligible once a batch does real work, but
 dominates for nearly free batches (`batch_size` ≤ 8 of in-memory items, [BENCH.md](BENCH.md)).
 
-### 3.5 Item-level parallelism (`parallel_items`)
+### 3.5 Item-level parallelism (`items_in_parallel`)
 
-With `parallel_items`, a batch's items are fetched with `Dataset::get` in parallel (`par_iter`)
-on the same pool, instead of `get_batch` on one thread. Batch tasks and item work share the
-pool's threads (idle threads steal either kind), so the two levels never oversubscribe the CPU.
-On the direct path, items are fetched in parallel on the pool too.
+With `items_in_parallel = 1`, a batch is one `Dataset::get_batch` call on the thread that
+processes it. With `k > 1`, the batch is fetched by `k` **lanes** on the pool: each lane takes the
+batch's next item and calls `Dataset::get`, until none is left. A batch therefore never has more
+than `k` items in flight, and a fast lane takes more items, so uneven items still balance. After
+an error, lanes stop taking items and the first error by position is the batch's result. On the
+direct path (`num_workers = 0`) the batch's lanes run on the pool too.
 
 ### 3.6 End of the epoch
 
@@ -190,9 +191,9 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
   (`Dataset::get_batch`), not once per item. The pool's threads are created with the loader and
   reused by every epoch. The consumer releases the interpreter
   (`py.detach`) while it waits for the next batch, so workers can run.
-- **`parallel_items=True`**: the pool's threads call `__getitem__` for the items of a batch
-  concurrently, each attaching to the interpreter for its own call; such epochs always use the
-  core iterator, even with `num_workers = 0`, because the consumer must wait with the interpreter
+- **`items_in_parallel > 1`**: a batch's lanes call `__getitem__` concurrently, each attaching to
+  the interpreter for its own call (`__getitems__` is not used); such epochs always use the core
+  iterator, even with `num_workers = 0`, because the consumer must wait with the interpreter
   released.
 
 On regular CPython the tasks' Python code is serialised by the GIL; work that releases it
