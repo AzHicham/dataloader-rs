@@ -20,36 +20,17 @@ impl Dataset for InMemoryDs {
     }
 }
 
-/// CPU-heavy dataset that burns ~50_000 LCG iterations per item (~1ms range on
-/// typical hardware). Returns a 256-byte Vec<u8>.
+/// Work units per `HeavyCpuDs` item: ≈ 110 µs on the reference laptop.
+pub const ITEM_WORK: u64 = 100_000;
+
+/// CPU-bound dataset: [`spin`]s `ITEM_WORK` steps per item (≈ 110 µs), like
+/// decoding or augmenting a small sample. Returns a 256-byte Vec<u8>.
 pub struct HeavyCpuDs(pub usize);
 
 impl Dataset for HeavyCpuDs {
     type Item = Vec<u8>;
     fn get(&self, index: usize) -> Result<Vec<u8>> {
-        let mut acc: u64 = index as u64;
-        for i in 0..50_000u64 {
-            acc = acc.wrapping_mul(6364136223846793005).wrapping_add(i);
-        }
-        Ok(vec![(acc & 0xff) as u8; 256])
-    }
-    fn len(&self) -> usize {
-        self.0
-    }
-}
-
-/// Lightweight CPU dataset: 1_000 LCG iterations per item (~µs range).
-/// Used in prefetch-depth benchmarks where pipeline fill matters more than
-/// per-item cost.
-pub struct LightCpuDs(pub usize);
-
-impl Dataset for LightCpuDs {
-    type Item = Vec<u8>;
-    fn get(&self, index: usize) -> Result<Vec<u8>> {
-        let mut acc: u64 = index as u64;
-        for i in 0..1_000u64 {
-            acc = acc.wrapping_mul(6364136223846793005).wrapping_add(i);
-        }
+        let acc = spin(ITEM_WORK) ^ index as u64;
         Ok(vec![(acc & 0xff) as u8; 256])
     }
     fn len(&self) -> usize {
@@ -85,13 +66,16 @@ impl Collator<Vec<u8>> for CatCollator {
 // Consumer work
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Burn `iterations` LCG steps on the calling thread: a stand-in for the work
-/// a training loop does per batch, in the same unit as the datasets above
-/// (`HeavyCpuDs` costs 50_000 per item).
+/// Burn CPU on the calling thread: `iterations` steps of a xorshift-multiply
+/// chain, ≈ 1.1 ns each on the reference laptop. Each step depends on the
+/// previous one through operations that do not reassociate, so the compiler
+/// can neither shorten nor vectorise the chain (it does both to an LCG).
+/// Also stands in for the work a training loop does per batch.
 pub fn spin(iterations: u64) -> u64 {
-    let mut acc = iterations;
-    for i in 0..iterations {
-        acc = acc.wrapping_mul(6364136223846793005).wrapping_add(i);
+    let mut acc = std::hint::black_box(iterations) | 1;
+    for _ in 0..iterations {
+        acc ^= acc >> 29;
+        acc = acc.wrapping_mul(0xbf58_476d_1ce4_e5b9);
     }
     std::hint::black_box(acc)
 }

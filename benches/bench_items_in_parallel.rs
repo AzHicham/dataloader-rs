@@ -2,8 +2,8 @@
 //! (≤ 4, calibrated for a 4-vCPU runner).
 //!
 //! FIXED:
-//!   dataset    = HeavyCpuDs(128)  — CPU-bound items (≈ 1 ms each)
-//!   batch_size = 64               — 2 batches per epoch: few batches, large ones
+//!   dataset    = HeavyCpuDs(128)  — CPU-bound items (≈ 110 µs each)
+//!   batch_size = 64               — 2 batches of ≈ 7 ms: few batches, large ones
 //!
 //! SWEPT (num_workers × items_in_parallel = threads):
 //!   w1_items1 (1)  w1_items2 (2)  w1_items4 (4)  w2_items2 (4)  w4_items1 (4)

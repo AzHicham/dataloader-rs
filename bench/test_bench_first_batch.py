@@ -1,6 +1,6 @@
 """Non-regression benchmarks: latency to the first batch.
 
-An epoch of exactly one batch of 32 CpuBoundDs items (~1 ms each, releases the
+An epoch of exactly one batch of 32 CpuBoundDs items (≈ 0.5 ms each, releases the
 GIL), so a round is `iter()` until that batch is ready: what a training loop
 waits for before its first step. Calibrated for a 4-vCPU runner.
 """

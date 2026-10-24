@@ -43,7 +43,7 @@ class InMemoryBatchedDs(InMemoryDs):
 
 
 class CpuBoundDs(PyDataset):
-    """SHA-256 dataset: ~1ms per item, GIL-releasing C extension, minimal allocation.
+    """SHA-256 dataset: ≈ 0.5 ms per item, GIL-releasing C extension, minimal allocation.
 
     Each call hashes 1MB of data via hashlib (C extension that releases the GIL)
     and returns only a 32-byte digest — ideal for parallelism benchmarks.

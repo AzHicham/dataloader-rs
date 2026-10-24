@@ -4,16 +4,16 @@
 //! that prefetches well hides its loading time behind that work.
 //!
 //! FIXED:
-//!   dataset     = HeavyCpuDs(64)  — CPU-bound items (≈ 1 ms each)
-//!   batch_size  = 4               — 16 batches, ≈ 4 ms to load each
-//!   consumer    = spin(100_000)   — ≈ 2 ms of work per batch
-//!   num_workers = 2               — produces a batch every ≈ 2 ms: as fast as the consumer
+//!   dataset     = HeavyCpuDs(64)  — CPU-bound items (≈ 110 µs each)
+//!   batch_size  = 4               — 16 batches, ≈ 0.45 ms to load each
+//!   consumer    = spin(2 × ITEM_WORK) — ≈ 0.22 ms of work per batch
+//!   num_workers = 2               — a batch every ≈ 0.22 ms: as fast as the consumer
 //!
 //! SWEPT:
-//!   sequential (num_workers 0: load and consume one after the other, ≈ 6 ms per batch)
+//!   sequential (num_workers 0: load and consume one after the other, ≈ 0.67 ms per batch)
 //!   prefetch_depth in [1, 2, 4, 8]
 //!
-//! Ideal with full overlap: ≈ 16 × 2 ms + one batch to fill the pipeline.
+//! Ideal with full overlap: ≈ 16 × 0.22 ms + one batch to fill the pipeline.
 //! Throughput unit: Elements(64) per iteration (full epoch).
 
 #[path = "common.rs"]
@@ -25,7 +25,7 @@ use dataloader_rs::DataLoader;
 
 const N: usize = 64;
 const BS: usize = 4;
-const CONSUMER_WORK: u64 = 100_000;
+const CONSUMER_WORK: u64 = 2 * ITEM_WORK;
 
 fn bench_prefetch_depth(c: &mut Criterion) {
     let mut group = c.benchmark_group("prefetch_depth");

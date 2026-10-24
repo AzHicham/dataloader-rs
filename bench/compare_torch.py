@@ -3,8 +3,11 @@
 Compare dataloader_rs with torch.utils.data.DataLoader on the same workloads.
 
 Each workload's per-sample work lives in real_world.py and is shared by both
-loaders, so only the loading differs. For every loader configuration this
-measures, over whole epochs:
+loaders, so only the loading differs. Each loader collates the way it is meant
+to be used: dataloader_rs with `np.stack`, torch with its default collation
+for array samples (a tensor built in shared memory by its workers, so a batch
+is not pickled between processes); other samples stay a list in both. For
+every loader configuration this measures, over whole epochs:
 
   throughput      items per second, iterator creation included   (median)
   first batch     time from iter(loader) to the first batch       (median)
@@ -53,6 +56,8 @@ from dataloader_rs import PyDataloader
 BATCH_SIZE = 32
 # Requests in flight for the latency-bound workload's item-level and torch cases.
 REMOTE_IN_FLIGHT = 64
+# Workloads with array samples, which torch collates itself (see the docstring).
+ARRAY_WORKLOADS = {"local_files", "image_augment"}
 WORKLOADS = [
     "in_memory",
     "local_files",
@@ -130,9 +135,11 @@ def configs(name: str, n: int, root, workers: int, torch_loader):
     if torch_loader is None:
         return
 
+    torch_collate = None if name in ARRAY_WORKLOADS else stack_collate
+
     def torch(**kw):
         return lambda: torch_loader(
-            torch_dataset(name, n, root), batch_size=BATCH_SIZE, collate_fn=stack_collate, **kw
+            torch_dataset(name, n, root), batch_size=BATCH_SIZE, collate_fn=torch_collate, **kw
         )
 
     yield "torch", "w=0", torch()
