@@ -40,6 +40,13 @@ class InMemoryDs(PyDataset):
         return index
 
 
+class InMemoryBatchedDs(InMemoryDs):
+    """InMemoryDs with ``__getitems__``: one Python call per batch, not per item."""
+
+    def __getitems__(self, indices: list[int]) -> list[int]:
+        return indices
+
+
 class CpuBoundDs(PyDataset):
     """SHA-256 dataset: ~1ms per item, GIL-releasing C extension, minimal allocation.
 
