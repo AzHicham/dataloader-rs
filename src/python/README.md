@@ -26,7 +26,8 @@ iter(loader)
   per epoch; `__next__` calls it, then `collate_fn`.
 - **Threaded**: the core's worker threads call `Dataset::get_batch` on `Py<PyDatasetBase>`, which
   attaches to the interpreter once for the whole batch and resolves the `Fetcher` there.
-  `__next__` releases the interpreter (`py.detach`) while it waits on the channel.
+  `__next__` returns a batch that already arrived directly, and releases the interpreter
+  (`py.detach`) only when it has to wait on the channel.
 - **Pool threads keep a thread state** (`pool.rs`): each attaches once when it starts and runs
   rayon's loop detached, so attaching from a task re-activates its thread state instead of
   creating and destroying one, which costs about 100 µs on free-threaded builds.
