@@ -16,7 +16,7 @@ Note on torch prefetch_factor:
   effective total is noted in the summary.
 
 Run:
-  uv run --python 3.13t python -X gil=0 bench/bench_prefetch_depth.py
+  uv run --python 3.14t python -X gil=0 bench/bench_prefetch_depth.py
 """
 
 from __future__ import annotations

@@ -17,7 +17,7 @@ Expected behaviour:
   near the raw iteration ceiling.
 
 Run:
-  uv run --python 3.13t python -X gil=0 bench/bench_batch_size.py
+  uv run --python 3.14t python -X gil=0 bench/bench_batch_size.py
 """
 
 from __future__ import annotations

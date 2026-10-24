@@ -4,7 +4,7 @@ Benchmark: inter-batch worker parallelism (num_workers sweep).
 
 Tests how throughput scales as more workers are added using a CPU-bound dataset
 (SHA-256 ~1ms/item). With the GIL released inside hashlib, workers run truly in
-parallel under Python 3.13t (free-threaded) or via OS threads otherwise.
+parallel under Python 3.14t (free-threaded) or via OS threads otherwise.
 
 Expected behaviour:
 - num_workers=0: serial, bottlenecked by single-threaded GIL.
@@ -13,7 +13,7 @@ Expected behaviour:
 - torch with persistent_workers=True avoids per-epoch process spawn overhead.
 
 Run:
-  uv run --python 3.13t python -X gil=0 bench/bench_inter_workers.py
+  uv run --python 3.14t python -X gil=0 bench/bench_inter_workers.py
 """
 
 from __future__ import annotations
