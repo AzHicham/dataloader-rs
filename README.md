@@ -105,6 +105,7 @@ maturin develop --features python
 ```python
 from dataloader_rs import PyDataset
 
+
 class MyDataset(PyDataset):
     def __init__(self, paths: list[str]):
         super().__init__()
@@ -142,11 +143,12 @@ for batch in loader:
 ```python
 import numpy as np
 
+
 def numpy_collate(items: list[bytes]) -> np.ndarray:
     return np.stack([np.frombuffer(b, dtype=np.uint8) for b in items])
 
-loader = PyDataloader(MyDataset(paths), batch_size=32, num_workers=4,
-                      collate_fn=numpy_collate)
+
+loader = PyDataloader(MyDataset(paths), batch_size=32, num_workers=4, collate_fn=numpy_collate)
 ```
 
 ### Custom sampler
@@ -156,6 +158,7 @@ Any iterable of indices is accepted:
 ```python
 import random
 
+
 class WeightedSampler:
     def __init__(self, weights: list[float]):
         self.weights = weights
@@ -163,6 +166,7 @@ class WeightedSampler:
     def __iter__(self):
         population = list(range(len(self.weights)))
         return iter(random.choices(population, weights=self.weights, k=len(population)))
+
 
 loader = PyDataloader(dataset, batch_size=32, sampler=WeightedSampler(weights))
 ```

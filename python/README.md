@@ -20,6 +20,7 @@ Subclass `PyDataset` and implement `__len__` and `__getitem__`:
 ```python
 from dataloader_rs import PyDataset, PyDataloader
 
+
 class RangeDataset(PyDataset):
     def __init__(self, n: int) -> None:
         super().__init__()
@@ -29,7 +30,7 @@ class RangeDataset(PyDataset):
         return self.n
 
     def __getitem__(self, index: int):
-        return {"x": index, "y": index ** 2}
+        return {"x": index, "y": index**2}
 ```
 
 ### 2 — Iterate
@@ -62,11 +63,13 @@ The loader is **reusable**: iterating it again starts a new epoch from scratch.
 ```python
 import numpy as np
 
+
 def collate_numpy(samples: list[dict]) -> dict:
     return {
         "x": np.array([s["x"] for s in samples]),
         "y": np.array([s["y"] for s in samples]),
     }
+
 
 loader = PyDataloader(RangeDataset(100), batch_size=32, collate_fn=collate_numpy)
 ```
@@ -78,6 +81,7 @@ Any iterable of `int` indices works:
 ```python
 import random
 
+
 class WeightedSampler:
     def __init__(self, weights: list[float]) -> None:
         self.weights = weights
@@ -85,6 +89,7 @@ class WeightedSampler:
     def __iter__(self):
         population = range(len(self.weights))
         yield from random.choices(population, weights=self.weights, k=len(self.weights))
+
 
 loader = PyDataloader(dataset, batch_size=8, sampler=WeightedSampler(weights))
 ```
