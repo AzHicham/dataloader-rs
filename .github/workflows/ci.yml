@@ -60,6 +60,16 @@ jobs:
         with:
           key: ${{ matrix.toolchain }}
 
+      # --all-features builds pyo3, which links libpython. Pin the interpreter
+      # instead of using whatever the runner image ships: PYO3_PYTHON also makes
+      # pyo3 re-run its build script, so a cached config for another Python
+      # (e.g. 3.12 from an older image) is not reused. setup-python exports
+      # LD_LIBRARY_PATH so the test binaries find libpython at run time.
+      - uses: actions/setup-python@v7.1.0
+        id: python
+        with:
+          python-version: "3.14"
+
       # On latest stable the rust-version field is irrelevant — strip it so
       # Cargo never rejects a dep update because of a stale MSRV pin.
       - name: Remove rust-version pin (stable only)
@@ -67,6 +77,8 @@ jobs:
         run: sed -i '/^rust-version/d' Cargo.toml
 
       - name: cargo test
+        env:
+          PYO3_PYTHON: ${{ steps.python.outputs.python-path }}
         run: cargo test --all-features
 
   # ── Python tests (3.14t) ─────────────────────────────────────────────────
