@@ -1,56 +1,65 @@
 # `bench/`: Python benchmarks
 
-Two kinds of scripts, sharing their datasets and harness:
+Two kinds of scripts, sharing their datasets:
 
 - **Regression guards** (`test_bench_*.py`): pytest-benchmark cases on `dataloader_rs` alone, run
-  by CI on every pull request and tracked per commit.
-- **Comparisons with PyTorch** (`bench_*.py`): stand-alone sweeps that run the same datasets
-  through `dataloader_rs.PyDataloader` and `torch.utils.data.DataLoader`, run on demand.
+  by CI on every pull request (free-threaded 3.14t) and tracked per commit.
+- **Comparison with PyTorch** (`compare_torch.py`): the same workloads through
+  `dataloader_rs.PyDataloader` and `torch.utils.data.DataLoader`, run on demand.
 
-Method, results and caveats: [BENCH.md](../BENCH.md).
+Both are sized for a 4-vCPU machine, the CI runner: at most 4 workers, except where waiting on
+the network is the point. Method, results and caveats: [BENCH.md](../BENCH.md).
 
 ## Regression guards (pytest-benchmark)
 
 Marked `bench`, so a plain `pytest` deselects them.
 
-| File | Cases | Dataset |
-|---|---|---|
-| `test_bench_batch_size.py` | `batch_size` 1, 64, 4096; sequential and 4 workers; with `__getitems__` | `InMemoryDs(4096)`, `InMemoryBatchedDs` |
-| `test_bench_workers.py` | `num_workers` 0, 1, 4 | `CpuBoundDs(256)`, `batch_size` 32 |
-| `test_bench_prefetch.py` | `prefetch_depth` 1, 4, 16 | `CpuBoundDs(256)`, 4 workers |
-| `test_bench_sampler.py` | sequential vs `shuffle=True` | `InMemoryDs(10000)`, `batch_size` 64 |
-| `test_bench_real_world.py` | local files, image augmentation (0 and 4 workers), blocking network | `real_world.py` workloads |
+| File | Question | Cases | Dataset |
+|---|---|---|---|
+| `test_bench_batch_size.py` | loader overhead per batch | `batch_size` 1, 64, 4096; no workers and 4; with `__getitems__` | `InMemoryDs(4096)`, `InMemoryBatchedDs` |
+| `test_bench_workers.py` | scaling with workers | `num_workers` 0, 1, 2, 4 | `CpuBoundDs(256)`, `batch_size` 32 |
+| `test_bench_prefetch.py` | does loading overlap a training step? | sequential; `prefetch_depth` 1, 2, 4 with 2 workers | `CpuBoundDs(128)`, `batch_size` 8, a 4 ms step per batch |
+| `test_bench_first_batch.py` | latency to the first batch | (`num_workers`, `items_in_parallel`) (0, 1), (1, 1), (0, 4), (1, 4) | one batch of 32 `CpuBoundDs` items |
+| `test_bench_sampler.py` | sampler cost | sequential vs `shuffle=True` | `InMemoryDs(10000)`, `batch_size` 64 |
+| `test_bench_real_world.py` | real per-item work | local files and image augmentation (0 and 4 workers); blocking network (4 workers, with and without 8 items in parallel) | `real_world.py` workloads |
 
 ```bash
 uv run maturin develop --release --features python
-uv run pytest bench/ -m bench --benchmark-enable --benchmark-warmup=on --benchmark-min-rounds=10
+uv run python -X gil=0 -m pytest bench/ -m bench --benchmark-enable --benchmark-warmup=on \
+  --benchmark-min-rounds=5
 ```
 
-## Comparisons with PyTorch
+## Comparison with PyTorch
 
-| Script | Sweep | Dataset |
+`compare_torch.py` runs six workloads, each through both loaders: no workers, 4 workers, torch's
+workers fresh and persistent, and for `remote` 64 requests in flight (`items_in_parallel` for
+`dataloader_rs`, 64 processes for torch). For every configuration it reports the median
+throughput over whole epochs, iterator creation included, and the median latency to the first
+batch.
+
+| Workload | Per item | Stands for |
 |---|---|---|
-| `bench_batch_size.py` | `batch_size` 1 … 4096, sequential and 4 workers | `InMemoryDs` |
-| `bench_inter_workers.py` | `num_workers` 0 … 8 | `CpuBoundDs` (SHA-256 of 1 MB) |
-| `bench_prefetch_depth.py` | `prefetch_depth` (torch: `prefetch_factor`) | `CpuBoundDs`, 4 workers |
-| `bench_sampler.py` | sequential vs shuffle, N 1k … 100k | `CpuBoundDs`, 4 workers |
-| `bench_real_world.py` | four real workloads, `w=0`, threads, torch fresh and persistent | `real_world.py` |
+| `in_memory` | returns the index | the loader's own cost |
+| `local_files` | read a 128 KB file, normalise to float32 | file I/O fan-out |
+| `image_augment` | random crop, flip, normalise a 3×256×256 image | NumPy augmentation |
+| `remote` | 10 ms blocking sleep | an object-store or HTTP GET |
+| `python_cpu` | pure-Python tokenisation, shared vocabulary | Python preprocessing |
+| `python_cpu_local` | the same with per-thread tables | the same, written for free-threaded Python |
 
 ```bash
-uv run python bench/bench_real_world.py --workers 4 --repeats 5
-uv run python bench/bench_batch_size.py --warmup 2 --repeats 10
-uv run --python 3.13 python bench/bench_inter_workers.py   # with the GIL (default: 3.14t)
+uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+taskset -c 0,2,4,6 uv run python -X gil=0 bench/compare_torch.py --workers 4 --repeats 5 --json out.json
+uv run --python 3.13 python bench/compare_torch.py --workloads remote   # GIL build, one workload
 ```
 
-Each script prints a table and a CSV; `--help` lists its options.
+`--help` lists the options; without torch installed only `dataloader_rs` runs.
 
 ## Shared code
 
 | File | What |
 |---|---|
-| `common.py` | datasets (`InMemoryDs`, `InMemoryBatchedDs`, `CpuBoundDs`, their torch twins), collate functions, `run_case` / `time_epoch` (median of timed epochs), result tables |
-| `real_world.py` | the real-world workloads as mixins (`LocalFilesWork`, `ImageAugmentWork`, `RemoteWork`, `PythonCpuWork`) combined with `PyDataset` and with `torch.utils.data.Dataset`, so both loaders run identical work; `make_file_tree` writes the test files under the temp directory |
+| `common.py` | guard datasets (`InMemoryDs`, `InMemoryBatchedDs`, `CpuBoundDs`), collate functions, `training_step` (a consumer step that releases the GIL) |
+| `real_world.py` | the workloads as mixins (`InMemoryWork`, `LocalFilesWork`, `ImageAugmentWork`, `RemoteWork`, `PythonCpuWork`, `PythonCpuLocalWork`) combined with `PyDataset` and, at module level so they pickle, with `torch.utils.data.Dataset`; `make_file_tree` writes the test files under the temporary directory |
 | `conftest.py` | puts `bench/` on `sys.path` for the pytest cases |
 
-torch is only needed for the comparisons; the regression guards and the real-world module import
-it lazily.
+torch is only needed for the comparison; the guards and `real_world.py` import it lazily.

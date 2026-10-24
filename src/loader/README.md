@@ -92,9 +92,9 @@ The threads, the backpressure and the reorder buffer are described in
 | Situation | Settings |
 |---|---|
 | samples cost microseconds (in memory, tiny decode) | `num_workers(0)`: the hand-off between threads would cost more than the work |
-| each sample costs about a millisecond or more (I/O, decode, augment) | `num_workers` up to the number of cores; `prefetch_depth` 2–8 |
+| each sample costs about a millisecond or more (I/O, decode, augment) | `num_workers` up to the number of cores; the default `prefetch_depth` 2, more only if batch times vary a lot |
 | few, large batches of CPU-bound items | `items_in_parallel` > 1, so one batch is spread over several cores |
 | blocking I/O (network, remote storage) | requests in flight = `num_workers × items_in_parallel`: `num_workers(4).items_in_parallel(16)` keeps 64 in flight |
-| many nearly free batches (`batch_size` ≤ 8, in-memory items) | `num_workers(0)`, or a larger `batch_size`: scheduling a batch costs about a microsecond |
+| many nearly free batches (`batch_size` ≤ 8, in-memory items) | `num_workers(0)`, or a larger `batch_size`: scheduling a batch costs about half a microsecond |
 
 Measurements behind these rules: [BENCH.md](../../BENCH.md#4-results-rust).
