@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792834316463,
+  "lastUpdate": 1792834674816,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -1199,6 +1199,246 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 515001,
             "range": "± 8345",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "9de80d366f960009bd131a5384d8a25fb8cc952b",
+          "message": "fix(python): raise from len(loader) instead of guessing the sampler length\n\nlen(loader) with a Python sampler fell back to the dataset length whenever\nlen(sampler) failed, which lumped two cases together: a sampler without\n__len__ got a dataset-based count that can be wrong, and an exception\nraised by __len__ was silently dropped.\n\nPyDataloader keeps the user's sampler and __len__ now returns\nlen(sampler) batched, so a sampler without __len__ raises TypeError (as in\nPyTorch) and a raising __len__ propagates. SharedPySampler keeps the\nSampler::len default, which is right for the built-in samplers.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T10:31:57+01:00",
+          "tree_id": "7f22cdc4aff076272bf7601b4bc4c271812d7194",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/9de80d366f960009bd131a5384d8a25fb8cc952b"
+        },
+        "date": 1792834674123,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 177242,
+            "range": "± 3372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 41584,
+            "range": "± 111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 24606,
+            "range": "± 190",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 12651,
+            "range": "± 81",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 8784,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 9739,
+            "range": "± 30",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 15769,
+            "range": "± 217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 905683,
+            "range": "± 7290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 262906,
+            "range": "± 2445",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 206815,
+            "range": "± 2890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 173484,
+            "range": "± 2272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 168551,
+            "range": "± 3797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 168227,
+            "range": "± 2563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 174737,
+            "range": "± 2400",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/0",
+            "value": 2165898,
+            "range": "± 43988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/1",
+            "value": 2265384,
+            "range": "± 28580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/2",
+            "value": 1263856,
+            "range": "± 20090",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/4",
+            "value": 746377,
+            "range": "± 20239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/8",
+            "value": 856319,
+            "range": "± 8638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/0",
+            "value": 545796,
+            "range": "± 2295",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/1",
+            "value": 994181,
+            "range": "± 2119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/2",
+            "value": 581416,
+            "range": "± 20717",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/4",
+            "value": 431083,
+            "range": "± 39642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/8",
+            "value": 418799,
+            "range": "± 7033",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/inter4_intra4",
+            "value": 496890,
+            "range": "± 15882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 106363,
+            "range": "± 3655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 104802,
+            "range": "± 1838",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 98644,
+            "range": "± 1201",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 94002,
+            "range": "± 1230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/16",
+            "value": 95970,
+            "range": "± 995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 1427,
+            "range": "± 111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 3219,
+            "range": "± 56",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 20736,
+            "range": "± 357",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 33849,
+            "range": "± 480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 197894,
+            "range": "± 4846",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 329591,
+            "range": "± 14385",
             "unit": "ns/iter"
           }
         ]
