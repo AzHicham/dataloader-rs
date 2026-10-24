@@ -1,34 +1,45 @@
-"""Non-regression benchmarks: prefetch depth impact on pipeline throughput.
+"""Non-regression benchmarks: loading overlapped with the consumer's work.
 
-Uses CpuBoundDs (SHA-256 per item, ~1 ms, GIL-releasing) with num_workers=4
-so batches take real time to produce and the prefetch buffer can actually
-saturate.  With InMemoryDs the pipeline never fills up and depth has no
-observable effect.  Regressions here point to changes in channel capacity or
-batch dispatch.
+The consumer takes a training step per batch (a wait that releases the GIL,
+like a GPU step), so a loader that prefetches well hides its loading behind
+those steps. CpuBoundDs (SHA-256, ~1 ms per item, releases the GIL) with
+2 workers produces a batch about as fast as the consumer takes one.
+
+  sequential (num_workers=0): load and step one after the other
+  prefetch_depth 1, 2, 4:     loading overlapped with the steps
 """
 
 from __future__ import annotations
 
 import pytest
-from common import CpuBoundDs, cat_collate
+from common import CpuBoundDs, cat_collate, training_step
 
 from dataloader_rs import PyDataloader
 
 pytestmark = pytest.mark.bench
 
-N = 256
-BATCH_SIZE = 32
-NUM_WORKERS = 4
+N = 128
+BATCH_SIZE = 8  # 16 batches, ~8 ms each to load on one thread
+STEP_S = 0.004  # the consumer's step: as long as 2 workers take per batch
 
 
-@pytest.mark.parametrize("prefetch_depth", [1, 4, 16])
-def test_prefetch_depth(benchmark, prefetch_depth):
-    """Pipeline throughput vs prefetch buffer depth (workers=4, CpuBoundDs)."""
+def epoch(loader):
+    for _batch in loader:
+        training_step(STEP_S)
+
+
+def test_overlap_sequential(benchmark):
+    loader = PyDataloader(CpuBoundDs(N), batch_size=BATCH_SIZE, collate_fn=cat_collate)
+    benchmark.pedantic(lambda: epoch(loader), warmup_rounds=1, rounds=5)
+
+
+@pytest.mark.parametrize("prefetch_depth", [1, 2, 4])
+def test_overlap_prefetch_depth(benchmark, prefetch_depth):
     loader = PyDataloader(
         CpuBoundDs(N),
         batch_size=BATCH_SIZE,
         collate_fn=cat_collate,
-        num_workers=NUM_WORKERS,
+        num_workers=2,
         prefetch_depth=prefetch_depth,
     )
-    benchmark.pedantic(lambda: list(loader), warmup_rounds=1, rounds=5)
+    benchmark.pedantic(lambda: epoch(loader), warmup_rounds=1, rounds=5)

@@ -19,6 +19,22 @@ import numpy as np
 
 from dataloader_rs import PyDataset
 
+# ── in_memory: no work at all, so only the loader's own cost remains ─────────
+
+
+class InMemoryWork:
+    """Return the index: what is left is scheduling, transfer and collation."""
+
+    def __init__(self, n: int):
+        self.n = n
+
+    def __len__(self) -> int:
+        return self.n
+
+    def __getitem__(self, index: int) -> int:
+        return index
+
+
 # ── local_files: read a file per sample, decode bytes to a normalised array ───
 
 FILE_BYTES = 128 * 1024
@@ -149,6 +165,10 @@ class PythonCpuLocalWork(PythonCpuWork):
 # ── Loader-specific dataset classes ──────────────────────────────────────────
 
 
+class OursInMemory(InMemoryWork, PyDataset):
+    pass
+
+
 class OursLocalFiles(LocalFilesWork, PyDataset):
     pass
 
@@ -179,6 +199,9 @@ except ImportError:
 
 if _TorchDataset is not None:
 
+    class TorchInMemory(InMemoryWork, _TorchDataset):
+        pass
+
     class TorchLocalFiles(LocalFilesWork, _TorchDataset):
         pass
 
@@ -200,6 +223,7 @@ def torch_datasets():
     if _TorchDataset is None:
         raise ImportError("torch is required for the torch baselines")
     return {
+        "in_memory": TorchInMemory,
         "local_files": TorchLocalFiles,
         "image_augment": TorchImageAugment,
         "remote": TorchRemote,

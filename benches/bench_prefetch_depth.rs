@@ -1,21 +1,20 @@
-//! Benchmark: prefetch buffer depth (`prefetch_depth`).
+//! Benchmark: overlapping loading with the consumer's work (`prefetch_depth`).
+//!
+//! The consumer does work for every batch, like a training step, so a loader
+//! that prefetches well hides its loading time behind that work.
 //!
 //! FIXED:
-//!   dataset    = LightCpuDs(128)  — ~µs per item (1_000 LCG iters) so the
-//!                                    pipeline fill effect is visible; if items
-//!                                    are too heavy, all depths saturate equally
-//!   batch_size = 8                — 16 batches total
-//!   num_workers    = 4            — workers that can outpace consumer; shallow
-//!                                    depth will starve consumer, deep depth
-//!                                    allows overlap
-//!   items_in_parallel = 1         — isolate prefetch effect only
+//!   dataset     = HeavyCpuDs(64)  — CPU-bound items (≈ 1 ms each)
+//!   batch_size  = 4               — 16 batches, ≈ 4 ms to load each
+//!   consumer    = spin(100_000)   — ≈ 2 ms of work per batch
+//!   num_workers = 2               — produces a batch every ≈ 2 ms: as fast as the consumer
 //!
 //! SWEPT:
-//!   prefetch_depth in [1, 2, 4, 8, 16]
+//!   sequential (num_workers 0: load and consume one after the other, ≈ 6 ms per batch)
+//!   prefetch_depth in [1, 2, 4, 8]
 //!
-//! Expected pattern: depth=1 starves consumer; depth>=4 shows full overlap.
-//!
-//! Throughput unit: Elements(128) per iteration (full epoch).
+//! Ideal with full overlap: ≈ 16 × 2 ms + one batch to fill the pipeline.
+//! Throughput unit: Elements(64) per iteration (full epoch).
 
 #[path = "common.rs"]
 mod common;
@@ -24,32 +23,44 @@ use common::*;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use dataloader_rs::DataLoader;
 
-const N: usize = 128;
-const BS: usize = 8;
-const INTER: usize = 4;
+const N: usize = 64;
+const BS: usize = 4;
+const CONSUMER_WORK: u64 = 100_000;
 
 fn bench_prefetch_depth(c: &mut Criterion) {
     let mut group = c.benchmark_group("prefetch_depth");
     group.throughput(Throughput::Elements(N as u64));
+    group.sample_size(20);
 
-    for &depth in &[1usize, 2, 4, 8, 16] {
+    group.bench_function("sequential", |b| {
+        let mut loader = DataLoader::builder(HeavyCpuDs(N))
+            .batch_size(BS)
+            .collator(CatCollator)
+            .build();
+        b.iter(|| {
+            for batch in loader.iter() {
+                std::hint::black_box(batch.unwrap());
+                spin(CONSUMER_WORK);
+            }
+        });
+    });
+
+    for &depth in &[1usize, 2, 4, 8] {
         group.bench_with_input(BenchmarkId::new("depth", depth), &depth, |b, &d| {
-            // Build ONCE outside b.iter()
-            let mut loader = DataLoader::builder(LightCpuDs(N))
+            let mut loader = DataLoader::builder(HeavyCpuDs(N))
                 .batch_size(BS)
-                .num_workers(INTER)
+                .num_workers(2)
                 .prefetch_depth(d)
                 .collator(CatCollator)
                 .build();
-
             b.iter(|| {
                 for batch in loader.iter() {
                     std::hint::black_box(batch.unwrap());
+                    spin(CONSUMER_WORK);
                 }
             });
         });
     }
-
     group.finish();
 }
 
