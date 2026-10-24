@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792834400458,
+  "lastUpdate": 1792835277129,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Python benchmarks (3.14t)": [
@@ -732,6 +732,128 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0006779627883768222",
             "extra": "mean: 46.262597399999095 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "7e3a96e5c61bf4f18dca76dec22485aecb0f1b24",
+          "message": "ci: update semantic-release plugins\n\nsemantic-release 25 uses commit-analyzer 13 / release-notes-generator 14,\nbuilt on conventional-changelog v8 APIs, while the conventionalcommits\npreset was still pinned at 7. Bump it to 10.4.1, and changelog 7.0.0,\ngit 11.0.1, exec 7.1.0 and backmerge 4.0.1. Their majors are the ESM\nswitch and a minimum semantic-release of 22 or 24.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T10:46:37+01:00",
+          "tree_id": "651ffc27c187abb34ebaabf6442ff1d97fc6e7f9",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/7e3a96e5c61bf4f18dca76dec22485aecb0f1b24"
+        },
+        "date": 1792835276271,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[1]",
+            "value": 1253.2217197372481,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000016962742663515376",
+            "extra": "mean: 797.9433999992125 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[64]",
+            "value": 4422.234997649799,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011068991503263135",
+            "extra": "mean: 226.12999999580552 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[4096]",
+            "value": 4278.177359533162,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000005809169933819145",
+            "extra": "mean: 233.7444000005462 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[1]",
+            "value": 2.1185093512483606,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0847614796953957",
+            "extra": "mean: 472.03001459999996 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[64]",
+            "value": 281.74891922519856,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0004517449804715792",
+            "extra": "mean: 3.5492594000004374 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[4096]",
+            "value": 1314.176840357957,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000020291781402202027",
+            "extra": "mean: 760.9326000050487 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[1]",
+            "value": 20.416152730853856,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0014247738830347161",
+            "extra": "mean: 48.98082480000028 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[4]",
+            "value": 20.796838434670615,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003583374657366434",
+            "extra": "mean: 48.08423180000716 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[16]",
+            "value": 17.789032400483553,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01174742391581746",
+            "extra": "mean: 56.214412200003494 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_sequential",
+            "value": 1693.5082072495443,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00005390214796071581",
+            "extra": "mean: 590.4901999997492 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_shuffle",
+            "value": 1631.9885421430608,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000029379933464742648",
+            "extra": "mean: 612.7493999969147 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[0]",
+            "value": 5.841272269755684,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0009848931630806368",
+            "extra": "mean: 171.1955809999978 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[1]",
+            "value": 5.711126965021935,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0005008460586866392",
+            "extra": "mean: 175.0967901999985 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[4]",
+            "value": 21.558423510960722,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00043032850215460924",
+            "extra": "mean: 46.38558100000125 msec\nrounds: 5"
           }
         ]
       }
