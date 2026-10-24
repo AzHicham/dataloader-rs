@@ -9,6 +9,7 @@ The per-sample work lives in the dataset and is identical for both loaders
   image_augment  crop / flip / normalise a decoded 3x256x256    (numpy, GIL-free)
   remote         10 ms simulated network latency per sample    (I/O-bound)
   python_cpu     pure-Python tokenisation, holds the GIL       (torch's home turf)
+  python_cpu_local  the same with per-thread tables       (the free-threaded pattern)
 
 Every case times whole epochs including iterator creation, which is what a
 training loop pays. torch runs both with fresh workers each epoch (its
@@ -31,6 +32,7 @@ from real_world import (
     OursImageAugment,
     OursLocalFiles,
     OursPythonCpu,
+    OursPythonCpuLocal,
     OursRemote,
     cpu_count,
     make_file_tree,
@@ -41,6 +43,8 @@ from real_world import (
 from dataloader_rs import PyDataloader
 
 BATCH_SIZE = 32
+# Requests in flight for the network workload's item-level case.
+REMOTE_IN_FLIGHT = 64
 
 
 def ours_dataset(name, n, root):
@@ -49,6 +53,7 @@ def ours_dataset(name, n, root):
         "image_augment": lambda: OursImageAugment(n),
         "remote": lambda: OursRemote(n),
         "python_cpu": lambda: OursPythonCpu(n),
+        "python_cpu_local": lambda: OursPythonCpuLocal(n),
     }[name]()
 
 
@@ -72,6 +77,7 @@ def bench(args) -> list[BenchResult]:
         "image_augment": int(1024 * scale),
         "remote": int(512 * scale),
         "python_cpu": int(2048 * scale),
+        "python_cpu_local": int(2048 * scale),
     }
     w = args.workers
     # I/O-bound work benefits from more threads than cores.
@@ -87,12 +93,12 @@ def bench(args) -> list[BenchResult]:
         n = sizes[name]
         workers = io_workers if name == "remote" else w
 
-        def add(label, make_loader):
+        def add(label, make_loader, param=None):
             loader = make_loader()
             results.append(
                 run_case(
                     name=label,
-                    param=f"w={workers if label != 'ours w=0' else 0}",
+                    param=param or f"w={workers if label != 'ours w=0' else 0}",
                     n_items=n,
                     fn=lambda: epoch(loader),
                     warmup=args.warmup,
@@ -100,7 +106,7 @@ def bench(args) -> list[BenchResult]:
                     group=name,
                 )
             )
-            print(f"  {name:<14} {label:<24} {results[-1].items_per_s:>10.0f} items/s", flush=True)
+            print(f"  {name:<17} {label:<24} {results[-1].items_per_s:>10.0f} items/s", flush=True)
 
         add(
             "ours w=0",
@@ -118,6 +124,21 @@ def bench(args) -> list[BenchResult]:
                 collate_fn=stack_collate,
             ),
         )
+        if name == "remote":
+            # Item-level concurrency: each batch's items fetched on 64 threads.
+            add(
+                "ours parallel_items",
+                lambda: PyDataloader(
+                    ours_dataset(name, n, root),
+                    batch_size=BATCH_SIZE,
+                    num_workers=workers,
+                    prefetch_depth=2 * workers,
+                    parallel_items=True,
+                    num_threads=REMOTE_IN_FLIGHT,
+                    collate_fn=stack_collate,
+                ),
+                param=f"t={REMOTE_IN_FLIGHT}",
+            )
         if DataLoader is None:
             continue
         add(
@@ -139,19 +160,32 @@ def bench(args) -> list[BenchResult]:
                 collate_fn=stack_collate,
             ),
         )
+        if name == "remote":
+            # The same number of requests in flight for torch: one process each.
+            add(
+                "torch persistent",
+                lambda: DataLoader(
+                    torch_dataset(name, n, root),
+                    batch_size=BATCH_SIZE,
+                    num_workers=REMOTE_IN_FLIGHT,
+                    persistent_workers=True,
+                    collate_fn=stack_collate,
+                ),
+                param=f"w={REMOTE_IN_FLIGHT}",
+            )
     return results
 
 
 def print_table(results: list[BenchResult]) -> None:
     print()
-    print(f"{'workload':<14} {'loader':<18} {'workers':<8} {'items/s':>10} {'vs torch':>9}")
-    print("-" * 64)
+    print(f"{'workload':<17} {'loader':<20} {'workers':<8} {'items/s':>10} {'vs torch':>9}")
+    print("-" * 68)
     for group in dict.fromkeys(r.group for r in results):
         rows = [r for r in results if r.group == group]
         torch_rate = next((r.items_per_s for r in rows if r.name == "torch"), None)
         for r in rows:
             ratio = f"{r.items_per_s / torch_rate:.2f}x" if torch_rate else ""
-            print(f"{group:<14} {r.name:<18} {r.param:<8} {r.items_per_s:>10.0f} {ratio:>9}")
+            print(f"{group:<17} {r.name:<20} {r.param:<8} {r.items_per_s:>10.0f} {ratio:>9}")
         print()
 
 
@@ -166,8 +200,8 @@ def main() -> None:
     parser.add_argument(
         "--workloads",
         nargs="+",
-        default=["local_files", "image_augment", "remote", "python_cpu"],
-        choices=["local_files", "image_augment", "remote", "python_cpu"],
+        default=["local_files", "image_augment", "remote", "python_cpu", "python_cpu_local"],
+        choices=["local_files", "image_augment", "remote", "python_cpu", "python_cpu_local"],
     )
     args = parser.parse_args()
     # More workers than cores is deliberate for the I/O-bound workload.

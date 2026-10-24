@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -101,7 +102,8 @@ class RemoteWork:
 
 # ── python_cpu: pure-Python preprocessing that holds the GIL ─────────────────
 
-_WORDS = ("the quick brown fox jumps over the lazy dog " * 40).split()
+_TEXT = "the quick brown fox jumps over the lazy dog " * 40
+_WORDS = _TEXT.split()
 _VOCAB = {word: i for i, word in enumerate(sorted(set(_WORDS)))}
 
 
@@ -121,6 +123,29 @@ class PythonCpuWork:
         return ids[:256] + [0] * max(0, 256 - len(ids))
 
 
+class PythonCpuLocalWork(PythonCpuWork):
+    """The same tokenisation with per-thread copies of the word list and vocabulary.
+
+    On free-threaded CPython, threads reading the same dict and strings update their
+    reference counts atomically and stop scaling; a private copy per thread (what each
+    of torch's worker processes has anyway) removes that contention.
+    """
+
+    _tables = threading.local()
+
+    def __getitem__(self, index: int) -> list[int]:
+        tables = self._tables
+        if not hasattr(tables, "vocab"):
+            # Built in this thread: new string objects, not shared with others.
+            tables.words = _TEXT.split()
+            tables.vocab = {w: i for i, w in enumerate(sorted(set(tables.words)))}
+        vocab, words = tables.vocab, tables.words
+        ids = []
+        for _ in range(3):
+            ids = [vocab[word] + index % 7 for word in words]
+        return ids[:256] + [0] * max(0, 256 - len(ids))
+
+
 # ── Loader-specific dataset classes ──────────────────────────────────────────
 
 
@@ -137,6 +162,10 @@ class OursRemote(RemoteWork, PyDataset):
 
 
 class OursPythonCpu(PythonCpuWork, PyDataset):
+    pass
+
+
+class OursPythonCpuLocal(PythonCpuLocalWork, PyDataset):
     pass
 
 
@@ -162,6 +191,9 @@ if _TorchDataset is not None:
     class TorchPythonCpu(PythonCpuWork, _TorchDataset):
         pass
 
+    class TorchPythonCpuLocal(PythonCpuLocalWork, _TorchDataset):
+        pass
+
 
 def torch_datasets():
     """Torch counterparts of the workloads (requires torch)."""
@@ -172,6 +204,7 @@ def torch_datasets():
         "image_augment": TorchImageAugment,
         "remote": TorchRemote,
         "python_cpu": TorchPythonCpu,
+        "python_cpu_local": TorchPythonCpuLocal,
     }
 
 

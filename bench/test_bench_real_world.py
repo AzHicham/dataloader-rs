@@ -50,3 +50,15 @@ def test_image_augment(benchmark, num_workers):
 def test_remote_threads(benchmark):
     loader = PyDataloader(OursRemote(128), batch_size=BATCH_SIZE, num_workers=4, prefetch_depth=4)
     benchmark.pedantic(lambda: list(loader), warmup_rounds=1, rounds=3)
+
+
+def test_remote_parallel_items(benchmark):
+    loader = PyDataloader(
+        OursRemote(128),
+        batch_size=BATCH_SIZE,
+        num_workers=4,
+        prefetch_depth=4,
+        parallel_items=True,
+        num_threads=32,
+    )
+    benchmark.pedantic(lambda: list(loader), warmup_rounds=1, rounds=3)
