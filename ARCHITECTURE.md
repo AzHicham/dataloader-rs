@@ -50,7 +50,23 @@ dataset and the collator.
 
 ## 3. Life of an epoch
 
-### 3.1 Choosing a path
+### 3.1 The pool
+
+`build()` creates **one rayon pool per loader** when `num_workers > 0` or `parallel_items` is on,
+with `num_threads` threads (default: `num_workers`, or the number of CPUs with
+`parallel_items`; never fewer than `num_workers`). The pool lives as long as the loader and is
+reused by every epoch; its threads are named `dataloader-N`.
+
+| Setting | Meaning |
+|---|---|
+| `num_workers(n)` | at most `n` batches in flight; `0` selects the direct path |
+| `parallel_items(true)` | the items of a batch are fetched in parallel on the same pool |
+| `num_threads(t)` | the pool's size |
+| `prefetch_depth(d)` | how far ahead of the consumer batches may run: at most `n + d` in flight or buffered |
+
+`intra_workers(n)` is a deprecated alias for `parallel_items(n > 0)` plus `num_threads(n)`.
+
+### 3.2 Choosing a path
 
 `iter()` asks the batch sampler for every batch of the epoch up front (a `Vec<Vec<usize>>`), then
 picks one of two paths:
@@ -59,54 +75,61 @@ picks one of two paths:
 num_workers == 0                         num_workers > 0
 ┌───────────────────────────┐            ┌──────────────────────────────────────────┐
 │ Direct path               │            │ Parallel path                            │
-│ next() fetches + collates │            │ num_workers threads, spawned per epoch,  │
-│ batch i on the caller's   │            │ pull batches from a queue and send       │
-│ thread                    │            │ results through a bounded channel        │
+│ next() fetches + collates │            │ batch tasks on the loader's pool claim   │
+│ batch i on the caller's   │            │ batches in epoch order, at most          │
+│ thread                    │            │ num_workers + prefetch_depth ahead       │
 └───────────────────────────┘            └──────────────────────────────────────────┘
 ```
 
-### 3.2 Direct path (`num_workers = 0`)
+### 3.3 Direct path (`num_workers = 0`)
 
 `next()` takes the next chunk of indices, fetches the samples (`Dataset::get_batch`) and collates
-them on the calling thread. No thread, no channel, no allocation beyond the batch itself: for
-cheap samples it is the fastest path ([BENCH.md](BENCH.md)).
+them on the calling thread. No thread hand-off: for cheap samples it is the fastest path
+([BENCH.md](BENCH.md)).
 
-### 3.3 Parallel path (`num_workers > 0`)
+### 3.4 Parallel path (`num_workers > 0`)
 
-At the start of the epoch:
+The epoch is a shared state (`Epoch`): the batches, a claim counter `next_claim`, the consumer's
+position `next_out`, and a result channel. Up to `num_workers` **batch tasks** run on the pool;
+each one loops:
 
-1. every batch is pushed, with its position `i`, on an **unbounded work queue**
-   (`crossbeam_channel`), which is then closed;
-2. `num_workers` OS threads are spawned; each one loops: take a batch, fetch it, collate it, send
-   `(i, result)` on the **result channel**, whose capacity is `prefetch_depth`;
-3. the iterator receives results and returns them **in epoch order**.
+1. claim the next batch `i` — but only while `i < next_out + num_workers + prefetch_depth`
+   (the **window**);
+2. fetch and collate it, and send `(i, result)` to the iterator;
+3. when nothing is claimable, **exit** instead of blocking a pool thread.
+
+The iterator returns batch `next_out` as soon as it has arrived, publishes its new position, and
+starts tasks again if some had exited. A task that sees no claimable batch re-checks after
+leaving, so a batch is never left unclaimed between a task's exit and the consumer's advance.
 
 ```text
- work queue (all batches) ──▶ worker 1 ─┐
-                          ──▶ worker 2 ─┼──▶ result channel ──▶ reorder buffer ──▶ next()
-                          ──▶ worker N ─┘   (capacity = prefetch_depth)   (by batch index)
+                 window: next_out .. next_out + num_workers + prefetch_depth
+ batches  [ done | returned ... | next_out | in flight / buffered ... | not yet claimable ]
+                                     ▲
+ pool:  task ── claim ─▶ fetch ─▶ collate ─▶ send ──▶ reorder buffer ──▶ next()
 ```
 
-**Backpressure.** A worker blocks on `send` when `prefetch_depth` results are already waiting, so
-at most `num_workers` batches are being built and `prefetch_depth` are finished but not yet
-consumed.
+**Backpressure.** Nothing beyond the window is claimed, so at most `num_workers + prefetch_depth`
+batches are in flight or waiting, however slow one batch is.
 
-**Ordering.** Workers finish out of order. The iterator keeps results that arrive early in a
-`HashMap<batch index, result>` and returns batch `next_out` as soon as it is there. While it
-waits for one slow batch it keeps draining the channel, so batches finished after it accumulate
-in that buffer: one very slow batch can make the iterator hold many later ones.
+**Ordering.** Tasks finish out of order; a `HashMap<batch index, result>` holds early results
+until their turn. The window also bounds this buffer.
 
-### 3.4 Item-level parallelism (`intra_workers > 0`)
+**Cost.** Claiming, publishing the position and restarting tasks cost a few atomic operations
+and an occasional task spawn per batch. That is negligible once a batch does real work, but
+dominates for nearly free batches (`batch_size` ≤ 8 of in-memory items, [BENCH.md](BENCH.md)).
 
-`build()` creates a rayon pool of `intra_workers` threads, kept for the life of the loader. On
-either path, a batch's items are then fetched with `Dataset::get` in parallel on that pool
-(`par_iter`), instead of `get_batch` on the batch's thread. With both settings, the loader runs
-`num_workers + intra_workers` threads during an epoch.
+### 3.5 Item-level parallelism (`parallel_items`)
 
-### 3.5 End of the epoch
+With `parallel_items`, a batch's items are fetched with `Dataset::get` in parallel (`par_iter`)
+on the same pool, instead of `get_batch` on one thread. Batch tasks and item work share the
+pool's threads (idle threads steal either kind), so the two levels never oversubscribe the CPU.
+On the direct path, items are fetched in parallel on the pool too.
 
-When the last batch has been returned, the iterator yields `None`. On the parallel path, dropping
-the iterator joins the worker threads (section 4.3); a new `iter()` spawns new ones.
+### 3.6 End of the epoch
+
+When the last batch has been returned, the iterator yields `None`. The pool's threads stay
+alive, idle, for the next epoch.
 
 ## 4. Failures and early exits
 
@@ -119,17 +142,23 @@ paths. The error type is `Box<dyn Error + Send + Sync>`, so any error converts w
 ### 4.2 Panics
 
 On the direct path a panic in the dataset or collator unwinds through `next()` as usual. On the
-parallel path, workers run each batch under `catch_unwind`, send the panic payload to the
-iterator and stop; the iterator re-raises it with `resume_unwind`, so the caller sees the same
-panic as with `num_workers = 0`. The payload is re-raised when it arrives, which can be before
+parallel path, batch tasks run each batch under `catch_unwind` (a panic escaping a rayon task
+would abort the process), send the payload to the iterator and cancel the epoch; the iterator
+re-raises it with `resume_unwind`, so the caller sees the same panic as with `num_workers = 0`. The payload is re-raised when it arrives, which can be before
 earlier batches have been returned.
 
 ### 4.3 Dropping an iterator early
 
-Dropping an iterator mid-epoch (a `break`, an error, `drop`) sets a cancel flag, drops the result
-receiver — a worker blocked on `send` gets an error and exits — and **joins** the workers. A
-worker in the middle of a batch finishes that batch first, so `drop` can take as long as one
-batch.
+Dropping an iterator mid-epoch (a `break`, an error, `drop`) marks the epoch cancelled: batch
+tasks stop claiming. A task in the middle of a batch finishes it in the background and its
+result is discarded; `drop` itself **does not wait**.
+
+### 4.4 `fork()`
+
+A process created with `fork()` (e.g. Python `multiprocessing` with the `fork` start method)
+inherits the pool but none of its threads. The pool records the PID that built it; `iter()` in
+another process builds a new pool. The inherited one is leaked, not dropped: dropping it would
+signal threads that do not exist, through locks a parent thread may have held at fork time.
 
 ## 5. Memory safety
 
@@ -157,11 +186,12 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
 - **`num_workers = 0`**: `__next__` already holds the interpreter, so it calls the dataset
   directly: `__getitems__(indices)` once per batch if the dataset defines it, else a bound
   `__getitem__` (looked up once per epoch) per index; then `collate_fn`, or a `list`.
-- **`num_workers > 0`**: each worker attaches to the interpreter **once per batch**
-  (`Dataset::get_batch`), not once per item. The consumer releases the interpreter
+- **`num_workers > 0`**: each batch task attaches to the interpreter **once per batch**
+  (`Dataset::get_batch`), not once per item. The pool's threads are created with the loader and
+  reused by every epoch. The consumer releases the interpreter
   (`py.detach`) while it waits for the next batch, so workers can run.
 
-On regular CPython the workers' Python code is serialised by the GIL; work that releases it
+On regular CPython the tasks' Python code is serialised by the GIL; work that releases it
 (file I/O, NumPy, hashlib) runs in parallel. On free-threaded CPython 3.14t all of it does.
 
 ### 6.2 Samplers
@@ -181,17 +211,19 @@ continue; with workers it ends the epoch. A sampler or `__len__` that raises mak
 
 ### 6.4 Dropping an iterator
 
-`PyDataloaderIter`'s `Drop` releases the interpreter before joining the workers: a worker waiting
-to attach (to call `__getitem__`) can then finish, so a `break` or a garbage-collected iterator
-cannot deadlock. A worker panic is likewise re-raised only after the workers are joined.
+Dropping a `PyDataloaderIter` cancels its epoch without waiting (section 4.3), and releases the
+interpreter first: a task waiting to attach (to call `__getitem__`) can then finish its batch, so a
+`break` or a garbage-collected iterator cannot deadlock. A batch already running keeps calling the
+dataset in the background until it completes.
 
 ## 7. Design choices
 
 | Choice | Why | Cost |
 |---|---|---|
 | Threads instead of worker processes | samples move by value, no pickling, no per-epoch process start; the dataset is shared, not copied | pure-Python code is serialised by the GIL on regular CPython (use 3.14t) |
+| One pool per loader, batch tasks on it | no thread spawn per epoch; batch and item work share threads instead of oversubscribing the CPU | a fixed cost per batch that shows on nearly free batches; the pool must be rebuilt after `fork()` |
 | Generic `DataLoader<D, S, C>` | monomorphized fetch and collate, no boxing | the batch type is part of the loader's type |
 | Batches computed at `iter()` | the epoch's order is fixed before any work starts; `len()` is exact | one `Vec<Vec<usize>>` per epoch |
-| Bounded result channel | memory of finished batches is bounded by `prefetch_depth` | the reorder buffer can still grow behind one slow batch (section 3.3) |
+| Claim window | at most `num_workers + prefetch_depth` batches in flight or buffered, even behind one slow batch | a slow batch stalls the window instead of letting later batches run far ahead |
 | Errors per batch | one bad sample does not end a Rust epoch | callers must handle `Result` per batch |
 | Panics forwarded | same behaviour with and without workers; no silent truncation | a panic is re-raised as soon as it arrives |

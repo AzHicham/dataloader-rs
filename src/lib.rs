@@ -2,8 +2,8 @@
 //!
 //! A [`DataLoader`] owns a [`Dataset`], a [`Sampler`] and a [`Collator`]; each
 //! [`iter`](DataLoader::iter) runs one epoch and yields `Result<Batch>` in epoch order, loading
-//! batches inline (`num_workers = 0`) or on worker threads, with item-level parallelism on a rayon
-//! pool (`intra_workers`).
+//! batches inline (`num_workers = 0`) or as tasks on the loader's rayon pool, optionally with the
+//! items of each batch fetched in parallel on the same pool (`parallel_items`).
 //!
 //! ```rust
 //! use dataloader_rs::{DataLoader, Dataset, RandomSampler, error::Result};

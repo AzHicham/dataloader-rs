@@ -15,10 +15,11 @@ with a Python binding that runs the same pipeline on threads instead of worker p
 - **Threads, not processes**: workers share the dataset through `Arc`, so samples are handed
   over by reference instead of being pickled across processes. On array samples the Python
   binding is about **7× `torch.utils.data.DataLoader`** ([BENCH.md](BENCH.md)).
-- **Two levels of parallelism**: `num_workers` batches in flight, and the items of each batch
-  fetched in parallel on a rayon pool (`intra_workers`).
-- **Bounded, ordered prefetch**: workers run at most `prefetch_depth` batches ahead; a reorder
-  buffer restores epoch order.
+- **One thread pool, two levels of parallelism**: `num_workers` batches in flight and, with
+  `parallel_items`, the items of each batch fetched in parallel — on one rayon pool built with
+  the loader and reused by every epoch, so the two never oversubscribe the CPU.
+- **Bounded, ordered prefetch**: at most `num_workers + prefetch_depth` batches are in flight or
+  waiting, even behind one slow batch; they come out in epoch order.
 - **Failures surface**: a dataset or collator error is returned for its batch, a panic is
   re-raised on the consumer, and Python exceptions keep their type.
 - **Python binding**: `PyDataloader` mirrors the PyTorch arguments (`batch_size`, `shuffle`,
@@ -145,13 +146,17 @@ Every setting is a `DataLoaderBuilder` method; the Python argument of the same n
 | `drop_last(bool)` | `false` | drop a final batch smaller than `batch_size` |
 | `sampler(s)` | `SequentialSampler` | index order of each epoch |
 | `collator(c)` | `VecCollator` | how a batch's samples are merged |
-| `num_workers(n)` | `0` | worker threads, each processing whole batches; `0` processes batches inside `next()` |
-| `intra_workers(n)` | `0` | a rayon pool of `n` threads fetching the items of each batch in parallel |
-| `prefetch_depth(n)` | `1` | finished batches that may wait for the consumer (with `num_workers > 0`) |
+| `num_workers(n)` | `0` | batches processed concurrently on the loader's pool; `0` processes batches inside `next()` |
+| `parallel_items(bool)` | `false` | also fetch the items of each batch in parallel, on the same pool |
+| `num_threads(t)` | `num_workers`, or CPUs with `parallel_items` | the pool's size, never below `num_workers` |
+| `prefetch_depth(n)` | `1` | how far batches may run ahead: at most `num_workers + n` in flight or waiting |
 | `pin_memory(bool)` | — | pin `tch::Tensor` batches in host memory (feature `torch-rs`) |
 
+`intra_workers(n)` still works, deprecated: it is `parallel_items(n > 0)` plus `num_threads(n)`.
+
 Rules of thumb: `num_workers = 0` is the fastest path for cheap samples (no thread hand-off);
-use workers once a batch costs more than a few tens of microseconds; `prefetch_depth` 2–8 is
+use workers once a batch costs more than a few tens of microseconds (a nearly free batch pays a
+fixed scheduling cost); for blocking I/O, more threads than cores; `prefetch_depth` 2–8 is
 enough, beyond that it only holds memory ([BENCH.md](BENCH.md#4-results-rust)).
 
 ## Feature flags

@@ -8,7 +8,7 @@ their reading: [BENCH.md, section 4](../BENCH.md#4-results-rust).
 |---|---|---|---|---|
 | `bench_batch_size` | `InMemoryDs(4096)` | `batch_size` 1 … 4096 | sequential; parallel with 4 workers, depth 16 | per-batch overhead and its amortisation |
 | `bench_inter_workers` | `HeavyCpuDs(256)` | `num_workers` 0, 1, 2, 4, 8 | `batch_size` 16, depth 32 | scaling with batch-level threads |
-| `bench_intra_workers` | `HeavyCpuDs(128)` | `intra_workers` 0, 1, 2, 4, 8; and 4 + 4 | `batch_size` 64, 2 workers, depth 8 | scaling with item-level threads |
+| `bench_intra_workers` | `HeavyCpuDs(128)` | `num_threads` with `parallel_items`: 0 (off), 1, 2, 4, 8; and 4 workers + 4 threads | `batch_size` 64, 2 workers, depth 8 | scaling with item-level threads (series ids keep the historical `intra_workers` names) |
 | `bench_prefetch_depth` | `LightCpuDs(128)` | `prefetch_depth` 1, 2, 4, 8, 16 | `batch_size` 8, 4 workers | does a deeper prefetch help? |
 | `bench_sampler` | `InMemoryDs(N)` | N 1k, 10k, 100k; sequential vs random | `batch_size` 128, no workers | sampler cost |
 | `bench_real_world` | 64 KB files; 2 ms blocking latency | `num_workers` 0, 2, 4, 8; threads 4, 16, 64 | `batch_size` 32 | real per-sample work: I/O fan-out, network latency |
