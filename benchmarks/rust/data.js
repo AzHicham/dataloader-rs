@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792834674816,
+  "lastUpdate": 1792835805990,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -1439,6 +1439,246 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 329591,
             "range": "± 14385",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "noreply@anthropic.com",
+            "name": "Claude",
+            "username": "claude"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "7f7655a682d0a0c230761c3432d8ffe5bce07267",
+          "message": "feat(python): add seed= for reproducible shuffling\n\nshuffle=True always seeded from OS entropy, so runs could not be\nreproduced. PyDataloader now takes seed=; with it, two loaders yield the\nsame sequence of epoch orders (each epoch still differs from the last).\nseed without shuffle=True is rejected rather than silently ignored.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_017eJkQ4peEFnnwbBFmW44KN",
+          "timestamp": "2026-10-24T10:53:05+01:00",
+          "tree_id": "5c3e48e6e30be81ec34c503c58c502dd23b40adc",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/7f7655a682d0a0c230761c3432d8ffe5bce07267"
+        },
+        "date": 1792835805676,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 97184,
+            "range": "± 11230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 23397,
+            "range": "± 541",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 11588,
+            "range": "± 392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 8547,
+            "range": "± 1453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 3933,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 3098,
+            "range": "± 116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 2086,
+            "range": "± 28",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 611040,
+            "range": "± 22286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 171334,
+            "range": "± 2310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 128427,
+            "range": "± 4524",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 109158,
+            "range": "± 8356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 93173,
+            "range": "± 5070",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 90070,
+            "range": "± 2030",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 86537,
+            "range": "± 5811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/0",
+            "value": 2166181,
+            "range": "± 5284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/1",
+            "value": 2311722,
+            "range": "± 19462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/2",
+            "value": 1301150,
+            "range": "± 16683",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/4",
+            "value": 757303,
+            "range": "± 13954",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/8",
+            "value": 866710,
+            "range": "± 17725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/0",
+            "value": 661372,
+            "range": "± 11333",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/1",
+            "value": 1187731,
+            "range": "± 34770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/2",
+            "value": 706491,
+            "range": "± 6880",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/4",
+            "value": 552160,
+            "range": "± 58525",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/8",
+            "value": 561427,
+            "range": "± 17976",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/inter4_intra4",
+            "value": 643878,
+            "range": "± 15685",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 117967,
+            "range": "± 4479",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 113280,
+            "range": "± 3197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 110628,
+            "range": "± 19681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 100499,
+            "range": "± 13805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/16",
+            "value": 104581,
+            "range": "± 2358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2615,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 4757,
+            "range": "± 331",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 32845,
+            "range": "± 599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 54338,
+            "range": "± 195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 358068,
+            "range": "± 11215",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 563696,
+            "range": "± 2411",
             "unit": "ns/iter"
           }
         ]
