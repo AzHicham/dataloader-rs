@@ -81,7 +81,7 @@ fn bench_local_files(c: &mut Criterion) {
     let mut group = c.benchmark_group("real_world/local_files");
     group.throughput(Throughput::Elements(N as u64));
     group.sample_size(10);
-    for workers in [0usize, 2, 4, 8] {
+    for workers in [0usize, 1, 2, 4] {
         let mut loader = DataLoader::builder(LocalFiles::new(&root, N))
             .batch_size(BATCH_SIZE)
             .num_workers(workers)

@@ -80,3 +80,18 @@ impl Collator<Vec<u8>> for CatCollator {
         Ok(items.into_iter().flatten().collect())
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Consumer work
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Burn `iterations` LCG steps on the calling thread: a stand-in for the work
+/// a training loop does per batch, in the same unit as the datasets above
+/// (`HeavyCpuDs` costs 50_000 per item).
+pub fn spin(iterations: u64) -> u64 {
+    let mut acc = iterations;
+    for i in 0..iterations {
+        acc = acc.wrapping_mul(6364136223846793005).wrapping_add(i);
+    }
+    std::hint::black_box(acc)
+}

@@ -84,7 +84,7 @@ default-features = false
 features         = ["download-libtorch"]
 
 [[bench]]
-name    = "bench_inter_workers"
+name    = "bench_num_workers"
 harness = false
 
 [[bench]]
@@ -105,4 +105,8 @@ harness = false
 
 [[bench]]
 name    = "bench_real_world"
+harness = false
+
+[[bench]]
+name    = "bench_first_batch"
 harness = false

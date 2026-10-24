@@ -33,9 +33,10 @@ jobs:
           - bench_sampler
           - bench_batch_size
           - bench_prefetch_depth
-          - bench_inter_workers
+          - bench_num_workers
           - bench_items_in_parallel
           - bench_real_world
+          - bench_first_batch
 
     steps:
       - uses: actions/checkout@v7.0.1
