@@ -2,8 +2,8 @@
 
 The consumer takes a training step per batch (a wait that releases the GIL,
 like a GPU step), so a loader that prefetches well hides its loading behind
-those steps. CpuBoundDs (SHA-256, ~1 ms per item, releases the GIL) with
-2 workers produces a batch about as fast as the consumer takes one.
+those steps. CpuBoundDs (SHA-256, ≈ 0.5 ms per item, releases the GIL) with
+2 workers produces a batch every ≈ 2 ms, ahead of the 4 ms step.
 
   sequential (num_workers=0): load and step one after the other
   prefetch_depth 1, 2, 4:     loading overlapped with the steps
@@ -19,7 +19,7 @@ from dataloader_rs import PyDataloader
 pytestmark = pytest.mark.bench
 
 N = 128
-BATCH_SIZE = 8  # 16 batches, ~8 ms each to load on one thread
+BATCH_SIZE = 8  # 16 batches, ≈ 4 ms each to load on one thread
 STEP_S = 0.004  # the consumer's step: as long as 2 workers take per batch
 
 

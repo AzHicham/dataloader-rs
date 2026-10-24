@@ -1,8 +1,8 @@
 //! Benchmark: batch-level parallelism (`num_workers`), calibrated for a 4-vCPU runner.
 //!
 //! FIXED:
-//!   dataset        = HeavyCpuDs(256)  — CPU-bound items (≈ 1 ms each)
-//!   batch_size     = 16               — 16 batches per epoch
+//!   dataset        = HeavyCpuDs(256)  — CPU-bound items (≈ 110 µs each)
+//!   batch_size     = 16               — 16 batches of ≈ 1.8 ms per epoch
 //!   prefetch_depth = 4
 //!
 //! SWEPT:

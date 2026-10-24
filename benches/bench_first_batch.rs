@@ -5,8 +5,8 @@
 //! the per-epoch start-up cost of the workers.
 //!
 //! FIXED:
-//!   dataset    = HeavyCpuDs(32)  — CPU-bound items (≈ 1 ms each)
-//!   batch_size = 32              — one batch, ≈ 32 ms of item work
+//!   dataset    = HeavyCpuDs(32)  — CPU-bound items (≈ 110 µs each)
+//!   batch_size = 32              — one batch, ≈ 3.5 ms of item work
 //!
 //! SWEPT (num_workers × items_in_parallel), ≤ 4 threads:
 //!   w0_items1  w1_items1  w0_items2  w0_items4  w1_items4

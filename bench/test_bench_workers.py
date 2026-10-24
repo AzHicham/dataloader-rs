@@ -1,6 +1,6 @@
 """Non-regression benchmarks: worker-count scaling.
 
-Uses CpuBoundDs (SHA-256 per item, ~1 ms, GIL-releasing) so that parallelism
+Uses CpuBoundDs (SHA-256 per item, ≈ 0.5 ms, GIL-releasing) so that parallelism
 is actually measurable.  InMemoryDs would make workers appear *slower* than
 the direct path because thread overhead > dataset cost.  Regressions here
 indicate changes in worker scheduling or GIL-management code. Calibrated for a
