@@ -2,15 +2,16 @@
 //!
 //! # Overview
 //!
-//! This crate provides a typed, streaming batch pipeline with four independent
-//! stages connected by a bounded async channel:
+//! This crate provides a typed, streaming batch pipeline. With `num_workers >
+//! 0`, batches run as tasks on the loader's rayon pool, at most
+//! `num_workers + prefetch_depth` ahead of the consumer:
 //!
 //! ```text
-//! Sampler ──▶ index chunks ──▶ prefetch thread (rayon pool)
+//! Sampler ──▶ index chunks ──▶ batch tasks (rayon pool)
 //!                                    │
 //!                              collate batch
 //!                                    │
-//!                            bounded channel
+//!                          reorder (bounded window)
 //!                                    │
 //!                            DataLoaderIter (consumer)
 //! ```
@@ -22,7 +23,7 @@
 //! | GIL blocks parallel transforms | Rayon: true parallelism, no GIL |
 //! | `pickle` IPC serialization | Shared `Arc<Dataset>` — zero-copy |
 //! | `fork`-based worker spawning | Long-lived thread pool |
-//! | Fixed `prefetch_factor` granularity | Bounded channel (exact depth) |
+//! | Fixed `prefetch_factor` granularity | Bounded window (exact depth) |
 //! | Python overhead per `__getitem__` | Monomorphized `Dataset::get` |
 //!
 //! # Quick start

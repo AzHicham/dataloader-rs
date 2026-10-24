@@ -9,7 +9,7 @@ Drop-in replacement for `torch.utils.data.DataLoader` — same interface, lower 
 pip install dataloader-rs
 ```
 
-Requires **Python ≥ 3.13**. Free-threaded builds (`3.13t`) are supported and recommended for parallel workloads — see [GIL note](#free-threaded-python-313t) below.
+Requires **Python ≥ 3.13**. Free-threaded builds (`3.14t`) are supported and recommended for parallel workloads — see [GIL note](#free-threaded-python-314t) below.
 
 ## Quick start
 
@@ -76,10 +76,10 @@ The loader is **reusable**: iterating it again starts a new epoch from scratch.
 | `batch_size` | `int` | `1` | Number of samples per batch |
 | `shuffle` | `bool` | `False` | Shuffle indices each epoch |
 | `sampler` | `Iterable[int]` | `None` | Custom index iterable; mutually exclusive with `shuffle` |
-| `num_workers` | `int` | `0` | Worker threads for parallel prefetch |
+| `num_workers` | `int` | `0` | Batches processed in parallel on the loader's thread pool (`num_workers` threads) |
 | `collate_fn` | `Callable[[list], Any]` | `None` | Merge a list of samples into a batch; defaults to returning a plain `list` |
 | `drop_last` | `bool` | `False` | Drop the final batch if it is smaller than `batch_size` |
-| `prefetch_depth` | `int` | `1` | Number of batches to buffer ahead (only relevant when `num_workers > 0`) |
+| `prefetch_depth` | `int` | `1` | How many batches workers may run ahead of your loop: at most `num_workers + prefetch_depth` are in flight or buffered (only relevant when `num_workers > 0`) |
 
 ## Custom collate
 
@@ -119,7 +119,7 @@ loader = PyDataloader(dataset, batch_size=8, sampler=WeightedSampler(weights))
 
 ## Parallel prefetch
 
-Set `num_workers > 0` to prefetch batches on background threads while your training loop runs:
+Set `num_workers > 0` to prefetch batches on background threads while your training loop runs. The threads are created once per loader and reused across epochs:
 
 ```python
 loader = PyDataloader(
@@ -132,15 +132,17 @@ loader = PyDataloader(
 ```
 
 > **Note** — worker threads call `dataset.__getitem__` concurrently. Make sure your dataset is **thread-safe** (read-only state, or protected with a lock).
+>
+> Breaking out of a loop (or deleting the iterator) does not wait for batches already running; they finish in the background and are discarded. A loader can be used in a child created with `fork` (e.g. `multiprocessing`): it rebuilds its threads there.
 
-## Free-threaded Python (3.13t)
+## Free-threaded Python (3.14t)
 
-With a standard CPython build the GIL serialises worker threads, limiting parallel speedup. Install a **free-threaded** Python 3.13t build to remove this constraint:
+With a standard CPython build the GIL serialises worker threads, limiting parallel speedup. Install a **free-threaded** Python 3.14t build to remove this constraint (PyO3 does not support free-threaded builds older than 3.14):
 
 ```bash
 # with uv
-uv python install 3.13t
-uv run --python 3.13t python -X gil=0 train.py
+uv python install 3.14t
+uv run --python 3.14t python -X gil=0 train.py
 ```
 
 On a CPU-bound dataset, free-threaded mode delivers near-linear scaling with `num_workers`.
@@ -151,7 +153,7 @@ On a CPU-bound dataset, free-threaded mode delivers near-linear scaling with `nu
 |---------|-----------------|-------------------------------|
 | Dependency | none | PyTorch (large) |
 | Worker model | threads | processes |
-| GIL bypass | Python 3.13t | always (separate process) |
+| GIL bypass | Python 3.14t | always (separate process) |
 | Tensor collation | bring your own | built-in |
 | Drop-in API | yes | — |
 
