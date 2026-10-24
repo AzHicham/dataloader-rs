@@ -108,7 +108,8 @@ fn bench_remote(c: &mut Criterion) {
         let mut loader = DataLoader::builder(Remote(N))
             .batch_size(BATCH_SIZE)
             .num_workers(workers.min(N / BATCH_SIZE))
-            .intra_workers(workers)
+            .parallel_items(true)
+            .num_threads(workers)
             .prefetch_depth(4)
             .build();
         group.bench_with_input(BenchmarkId::new("threads", workers), &workers, |b, _| {
