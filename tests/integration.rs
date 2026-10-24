@@ -5,9 +5,9 @@
 //!
 //! Organisation:
 //!   - Shared dataset / collator definitions
-//!   - Sequential path (num_workers=0, intra_workers=0)
+//!   - Sequential path (num_workers=0, parallel_items off)
 //!   - Parallel inter-batch path (num_workers > 0)
-//!   - Intra-batch parallelism (intra_workers > 0)
+//!   - Item-level parallelism (parallel_items)
 //!   - Sampler tests
 //!   - Error propagation
 //!   - Edge cases
@@ -169,7 +169,7 @@ impl Collator<usize> for ErrCollator {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Sequential path (num_workers=0, intra_workers=0)
+// Sequential path (num_workers=0, parallel_items off)
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -427,11 +427,12 @@ fn par_sum_collator_matches_sequential() {
 
 #[test]
 fn intra_sum_collator_exact_values() {
-    // Same expected sums as the sequential test — intra_workers must not
+    // Same expected sums as the sequential test — parallel_items must not
     // change which indices end up in which batch, only how they are fetched.
     let mut loader = DataLoader::builder(RangeDs(12))
         .batch_size(4)
-        .intra_workers(4)
+        .parallel_items(true)
+        .num_threads(4)
         .collator(SumCollator)
         .build();
     let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
@@ -444,7 +445,8 @@ fn intra_inter_sum_collator_exact_values() {
     let mut loader = DataLoader::builder(RangeDs(12))
         .batch_size(4)
         .num_workers(2)
-        .intra_workers(2)
+        .parallel_items(true)
+        .num_threads(2)
         .collator(SumCollator)
         .build();
     let sums: Vec<usize> = loader.iter().map(|b| b.unwrap()).collect();
@@ -671,7 +673,7 @@ fn par_actually_concurrent() {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Intra-batch path (intra_workers > 0)
+// Item-level path (parallel_items)
 // ═════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -690,7 +692,8 @@ fn intra_same_items_as_seq() {
         .batch_size(bs)
         .sampler(RandomSampler::new(seed))
         .num_workers(2)
-        .intra_workers(4)
+        .parallel_items(true)
+        .num_threads(4)
         .build();
 
     let seq_items: HashSet<usize> = seq.iter().flat_map(|b| b.unwrap()).collect();
@@ -701,7 +704,7 @@ fn intra_same_items_as_seq() {
 #[test]
 fn intra_actually_parallel() {
     // Verify that items within a batch are fetched concurrently by the rayon
-    // pool when intra_workers > 0.
+    // pool when parallel_items is on.
     let peak = Arc::new(AtomicUsize::new(0));
     let in_flight = Arc::new(AtomicUsize::new(0));
 
@@ -714,7 +717,8 @@ fn intra_actually_parallel() {
     let mut loader = DataLoader::builder(ds)
         .batch_size(8) // 8 items/batch that each sleep briefly
         .num_workers(1)
-        .intra_workers(4)
+        .parallel_items(true)
+        .num_threads(4)
         .build();
 
     for batch in &mut loader {
@@ -734,7 +738,8 @@ fn intra_with_large_batch() {
     let mut loader = DataLoader::builder(RangeDs(n))
         .batch_size(64)
         .num_workers(2)
-        .intra_workers(8)
+        .parallel_items(true)
+        .num_threads(8)
         .build();
     let mut items: Vec<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
     items.sort_unstable();

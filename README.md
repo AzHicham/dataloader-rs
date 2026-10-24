@@ -56,7 +56,8 @@ let mut loader = DataLoader::builder(ImageDataset { paths })
     .batch_size(32)
     .sampler(RandomSampler::new(42))  // reproducible shuffle
     .num_workers(4)                   // batches processed concurrently
-    .intra_workers(2)                 // also fetch items of a batch in parallel
+    .parallel_items(true)             // also fetch items of a batch in parallel
+    .num_threads(8)                   // pool size (default: CPUs with parallel_items)
     .prefetch_depth(8)                // batches workers may run ahead
     .drop_last(true)
     .build();
@@ -192,11 +193,18 @@ num_workers == 0                 num_workers > 0
 └─────────────────────┘          └──────────────────────────────┘
 ```
 
-The loader owns **one rayon pool** of `max(num_workers, intra_workers)`
-threads, created when the loader is built and reused by every epoch. With
-`intra_workers > 0`, the items of a batch are also fetched in parallel on that
-same pool, so batch- and item-level work share threads (idle threads steal
-either kind) instead of oversubscribing the CPU.
+The loader owns **one rayon pool**, created when the loader is built and
+reused by every epoch. Three settings drive it:
+
+| Setting | Meaning |
+|---|---|
+| `num_workers(n)` | at most `n` batches processed concurrently (`0`: direct path, no pool) |
+| `parallel_items(true)` | also fetch the items of each batch in parallel, on the same pool |
+| `num_threads(t)` | pool size, never below `num_workers`; default `num_workers`, or the number of CPUs with `parallel_items` |
+
+Batch- and item-level work share the pool's threads (idle threads steal either
+kind) instead of oversubscribing the CPU. The former `intra_workers(n)` is
+deprecated: it is `parallel_items(n > 0)` plus `num_threads(n)`.
 
 ### Key design points
 
