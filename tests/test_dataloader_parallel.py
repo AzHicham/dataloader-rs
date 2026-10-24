@@ -7,7 +7,13 @@ Tests verify:
   - safe early-drop / iterator cancellation
   - custom collate_fn applied correctly in parallel mode
   - large prefetch_depth does not corrupt results
+  - a forked child can still iterate a loader the parent already used
 """
+
+import multiprocessing
+import sys
+
+import pytest
 
 from dataloader_rs import PyDataloader as DataLoader
 from tests.py_dataloader_test_utils import (
@@ -152,3 +158,29 @@ def test_par_large_prefetch():
     n = 8
     loader = DataLoader(ListDataset(range(n)), batch_size=2, num_workers=2, prefetch_depth=100)
     assert all_items(loader) == list(range(n))
+
+
+# ── fork ──────────────────────────────────────────────────────────────────────
+
+
+def _count_batches_in_child(loader, queue):
+    queue.put(len(list(loader)))
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="fork start method is Linux-only here")
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+def test_par_forked_child_can_iterate():
+    """The child inherits the worker pool without its threads; it must rebuild it."""
+    loader = DataLoader(ListDataset(range(20)), batch_size=4, num_workers=2)
+    assert len(list(loader)) == 5  # parent's pool threads now exist
+
+    ctx = multiprocessing.get_context("fork")
+    queue = ctx.Queue()
+    child = ctx.Process(target=_count_batches_in_child, args=(loader, queue))
+    child.start()
+    child.join(30)
+    if child.is_alive():
+        child.kill()
+        pytest.fail("forked child hung iterating the loader")
+    assert child.exitcode == 0
+    assert queue.get(timeout=5) == 5

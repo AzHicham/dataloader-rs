@@ -73,7 +73,7 @@ impl PyDataloader {
             None => SharedPySampler::new(PySampler::Sequential(SequentialSampler)),
         };
 
-        // `num_workers` maps to inter-batch workers; intra_workers stays 0 for
+        // `num_workers` maps to batch-level workers; parallel_items stays off for
         // Python datasets (rayon cannot call Python's __getitem__ in parallel).
         let inner = core_loader::DataLoader::builder(dataset)
             .batch_size(batch_size)

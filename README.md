@@ -8,8 +8,8 @@ A high-performance DataLoader for Rust with a PyTorch-compatible Python API.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Typed, streaming batch pipeline with a familiar builder API. Supports sequential
-and parallel (inter-batch threads + intra-batch rayon) execution, pluggable
-samplers and collators, and Python bindings via PyO3.
+and parallel execution (batch- and item-level work on one shared rayon pool),
+pluggable samplers and collators, and Python bindings via PyO3.
 
 See [bench/bench.md](bench/bench.md) for performance comparisons against
 `torch.utils.data.DataLoader`.
@@ -55,9 +55,10 @@ use dataloader_rs::{DataLoader, RandomSampler};
 let mut loader = DataLoader::builder(ImageDataset { paths })
     .batch_size(32)
     .sampler(RandomSampler::new(42))  // reproducible shuffle
-    .num_workers(4)                   // inter-batch worker threads
-    .intra_workers(2)                 // rayon threads per batch
-    .prefetch_depth(8)                // batches in-flight
+    .num_workers(4)                   // batches processed concurrently
+    .parallel_items(true)             // also fetch items of a batch in parallel
+    .num_threads(8)                   // pool size (default: CPUs with parallel_items)
+    .prefetch_depth(8)                // batches workers may run ahead
     .drop_last(true)
     .build();
 
@@ -180,20 +181,30 @@ loader = PyDataloader(dataset, batch_size=32, sampler=WeightedSampler(weights))
 `DataLoader::iter()` selects one of two paths:
 
 ```
-inter_workers == 0               inter_workers > 0
+num_workers == 0                 num_workers > 0
 ┌─────────────────────┐          ┌──────────────────────────────┐
-│     Direct path     │          │        Parallel path          │
-│                     │          │                               │
-│  Process each batch │          │  N worker threads pull from   │
-│  inline in next()   │          │  unbounded work queue, push   │
-│                     │          │  results to bounded channel   │
-│  Zero allocation,   │          │  (capacity = prefetch_depth)  │
-│  no thread overhead │          │                               │
+│     Direct path     │          │        Parallel path         │
+│                     │          │                              │
+│  Process each batch │          │  Up to num_workers batch     │
+│  inline in next()   │          │  tasks on the loader's rayon │
+│                     │          │  pool claim batches in epoch │
+│  Zero allocation,   │          │  order, at most num_workers  │
+│  no thread overhead │          │  + prefetch_depth ahead      │
 └─────────────────────┘          └──────────────────────────────┘
 ```
 
-Both paths can enable a **rayon thread pool** (`intra_workers > 0`) to fetch
-items within a single batch in parallel.
+The loader owns **one rayon pool**, created when the loader is built and
+reused by every epoch. Three settings drive it:
+
+| Setting | Meaning |
+|---|---|
+| `num_workers(n)` | at most `n` batches processed concurrently (`0`: direct path, no pool) |
+| `parallel_items(true)` | also fetch the items of each batch in parallel, on the same pool |
+| `num_threads(t)` | pool size, never below `num_workers`; default `num_workers`, or the number of CPUs with `parallel_items` |
+
+Batch- and item-level work share the pool's threads (idle threads steal either
+kind) instead of oversubscribing the CPU. The former `intra_workers(n)` is
+deprecated: it is `parallel_items(n > 0)` plus `num_threads(n)`.
 
 ### Key design points
 
@@ -202,20 +213,33 @@ items within a single batch in parallel.
 code path is monomorphized — no virtual dispatch, no boxing, no dynamic
 allocation in the iteration loop.
 
-**Bounded channel as backpressure.**
-`prefetch_depth` is the exact capacity of the `crossbeam` result channel.
-Workers block when the channel is full, giving precise control over memory
-without over-prefetching.
+**Bounded window as backpressure.**
+Batch tasks only claim batch `i` while `i < next_out + num_workers +
+prefetch_depth`, where `next_out` is the next batch the consumer will return.
+A task that cannot claim exits instead of blocking a pool thread, and the
+consumer starts tasks again as it advances. At most `num_workers +
+prefetch_depth` batches are ever in flight or buffered, even when one batch is
+much slower than the others.
 
 **Reorder buffer preserves epoch order.**
-Workers complete batches out of order. A `HashMap<batch_idx, Batch>` reorder
-buffer in the iterator reassembles results in epoch order regardless of
-scheduling.
+Tasks complete batches out of order. A `HashMap<batch_idx, Batch>` reorder
+buffer in the iterator reassembles results in epoch order; the window above
+bounds its size.
 
 **No unsafe code.**
-The dataset and collator live behind `Arc`; each worker holds its own clone,
-so an iterator never borrows the loader and leaking it (e.g. `mem::forget`)
-cannot leave a worker reading freed memory. The crate is `#![forbid(unsafe_code)]`.
+The dataset and collator live behind `Arc`; each batch task holds its own
+clone, so an iterator never borrows the loader and leaking it (e.g.
+`mem::forget`) cannot leave a task reading freed memory. The crate is
+`#![forbid(unsafe_code)]`.
+
+**Dropping an iterator does not wait.**
+Dropping an iterator mid-epoch stops batch tasks from claiming more work; a
+batch already running finishes and its result is discarded. A panic in the
+dataset or collator is forwarded to the consumer and re-raised there.
+
+**Fork-safe.**
+A process created with `fork()` inherits the pool but not its threads; the
+loader detects the new PID and rebuilds the pool on the next `iter()`.
 
 **Python: GIL acquired once per batch.**
 `PyDataset::get_batch` acquires the Python thread state once for all items in
@@ -241,7 +265,7 @@ src/
     ├── builder.rs      DataLoaderBuilder (type-safe builder)
     ├── core.rs         DataLoader struct + IntoIterator
     ├── iter.rs         DataLoaderIter, ParallelCore
-    └── worker.rs       process_batch, worker_loop
+    └── worker.rs       process_batch, Epoch (batch task scheduling)
 ```
 
 ---
@@ -251,7 +275,7 @@ src/
 ### Prerequisites
 
 - Rust stable ≥ 1.91
-- Python ≥ 3.13 (free-threaded 3.13t / 3.14t recommended for parallel benchmarks)
+- Python ≥ 3.13 (free-threaded 3.14t recommended for parallel benchmarks)
 - [uv](https://docs.astral.sh/uv/) for Python environment management
 
 ### Rust
