@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792836403312,
+  "lastUpdate": 1792842552385,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Python benchmarks (3.14t)": [
@@ -1370,6 +1370,156 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.000228866157499871",
             "extra": "mean: 41.336198199999785 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "37a0c7de5173a2148ce040d31cfa858d13d3c6c0",
+          "message": "refactor(python): leave no silent path from sampler errors to an empty epoch\n\nPySampler still implemented Sampler, and its Python branch turned any\nexception into an empty Vec (unwrap_or_default); only a comment kept\ncallers on SharedPySampler, which records the error. Drop that impl and\nlet SharedPySampler::indices handle every variant itself.\n\nTests: a negative index raises OverflowError, and a loader recovers after\na failed epoch with num_workers=2 as well as 0.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T12:48:17+01:00",
+          "tree_id": "c1e52f0e6d0093f3324ca74a3eef99cf13cf666f",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/37a0c7de5173a2148ce040d31cfa858d13d3c6c0"
+        },
+        "date": 1792842551865,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[1]",
+            "value": 2265.4756909688163,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000006633395382808782",
+            "extra": "mean: 441.4084000046614 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[64]",
+            "value": 7647.282843841225,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00000814602322543722",
+            "extra": "mean: 130.76540000156456 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[4096]",
+            "value": 8592.246357279133,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000002287900018083654",
+            "extra": "mean: 116.38399999469584 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[1]",
+            "value": 3.646816473268095,
+            "unit": "iter/sec",
+            "range": "stddev: 0.059141125864532046",
+            "extra": "mean: 274.21176999999943 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[64]",
+            "value": 510.6693117968481,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00020447215242286958",
+            "extra": "mean: 1.958214400002589 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[4096]",
+            "value": 1385.0826049400587,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000036880907327091436",
+            "extra": "mean: 721.9786000007389 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential_getitems[64]",
+            "value": 13107.362405332578,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010101933900399847",
+            "extra": "mean: 76.29300000076 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential_getitems[4096]",
+            "value": 12959.377534877753,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00004863353611993628",
+            "extra": "mean: 77.16420000178914 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel_getitems[64]",
+            "value": 512.8093099099833,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001664708372351884",
+            "extra": "mean: 1.9500425999979143 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel_getitems[4096]",
+            "value": 1564.0728707790176,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000035384075060437235",
+            "extra": "mean: 639.3564000006791 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[1]",
+            "value": 22.577588956885364,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0004927842154251092",
+            "extra": "mean: 44.29170900000088 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[4]",
+            "value": 22.366240532525207,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003843738582329698",
+            "extra": "mean: 44.710240800003476 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[16]",
+            "value": 22.99877991012659,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0001710506497287095",
+            "extra": "mean: 43.480567399998904 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_sequential",
+            "value": 3089.053075495016,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000007367974795637294",
+            "extra": "mean: 323.7237999996978 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_shuffle",
+            "value": 2879.8890436558668,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010660334461265957",
+            "extra": "mean: 347.2355999974752 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[0]",
+            "value": 7.457591796455822,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009987156903573371",
+            "extra": "mean: 134.09154419999822 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[1]",
+            "value": 7.532214074442051,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0012678434242006974",
+            "extra": "mean: 132.76308800000152 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[4]",
+            "value": 17.202835526866597,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002347159357616896",
+            "extra": "mean: 58.12995179999518 msec\nrounds: 5"
           }
         ]
       }
