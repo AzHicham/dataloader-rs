@@ -11,6 +11,7 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 | `iterator.rs` | `PyDataloaderIter`: the direct and threaded epochs, `__next__`, `Drop` |
 | `sampler.rs` | `PySampler` (sequential, random, or a Python iterable) behind `SharedPySampler` |
 | `collator.rs` | `PyCollator`: `collate_fn`, or a plain `list` |
+| `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread |
 
 ## How a Python epoch runs
 
