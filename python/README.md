@@ -1,7 +1,31 @@
-# dataloader-rs
+# dataloader-rs for Python
 
-A high-performance DataLoader for Python, backed by a Rust core.
-Drop-in replacement for `torch.utils.data.DataLoader` — same interface, lower overhead, no PyTorch dependency. Works with any batch type: plain Python objects, NumPy arrays, or tensors via a custom `collate_fn`.
+A `DataLoader` for Python with the `torch.utils.data.DataLoader` interface and a Rust core. Workers
+are threads, not processes: samples are handed over by reference instead of being pickled, which
+makes it about **7× faster than PyTorch on array samples** — with no PyTorch dependency.
+
+- **PyTorch's arguments**: `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`,
+  `drop_last`, plus `seed` for reproducible shuffling and `prefetch_depth`.
+- **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
+- **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
+- **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
+- **Free-threaded Python**: built for CPython 3.14t, where worker threads run Python code in
+  parallel.
+
+Requires Python ≥ 3.13.
+
+## Contents
+
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Datasets](#datasets)
+- [PyDataloader arguments](#pydataloader-arguments)
+- [Batches and `collate_fn`](#batches-and-collate_fn)
+- [Samplers](#samplers)
+- [Workers, threads and the GIL](#workers-threads-and-the-gil)
+- [Errors](#errors)
+- [Coming from `torch.utils.data.DataLoader`](#coming-from-torchutilsdatadataloader)
+- [Performance](#performance)
 
 ## Installation
 
@@ -9,156 +33,170 @@ Drop-in replacement for `torch.utils.data.DataLoader` — same interface, lower 
 pip install dataloader-rs
 ```
 
-Requires **Python ≥ 3.13**. Free-threaded builds (`3.13t`) are supported and recommended for parallel workloads — see [GIL note](#free-threaded-python-313t) below.
+From source (needs a Rust toolchain): `pip install maturin && maturin develop --release --features python`.
 
 ## Quick start
 
-### 1 — Define a dataset
-
-Subclass `PyDataset` and implement `__len__` and `__getitem__`:
-
-```python
-from dataloader_rs import PyDataset, PyDataloader
-
-
-class RangeDataset(PyDataset):
-    def __init__(self, n: int) -> None:
-        super().__init__()
-        self.n = n
-
-    def __len__(self) -> int:
-        return self.n
-
-    def __getitem__(self, index: int):
-        return {"x": index, "y": index**2}
-```
-
-Optionally implement `__getitems__(indices)` to fetch a whole batch in one call
-(PyTorch's batched-fetch protocol). When defined, the loader calls it once per
-batch with the list of indices instead of calling `__getitem__` per index — useful
-for vectorised reads such as numpy fancy indexing or one database query per batch.
-It must return one sample per index, in order. As in PyTorch, setting
-`__getitems__ = None` (e.g. in a subclass) turns batched fetching off:
-
-```python
-class ArrayDataset(PyDataset):
-    def __init__(self, array) -> None:
-        super().__init__()
-        self.array = array
-
-    def __len__(self) -> int:
-        return len(self.array)
-
-    def __getitem__(self, index: int):
-        return self.array[index]
-
-    def __getitems__(self, indices: list[int]):
-        return list(self.array[indices])
-```
-
-### 2 — Iterate
-
-```python
-loader = PyDataloader(RangeDataset(100), batch_size=16)
-
-for batch in loader:
-    # batch is a list of 16 dicts by default
-    process(batch)
-```
-
-The loader is **reusable**: iterating it again starts a new epoch from scratch.
-
-## Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `dataset` | `PyDataset` | — | Map-style dataset (required) |
-| `batch_size` | `int` | `1` | Number of samples per batch |
-| `shuffle` | `bool` | `False` | Shuffle indices each epoch |
-| `sampler` | `Iterable[int]` | `None` | Custom index iterable; mutually exclusive with `shuffle` |
-| `num_workers` | `int` | `0` | Worker threads for parallel prefetch |
-| `collate_fn` | `Callable[[list], Any]` | `None` | Merge a list of samples into a batch; defaults to returning a plain `list` |
-| `drop_last` | `bool` | `False` | Drop the final batch if it is smaller than `batch_size` |
-| `prefetch_depth` | `int` | `1` | Number of batches to buffer ahead (only relevant when `num_workers > 0`) |
-
-## Custom collate
-
 ```python
 import numpy as np
+from dataloader_rs import PyDataloader, PyDataset
 
 
-def collate_numpy(samples: list[dict]) -> dict:
-    return {
-        "x": np.array([s["x"] for s in samples]),
-        "y": np.array([s["y"] for s in samples]),
-    }
+class Images(PyDataset):
+    def __init__(self, paths: list[str]) -> None:
+        super().__init__()
+        self.paths = paths
+
+    def __len__(self) -> int:
+        return len(self.paths)
+
+    def __getitem__(self, index: int) -> np.ndarray:
+        return np.load(self.paths[index])
 
 
-loader = PyDataloader(RangeDataset(100), batch_size=32, collate_fn=collate_numpy)
+loader = PyDataloader(
+    Images(paths),
+    batch_size=32,
+    shuffle=True,
+    seed=0,  # reproducible order, a new permutation every epoch
+    num_workers=4,  # 4 worker threads
+    prefetch_depth=4,  # up to 4 finished batches waiting
+    collate_fn=np.stack,  # one (32, ...) array per batch
+    drop_last=True,
+)
+
+for epoch in range(10):
+    for batch in loader:  # iterating again starts a new epoch
+        ...
 ```
 
-## Custom sampler
+## Datasets
 
-Any iterable of `int` indices works:
+Subclass `PyDataset` and implement `__len__` and `__getitem__(index)`. Call `super().__init__()`
+if you define `__init__`.
+
+Optionally implement `__getitems__(indices)` — PyTorch's batched-fetch protocol — to fetch a whole
+batch in one call: one database query, one NumPy fancy-indexing, one Python call instead of
+`batch_size`. It receives a `list[int]` and must return one sample per index, in order (any
+iterable); a wrong count raises `ValueError`. Setting `__getitems__ = None` in a subclass turns it
+off, as in PyTorch.
+
+```python
+class Rows(PyDataset):
+    def __init__(self, table: np.ndarray) -> None:
+        super().__init__()
+        self.table = table
+
+    def __len__(self) -> int:
+        return len(self.table)
+
+    def __getitem__(self, index: int) -> np.ndarray:
+        return self.table[index]
+
+    def __getitems__(self, indices: list[int]) -> list[np.ndarray]:
+        return list(self.table[indices])  # one vectorised read per batch
+```
+
+With `num_workers > 0`, `__getitem__` / `__getitems__` run on several threads at once: keep the
+dataset read-only, or protect shared state with a lock.
+
+## PyDataloader arguments
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `dataset` | — | a `PyDataset` |
+| `batch_size` | `1` | samples per batch (> 0) |
+| `shuffle` | `False` | a new random order every epoch; exclusive with `sampler` |
+| `seed` | `None` | seed for `shuffle=True` (requires it): same seed, same sequence of epoch orders |
+| `sampler` | `None` | any iterable of `int` indices, iterated at the start of each epoch |
+| `num_workers` | `0` | worker threads; `0` loads each batch in the calling thread |
+| `prefetch_depth` | `1` | finished batches that may wait for you (with `num_workers > 0`, > 0) |
+| `collate_fn` | `None` | `list[sample] -> batch`; without it a batch is a `list` |
+| `drop_last` | `False` | drop a final batch smaller than `batch_size` |
+
+`len(loader)` is the number of batches per epoch; `len(iterator)` the number left in the current
+one.
+
+## Batches and `collate_fn`
+
+Without `collate_fn` a batch is the `list` of its samples. `collate_fn` receives that list and
+returns anything: `np.stack`, `torch.stack`, a dict of arrays. It runs on the worker thread that
+loaded the batch (or the calling thread with `num_workers=0`), so heavy collation is parallel too.
+
+## Samplers
+
+- `shuffle=True`: a Rust permutation, new every epoch; with `seed=` two loaders produce the same
+  sequence of orders.
+- `sampler=`: any iterable of indices — a list, a generator-producing object, a weighted sampler.
+  It is iterated once at the start of each epoch. `len(loader)` uses `len(sampler)`, so a sampler
+  without `__len__` makes `len(loader)` raise `TypeError`, as in PyTorch; iteration still works.
 
 ```python
 import random
 
 
-class WeightedSampler:
+class Weighted:
     def __init__(self, weights: list[float]) -> None:
         self.weights = weights
+
+    def __len__(self) -> int:
+        return len(self.weights)
 
     def __iter__(self):
         population = range(len(self.weights))
         yield from random.choices(population, weights=self.weights, k=len(self.weights))
 
 
-loader = PyDataloader(dataset, batch_size=8, sampler=WeightedSampler(weights))
+loader = PyDataloader(dataset, batch_size=8, sampler=Weighted(weights))
 ```
 
-## Parallel prefetch
+## Workers, threads and the GIL
 
-Set `num_workers > 0` to prefetch batches on background threads while your training loop runs:
+`num_workers > 0` starts that many threads for each epoch; they load batches ahead while your loop
+runs and the loader returns them in order.
 
-```python
-loader = PyDataloader(
-    dataset,
-    batch_size=64,
-    num_workers=4,
-    prefetch_depth=8,
-    collate_fn=collate_numpy,
-)
-```
+- **Regular CPython**: the threads share the GIL. Work that releases it — file reads, NumPy,
+  image decoding, hashing, most C extensions — runs in parallel; pure-Python code in
+  `__getitem__` does not.
+- **Free-threaded CPython 3.14t**: no GIL, so pure-Python code runs in parallel too.
 
-> **Note** — worker threads call `dataset.__getitem__` concurrently. Make sure your dataset is **thread-safe** (read-only state, or protected with a lock).
+  ```bash
+  uv python install 3.14t
+  uv run --python 3.14t python -X gil=0 train.py
+  ```
 
-## Free-threaded Python (3.13t)
+- **Breaking out of a loop** stops the workers; batches already being loaded are finished and
+  discarded.
 
-With a standard CPython build the GIL serialises worker threads, limiting parallel speedup. Install a **free-threaded** Python 3.13t build to remove this constraint:
+## Errors
 
-```bash
-# with uv
-uv python install 3.13t
-uv run --python 3.13t python -X gil=0 train.py
-```
+- An exception raised by `__getitem__`, `__getitems__` or `collate_fn` reaches you with its own
+  type and message. With `num_workers=0`, the next `next()` continues with the following batch;
+  with workers, the epoch ends.
+- A `__len__` or a sampler that raises, or a sampler that yields something other than a
+  non-negative `int`, makes `iter(loader)` raise — an epoch never silently comes out empty or
+  short.
+- Invalid arguments raise `ValueError` (`batch_size=0`, `shuffle` with `sampler`, `seed` without
+  `shuffle`) or `TypeError` (a non-iterable `sampler`).
 
-On a CPU-bound dataset, free-threaded mode delivers near-linear scaling with `num_workers`.
+## Coming from `torch.utils.data.DataLoader`
 
-## Compared to PyTorch DataLoader
+| PyTorch | dataloader-rs |
+|---|---|
+| `torch.utils.data.Dataset` | subclass `PyDataset` (same `__len__` / `__getitem__` / `__getitems__`) |
+| `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`, `drop_last` | same |
+| `generator=` for a reproducible shuffle | `seed=` |
+| `prefetch_factor` (per worker) | `prefetch_depth` (total finished batches waiting) |
+| worker processes, `persistent_workers`, `worker_init_fn`, `multiprocessing_context` | threads: nothing to start, copy or initialise per worker |
+| `pin_memory`, `timeout`, `batch_sampler`, `IterableDataset` | not supported |
+| default collation into tensors | a `list`; pass `collate_fn` (e.g. `np.stack`, `torch.stack`) |
 
-| Feature | `dataloader-rs` | `torch.utils.data.DataLoader` |
-|---------|-----------------|-------------------------------|
-| Dependency | none | PyTorch (large) |
-| Worker model | threads | processes |
-| GIL bypass | Python 3.13t | always (separate process) |
-| Tensor collation | bring your own | built-in |
-| Drop-in API | yes | — |
+## Performance
 
-Use `dataloader-rs` when you want a lightweight, dependency-free loader — it handles any batch type, including tensors produced by a custom `collate_fn`.
-Use PyTorch's loader when you need its built-in tensor collation or are already deep in the PyTorch ecosystem.
+On an Intel Core i9-13900H, against `torch.utils.data.DataLoader` with the same dataset code:
+≈ 7× faster on array samples (file reads, image augmentation), 1.5–61× faster without workers,
+and slower (torch 1.6×) on pure-Python CPU work under the GIL, where processes win — use 3.14t.
+Every number, the method and the caveats:
+[BENCH.md](https://github.com/AzHicham/dataloader-rs/blob/dev/BENCH.md).
 
-## Links
-
-- [GitHub](https://github.com/AzHicham/dataloader-rs)
-- [Rust crate docs](https://docs.rs/dataloader-rs)
+Source, issues and the Rust crate: [github.com/AzHicham/dataloader-rs](https://github.com/AzHicham/dataloader-rs).
