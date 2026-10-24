@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792870527013,
+  "lastUpdate": 1792876005366,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -3203,6 +3203,306 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 541630,
             "range": "± 8072",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "ebe5c6eba38e193535521ab11d91b01c9929ce80",
+          "message": "docs: rewrite BENCH.md from a run calibrated for 4-vCPU runners\n\nOne reference run on 4 pinned performance cores, the size of the\nGitHub-hosted runners: the Rust suites, the Python guards and the\ncomparison with torch on CPython 3.13, 3.14t and 3.15t, throughput and\nfirst-batch latency. The document now says what each benchmark answers,\nhow a number is produced, how to choose the settings, and which\nbottlenecks remain (glibc malloc on array samples, the per-batch cost of\nthe Python parallel path).\n\nWith torch collating its own batches, array samples are at parity to\n1.6×, not ≈ 7×: the README and the Python README now quote the fair\nnumbers (≈ 5× on loader overhead, ≈ 3× on network-bound datasets,\nfirst batches in milliseconds). bench/ and benches/ READMEs describe the\ncurrent suites.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T22:02:05+01:00",
+          "tree_id": "9ee9f9df3c002c10fc9bdda83148e9621380f7a2",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/ebe5c6eba38e193535521ab11d91b01c9929ce80"
+        },
+        "date": 1792876005034,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 158482,
+            "range": "± 450",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 44421,
+            "range": "± 374",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 23725,
+            "range": "± 124",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 11303,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 6698,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 5756,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 4651,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1462072,
+            "range": "± 140997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 143854,
+            "range": "± 4937",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 39587,
+            "range": "± 1362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 16145,
+            "range": "± 3019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 9620,
+            "range": "± 1027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 9029,
+            "range": "± 1504",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 12508,
+            "range": "± 1624",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items1",
+            "value": 4997881,
+            "range": "± 16174",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items1",
+            "value": 5027287,
+            "range": "± 20339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items2",
+            "value": 2565425,
+            "range": "± 11663",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items4",
+            "value": 1316669,
+            "range": "± 32360",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items4",
+            "value": 1418882,
+            "range": "± 166886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items1",
+            "value": 15928381,
+            "range": "± 624510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items2",
+            "value": 8047188,
+            "range": "± 186492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items4",
+            "value": 4407670,
+            "range": "± 529589",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w2_items2",
+            "value": 4277783,
+            "range": "± 246576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w4_items1",
+            "value": 8473602,
+            "range": "± 191754",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/0",
+            "value": 29756850,
+            "range": "± 340577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/1",
+            "value": 29953531,
+            "range": "± 334561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/2",
+            "value": 15099276,
+            "range": "± 44353",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/4",
+            "value": 7705318,
+            "range": "± 302545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/sequential",
+            "value": 14972783,
+            "range": "± 83346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 5667922,
+            "range": "± 3092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 5667198,
+            "range": "± 26073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 5665625,
+            "range": "± 5748",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 5668804,
+            "range": "± 12930",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/0",
+            "value": 135722902,
+            "range": "± 1629873",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/1",
+            "value": 123738398,
+            "range": "± 1899653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/2",
+            "value": 66319838,
+            "range": "± 1954301",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/4",
+            "value": 25441513,
+            "range": "± 245541",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/4",
+            "value": 265031713,
+            "range": "± 175128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/16",
+            "value": 79637683,
+            "range": "± 1858690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/64",
+            "value": 21670314,
+            "range": "± 607469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2765,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 4931,
+            "range": "± 110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 29804,
+            "range": "± 338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 50847,
+            "range": "± 555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 294748,
+            "range": "± 6994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 554262,
+            "range": "± 6256",
             "unit": "ns/iter"
           }
         ]
