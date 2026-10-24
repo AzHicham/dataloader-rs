@@ -5,7 +5,7 @@ use crate::collator::TorchPinnedCollator;
 use crate::{
     collator::{Collator, VecCollator},
     dataset::Dataset,
-    loader::core::{DataLoader, LoaderPool},
+    loader::core::{DataLoader, LoaderPool, ThreadMain},
     sampler::{BatchSampler, Sampler, SequentialSampler},
 };
 
@@ -21,6 +21,8 @@ pub struct DataLoaderBuilder<D, S, C> {
     num_workers: usize,
     /// Items of one batch fetched in parallel.
     items_in_parallel: usize,
+    /// Main function of the pool's threads; `None` runs rayon's loop as is.
+    thread_main: Option<ThreadMain>,
 }
 
 impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
@@ -34,6 +36,7 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
             prefetch_depth: 2,
             num_workers: 0,
             items_in_parallel: 1,
+            thread_main: None,
         }
     }
 }
@@ -86,6 +89,15 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         self
     }
 
+    /// Run each pool thread through `main`, which must call
+    /// `ThreadBuilder::run` (the Python binding keeps the thread attached to
+    /// the interpreter for its whole life).
+    #[cfg(feature = "python")]
+    pub(crate) fn thread_main(mut self, main: ThreadMain) -> Self {
+        self.thread_main = Some(main);
+        self
+    }
+
     /// Pin Tensor batches in host memory before they are sent to the consumer.
     ///
     /// Available only for `tch::Tensor` batches under `torch-rs` feature.
@@ -104,6 +116,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             prefetch_depth: self.prefetch_depth,
             num_workers: self.num_workers,
             items_in_parallel: self.items_in_parallel,
+            thread_main: self.thread_main,
         }
     }
 
@@ -118,6 +131,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             prefetch_depth: self.prefetch_depth,
             num_workers: self.num_workers,
             items_in_parallel: self.items_in_parallel,
+            thread_main: self.thread_main,
         }
     }
 
@@ -132,6 +146,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             prefetch_depth: self.prefetch_depth,
             num_workers: self.num_workers,
             items_in_parallel: self.items_in_parallel,
+            thread_main: self.thread_main,
         }
     }
 
@@ -146,7 +161,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         // each with items_in_parallel items in flight.
         let threads = self.num_workers.max(1) * self.items_in_parallel;
         let needs_pool = self.num_workers > 0 || self.items_in_parallel > 1;
-        let pool = needs_pool.then(|| LoaderPool::new(threads));
+        let pool = needs_pool.then(|| LoaderPool::new(threads, self.thread_main));
 
         DataLoader {
             dataset: Arc::new(self.dataset),
