@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792868073858,
+  "lastUpdate": 1792870527013,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -2921,6 +2921,288 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 544163,
             "range": "± 4005",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "fec83049242b4c80679dd7353f2e3d6e0ff11b83",
+          "message": "docs: restructure the README\n\nBadges (docs.rs, MSRV), what the library offers, contents, Rust and\nPython quick starts, a concept map linking the module guides, every\nbuilder setting with rules of thumb, feature flags, a performance summary\nwith the benchmark dashboards, a documentation index, project layout,\nbuild and test commands, and the MSRV.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T20:31:25+01:00",
+          "tree_id": "31dd5c55675ad5971245446ebf7a704eb7ec1175",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/fec83049242b4c80679dd7353f2e3d6e0ff11b83"
+        },
+        "date": 1792870526396,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 127076,
+            "range": "± 2791",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 33850,
+            "range": "± 366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 18114,
+            "range": "± 160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 9541,
+            "range": "± 134",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 5800,
+            "range": "± 49",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 4807,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 3831,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1051493,
+            "range": "± 13640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 260651,
+            "range": "± 2456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 153517,
+            "range": "± 4638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 125822,
+            "range": "± 1598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 101538,
+            "range": "± 1496",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 99864,
+            "range": "± 1510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 99132,
+            "range": "± 1580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/0",
+            "value": 1671168,
+            "range": "± 42641",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/1",
+            "value": 1772008,
+            "range": "± 24343",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/2",
+            "value": 941923,
+            "range": "± 22523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/4",
+            "value": 521844,
+            "range": "± 11419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/8",
+            "value": 594332,
+            "range": "± 12010",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/0",
+            "value": 651722,
+            "range": "± 7598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/1",
+            "value": 1177356,
+            "range": "± 14152",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/2",
+            "value": 687647,
+            "range": "± 12298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/4",
+            "value": 546969,
+            "range": "± 9553",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/8",
+            "value": 535213,
+            "range": "± 8928",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/inter4_intra4",
+            "value": 636193,
+            "range": "± 19997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 117955,
+            "range": "± 7598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 114152,
+            "range": "± 6771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 112951,
+            "range": "± 3485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 100345,
+            "range": "± 3517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/16",
+            "value": 97279,
+            "range": "± 4117",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/0",
+            "value": 112207011,
+            "range": "± 1553143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/2",
+            "value": 54816983,
+            "range": "± 852736",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/4",
+            "value": 21695206,
+            "range": "± 538868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/8",
+            "value": 32944878,
+            "range": "± 1554494",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/4",
+            "value": 264585079,
+            "range": "± 568685",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/16",
+            "value": 66835271,
+            "range": "± 35058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/64",
+            "value": 17470683,
+            "range": "± 34727",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2704,
+            "range": "± 58",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 4915,
+            "range": "± 256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 26373,
+            "range": "± 87",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 51246,
+            "range": "± 154",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 304159,
+            "range": "± 4956",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 541630,
+            "range": "± 8072",
             "unit": "ns/iter"
           }
         ]
