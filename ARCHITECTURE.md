@@ -193,7 +193,8 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
   reused by every epoch, and each keeps one Python thread state for its whole life
   (`python/pool.rs`): a task's attach only re-activates it, where creating and destroying a thread
   state per attach would cost about 100 µs on free-threaded builds. The consumer releases the
-  interpreter (`py.detach`) while it waits for the next batch, so workers can run.
+  interpreter (`py.detach`) only when it has to wait for the next batch, so workers can run; a
+  batch that already arrived is returned without releasing it.
 - **`items_in_parallel > 1`**: a batch's lanes call `__getitem__` concurrently, each attaching to
   the interpreter for its own call (`__getitems__` is not used); such epochs always use the core
   iterator, even with `num_workers = 0`, because the consumer must wait with the interpreter

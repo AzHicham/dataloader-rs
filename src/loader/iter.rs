@@ -81,16 +81,37 @@ where
                 return Some(batch);
             }
             match self.result_rx.recv() {
-                Ok((idx, Ok(batch))) => {
-                    self.reorder[idx % window] = Some(batch);
-                }
-                // A task panicked: re-raise on the consumer thread, as
-                // `num_workers(0)` would. `Drop` stops the other tasks.
-                Ok((_, Err(payload))) => {
-                    self.next_out = self.epoch.len();
-                    std::panic::resume_unwind(payload);
-                }
+                Ok(msg) => self.store(msg),
                 Err(_) => return None,
+            }
+        }
+    }
+
+    /// The next batch if it has already arrived; `None` if `next` would wait.
+    #[cfg(feature = "python")]
+    fn try_next(&mut self) -> Option<Option<Result<C::Batch>>> {
+        if self.next_out == self.epoch.len() {
+            return Some(None);
+        }
+        let window = self.reorder.len();
+        while self.reorder[self.next_out % window].is_none() {
+            self.store(self.result_rx.try_recv().ok()?);
+        }
+        Some(self.next())
+    }
+
+    /// File a task's result in its slot, or re-raise its panic.
+    fn store(&mut self, (idx, result): WorkerMsg<C::Batch>) {
+        match result {
+            Ok(batch) => {
+                let window = self.reorder.len();
+                self.reorder[idx % window] = Some(batch);
+            }
+            // A task panicked: re-raise on the consumer thread, as
+            // `num_workers(0)` would. `Drop` stops the other tasks.
+            Err(payload) => {
+                self.next_out = self.epoch.len();
+                std::panic::resume_unwind(payload);
             }
         }
     }
@@ -180,6 +201,24 @@ where
             },
         };
         Self { inner }
+    }
+}
+
+impl<D, C> DataLoaderIter<D, C>
+where
+    D: Dataset,
+    C: Collator<D::Item>,
+    C::Batch: Send + 'static,
+{
+    /// The next item if it is ready without waiting: `None` if `next` would
+    /// wait for a worker, or do the work itself (direct path). Lets the
+    /// Python binding keep the interpreter when a batch is already there.
+    #[cfg(feature = "python")]
+    pub(crate) fn try_next(&mut self) -> Option<Option<Result<C::Batch>>> {
+        match &mut self.inner {
+            Inner::Parallel(core) => core.try_next(),
+            Inner::Direct { .. } => None,
+        }
     }
 }
 

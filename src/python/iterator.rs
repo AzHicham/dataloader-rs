@@ -64,23 +64,30 @@ impl PyDataloaderIter {
             }
 
             PyIterInner::Threaded(inner_opt) => {
-                let Some(inner) = inner_opt.take() else {
+                let Some(mut inner) = inner_opt.take() else {
                     return Ok(None);
                 };
-                // Release Python thread state while blocked on the channel.
-                // A worker panic is re-raised here; join the workers before
-                // re-attaching, so none is left waiting on our GIL.
-                let next_item = py.detach(move || {
-                    let mut inner = inner;
-                    let next_item = catch_unwind(AssertUnwindSafe(|| inner.next()));
-                    match next_item {
-                        Ok(next_item) => Ok((next_item, inner)),
-                        Err(payload) => {
-                            drop(inner);
-                            Err(payload)
+                // A batch that already arrived is taken without releasing the
+                // interpreter; otherwise wait with it released. A worker panic
+                // is re-raised here, after dropping the epoch detached.
+                let next_item = match catch_unwind(AssertUnwindSafe(|| inner.try_next())) {
+                    Ok(Some(next_item)) => Ok((next_item, inner)),
+                    Ok(None) => py.detach(move || {
+                        let mut inner = inner;
+                        let next_item = catch_unwind(AssertUnwindSafe(|| inner.next()));
+                        match next_item {
+                            Ok(next_item) => Ok((next_item, inner)),
+                            Err(payload) => {
+                                drop(inner);
+                                Err(payload)
+                            }
                         }
+                    }),
+                    Err(payload) => {
+                        py.detach(|| drop(inner));
+                        Err(payload)
                     }
-                });
+                };
                 let (next_item, inner) = match next_item {
                     Ok(next_item) => next_item,
                     Err(payload) => resume_unwind(payload),
