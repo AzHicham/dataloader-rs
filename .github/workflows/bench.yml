@@ -50,7 +50,13 @@ jobs:
         # --output-format bencher produces libtest-compatible lines:
         #   test <name> ... bench: <ns> ns/iter (+/- <dev>)
         # Criterion 0.3.4+ supports this format.
+        #
+        # A partially restored rust-cache can leave baselines in target/criterion
+        # without sample.json; Criterion then prints "Criterion.rs ERROR" in the
+        # middle of each bencher line and no result can be parsed. Comparison is
+        # done by github-action-benchmark, so local baselines are not needed.
         run: |
+          rm -rf target/criterion
           cargo bench --bench ${{ matrix.bench }} \
             -- --output-format bencher \
             | tee ${{ matrix.bench }}.txt
