@@ -14,7 +14,7 @@ jobs:
   # ── Lint: prek (drop-in pre-commit replacement written in Rust) ───────────
   pre-commit:
     name: Lint (prek)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v7.0.1
@@ -39,7 +39,7 @@ jobs:
   # ── Rust tests (MSRV + latest stable) ────────────────────────────────────
   test-rust:
     name: Rust tests (${{ matrix.name }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +72,7 @@ jobs:
   # ── Python tests (3.14t) ─────────────────────────────────────────────────
   test-python:
     name: Python tests (${{ matrix.python }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
