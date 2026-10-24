@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792836238043,
+  "lastUpdate": 1792836585738,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -2159,6 +2159,246 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 285166,
             "range": "± 6589",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "31b67746b1330b6043c98f8b863c01ba153ad4d3",
+          "message": "test(python): expect ValueError for a wrong-length __getitems__\n\nNow that worker errors keep their Python type, the threaded path raises\nthe same ValueError as num_workers=0.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-24T11:05:33+01:00",
+          "tree_id": "5c1b1651992f27605787adb582d854782c0b323f",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/31b67746b1330b6043c98f8b863c01ba153ad4d3"
+        },
+        "date": 1792836585358,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 153569,
+            "range": "± 1214",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 44243,
+            "range": "± 2515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 21556,
+            "range": "± 316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 11477,
+            "range": "± 135",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 6803,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 5515,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 4632,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1117512,
+            "range": "± 59615",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 312571,
+            "range": "± 2673",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 198935,
+            "range": "± 2926",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 171403,
+            "range": "± 1772",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 140629,
+            "range": "± 11075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 138431,
+            "range": "± 9869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 134986,
+            "range": "± 1891",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/0",
+            "value": 2157908,
+            "range": "± 3394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/1",
+            "value": 2262319,
+            "range": "± 15613",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/2",
+            "value": 1262122,
+            "range": "± 6700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/4",
+            "value": 744069,
+            "range": "± 68619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "inter_workers/num_workers/8",
+            "value": 808930,
+            "range": "± 7859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/0",
+            "value": 431864,
+            "range": "± 10335",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/1",
+            "value": 821474,
+            "range": "± 61794",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/2",
+            "value": 480765,
+            "range": "± 11608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/4",
+            "value": 336678,
+            "range": "± 16744",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/intra_workers/8",
+            "value": 321989,
+            "range": "± 13579",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "intra_workers/inter4_intra4",
+            "value": 372328,
+            "range": "± 15913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 192637,
+            "range": "± 14626",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 197658,
+            "range": "± 3476",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 190614,
+            "range": "± 6711",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 169814,
+            "range": "± 5398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/16",
+            "value": 180380,
+            "range": "± 2746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2794,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 4831,
+            "range": "± 138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 27271,
+            "range": "± 153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 50297,
+            "range": "± 974",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 285848,
+            "range": "± 5204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 537919,
+            "range": "± 14324",
             "unit": "ns/iter"
           }
         ]
