@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783344109049,
+  "lastUpdate": 1792834112269,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Python benchmarks (3.14t)": [
@@ -366,6 +366,128 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.00281500680097496",
             "extra": "mean: 47.742089200005466 msec\nrounds: 5"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "noreply@anthropic.com",
+            "name": "Claude",
+            "username": "claude"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "91cb838cff2aaabe075f068f2832935dbdfd8dcd",
+          "message": "fix: share dataset/collator via Arc and remove all unsafe code\n\nWorkers previously held raw pointers to the loader's dataset and collator,\nrelying on DataLoaderIter's Drop to join them before the borrow ended.\nLeaking the iterator (e.g. mem::forget) from safe code let workers read\nfreed memory. The loader now stores Arc<D>/Arc<C> and each worker holds a\nclone, so the crate is #![forbid(unsafe_code)]. DataLoaderIter no longer\ncarries a lifetime, which also removes the Python-only OwnedDataLoaderIter.\n\nAlso fix a deadlock when a threaded Python iterator is dropped: PyO3 never\ninvoked __del__, so Drop joined workers while holding the GIL that workers\ninside __getitem__ were waiting for. Drop now detaches before joining.\n\nBenchmarks (interleaved A/B, 2 rounds) show no measurable change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_017eJkQ4peEFnnwbBFmW44KN",
+          "timestamp": "2026-10-24T10:25:17+01:00",
+          "tree_id": "ac3514abc763acf792321f43c116158921dc02a7",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/91cb838cff2aaabe075f068f2832935dbdfd8dcd"
+        },
+        "date": 1792834111500,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[1]",
+            "value": 1165.9852260529378,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001913566156053769",
+            "extra": "mean: 857.6437999863629 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[64]",
+            "value": 4459.284944608902,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000005594394641158145",
+            "extra": "mean: 224.2512000066199 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_sequential[4096]",
+            "value": 4436.88793140591,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00002175754620135076",
+            "extra": "mean: 225.38319999512169 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[1]",
+            "value": 1.9862511378439192,
+            "unit": "iter/sec",
+            "range": "stddev: 0.041334399341681566",
+            "extra": "mean: 503.46100799997663 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[64]",
+            "value": 308.5913434686613,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000501612410562923",
+            "extra": "mean: 3.240531600010854 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_batch_size.py::test_batch_size_parallel[4096]",
+            "value": 1073.5651962102952,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000019051941448061945",
+            "extra": "mean: 931.4758000073198 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[1]",
+            "value": 12.174238351829976,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0028367946854528686",
+            "extra": "mean: 82.14066220000404 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[4]",
+            "value": 12.29915292634592,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003579997071496181",
+            "extra": "mean: 81.30641239998795 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_prefetch.py::test_prefetch_depth[16]",
+            "value": 12.366899849097821,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0012686021219664183",
+            "extra": "mean: 80.8610090000002 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_sequential",
+            "value": 1788.4314239889502,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011559762468580185",
+            "extra": "mean: 559.1492000121434 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_sampler.py::test_sampler_shuffle",
+            "value": 1678.2736069385646,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000015105907885929225",
+            "extra": "mean: 595.8503999977438 usec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[0]",
+            "value": 4.66937114464323,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0018503519915890436",
+            "extra": "mean: 214.1616010000007 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[1]",
+            "value": 4.521289506671425,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0014239105189641217",
+            "extra": "mean: 221.17583900001136 msec\nrounds: 5"
+          },
+          {
+            "name": "bench/test_bench_workers.py::test_num_workers[4]",
+            "value": 12.44888084934443,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0007819933067175839",
+            "extra": "mean: 80.32850600001211 msec\nrounds: 5"
           }
         ]
       }
