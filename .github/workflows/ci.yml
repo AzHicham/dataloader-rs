@@ -81,7 +81,7 @@ jobs:
           PYO3_PYTHON: ${{ steps.python.outputs.python-path }}
         run: cargo test --all-features
 
-  # ── Python tests (3.14t) ─────────────────────────────────────────────────
+  # ── Python tests (3.14t · 3.15t) ─────────────────────────────────────────
   test-python:
     name: Python tests (${{ matrix.python }})
     runs-on: ubuntu-26.04
@@ -90,6 +90,7 @@ jobs:
       matrix:
         include:
           - python: "3.14t"
+          - python: "3.15t"
 
     steps:
       - uses: actions/checkout@v7.0.1

@@ -23,8 +23,8 @@ with a Python binding that runs the same pipeline on threads instead of worker p
 - **Failures surface**: a dataset or collator error is returned for its batch, a panic is
   re-raised on the consumer, and Python exceptions keep their type.
 - **Python binding**: `PyDataloader` mirrors the PyTorch arguments (`batch_size`, `shuffle`,
-  `sampler`, `collate_fn`, `drop_last`, `seed`, `__getitems__`) and supports free-threaded
-  CPython 3.14t.
+  `sampler`, `collate_fn`, `drop_last`, `seed`, `__getitems__`); wheels for free-threaded
+  CPython 3.14t and 3.15t on Linux (x86_64, arm64) and macOS (arm64).
 - **No unsafe code**: `#![forbid(unsafe_code)]`.
 
 ## Contents
