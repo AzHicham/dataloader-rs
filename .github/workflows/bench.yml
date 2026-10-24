@@ -25,7 +25,7 @@ jobs:
   # ── Rust: run all benches in parallel, upload output as artifact ──────────
   rust-bench:
     name: Rust / ${{ matrix.bench }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -69,7 +69,7 @@ jobs:
   # ── Python: build wheel then run pytest-benchmark ─────────────────────────
   python-bench:
     name: Python benchmarks (${{ matrix.python }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -113,7 +113,7 @@ jobs:
   # ── Store Rust results ─────────────────────────────────────────────────────
   store-rust:
     name: Store Rust benchmark results
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: rust-bench
     permissions:
       contents: write
@@ -151,7 +151,7 @@ jobs:
   # ── Store Python results (one store job per Python version) ──────────────
   store-python:
     name: Store Python benchmarks (${{ matrix.python }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: python-bench
     if: always()
     strategy:
