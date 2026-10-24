@@ -12,19 +12,6 @@ pub(crate) enum PySampler {
     Python(Py<PyAny>),
 }
 
-impl Sampler for PySampler {
-    fn indices(&mut self, dataset_len: usize) -> Vec<usize> {
-        match self {
-            Self::Sequential(s) => s.indices(dataset_len),
-            Self::Random(s) => s.indices(dataset_len),
-            // Callers go through `SharedPySampler`, which records the error.
-            Self::Python(py_sampler) => {
-                Python::attach(|py| python_indices(py, py_sampler)).unwrap_or_default()
-            }
-        }
-    }
-}
-
 /// Iterate a Python sampler, failing on the first exception or non-index item.
 fn python_indices(py: Python<'_>, sampler: &Py<PyAny>) -> PyResult<Vec<usize>> {
     PyIterator::from_object(sampler.bind(py))?
@@ -64,13 +51,17 @@ impl SharedPySampler {
 impl Sampler for SharedPySampler {
     fn indices(&mut self, dataset_len: usize) -> Vec<usize> {
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let PySampler::Python(py_sampler) = &*guard else {
-            return guard.indices(dataset_len);
-        };
-        Python::attach(|py| python_indices(py, py_sampler)).unwrap_or_else(|err| {
-            *self.error.lock().unwrap_or_else(|e| e.into_inner()) = Some(err);
-            Vec::new()
-        })
+        match &mut *guard {
+            PySampler::Sequential(s) => s.indices(dataset_len),
+            PySampler::Random(s) => s.indices(dataset_len),
+            PySampler::Python(py_sampler) => Python::attach(|py| python_indices(py, py_sampler))
+                .unwrap_or_else(|err| {
+                    // Re-raised by `PyDataloader.__iter__`; the empty epoch is
+                    // never iterated.
+                    *self.error.lock().unwrap_or_else(|e| e.into_inner()) = Some(err);
+                    Vec::new()
+                }),
+        }
     }
 }
 
