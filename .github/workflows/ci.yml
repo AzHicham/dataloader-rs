@@ -68,7 +68,7 @@ jobs:
       - uses: actions/setup-python@v7.1.0
         id: python
         with:
-          python-version: "3.14"
+          python-version: "3.15"
 
       # On latest stable the rust-version field is irrelevant — strip it so
       # Cargo never rejects a dep update because of a stale MSRV pin.
