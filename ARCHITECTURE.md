@@ -111,8 +111,9 @@ leaving, so a batch is never left unclaimed between a task's exit and the consum
 **Backpressure.** Nothing beyond the window is claimed, so at most `num_workers + prefetch_depth`
 batches are in flight or waiting, however slow one batch is.
 
-**Ordering.** Tasks finish out of order; a `HashMap<batch index, result>` holds early results
-until their turn. The window also bounds this buffer.
+**Ordering.** Tasks finish out of order; early results wait for their turn in a ring of `window`
+slots, batch `i` in slot `i % window`. Every batch in flight or waiting lies in
+`next_out..next_out + window`, so no two share a slot and the window bounds the buffer.
 
 **Cost.** Claiming, publishing the position and restarting tasks cost a few atomic operations
 and an occasional task spawn per batch. That is negligible once a batch does real work, but

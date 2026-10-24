@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, unbounded};
-use hashbrown::HashMap;
 
 use crate::{
     collator::Collator,
@@ -25,9 +24,10 @@ where
     epoch: Arc<Epoch<D, C>>,
     pool: Arc<rayon::ThreadPool>,
     result_rx: Receiver<WorkerMsg<C::Batch>>,
-    /// Out-of-order results waiting to be returned in epoch order; at most
-    /// `window` batches, see [`Epoch`].
-    reorder: HashMap<usize, Result<C::Batch>>,
+    /// Results waiting to be returned in epoch order: batch `i` waits in slot
+    /// `i % window`. Batches in flight or waiting always lie in
+    /// `next_out..next_out + window` (see [`Epoch`]), so no two share a slot.
+    reorder: Vec<Option<Result<C::Batch>>>,
     next_out: usize,
 }
 
@@ -47,14 +47,15 @@ where
         chunks: Vec<Vec<usize>>,
     ) -> Self {
         let (result_tx, result_rx) = unbounded();
+        // Batches in flight: one per worker plus the prefetch depth.
+        let window = num_workers + prefetch_depth;
         let epoch = Arc::new(Epoch::new(
             Arc::clone(dataset),
             Arc::clone(collator),
             items_in_parallel,
             Arc::clone(pool),
             chunks,
-            // Batches in flight: one per worker plus the prefetch depth.
-            num_workers + prefetch_depth,
+            window,
             num_workers,
             result_tx,
         ));
@@ -63,7 +64,7 @@ where
             epoch,
             pool: Arc::clone(pool),
             result_rx,
-            reorder: HashMap::new(),
+            reorder: std::iter::repeat_with(|| None).take(window).collect(),
             next_out: 0,
         }
     }
@@ -72,15 +73,16 @@ where
         if self.next_out == self.epoch.len() {
             return None;
         }
+        let window = self.reorder.len();
         loop {
-            if let Some(batch) = self.reorder.remove(&self.next_out) {
+            if let Some(batch) = self.reorder[self.next_out % window].take() {
                 self.next_out += 1;
                 self.epoch.advance(self.next_out, &self.pool);
                 return Some(batch);
             }
             match self.result_rx.recv() {
                 Ok((idx, Ok(batch))) => {
-                    self.reorder.insert(idx, batch);
+                    self.reorder[idx % window] = Some(batch);
                 }
                 // A task panicked: re-raise on the consumer thread, as
                 // `num_workers(0)` would. `Drop` stops the other tasks.

@@ -44,11 +44,6 @@ version          = "0.5"
 default-features = false
 features         = ["std"]
 
-[dependencies.hashbrown]
-version          = "0.17"
-default-features = false
-features         = ["default-hasher"]
-
 [dependencies.fastrand]
 version          = "2"
 
