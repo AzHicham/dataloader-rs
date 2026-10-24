@@ -1,18 +1,113 @@
-# Benchmark Results
+# Benchmarks
 
-**Machine:** Intel Core i9-13900H (14 cores / 20 threads), Linux x86_64  
-**Rust:** stable, `opt-level = 3`, `lto = "thin"`  
-**Python (GIL):** CPython 3.13.3, torch 2.11.0+cpu  
-**Python (no-GIL):** CPython 3.13.3+freethreaded (`-X gil=0`), torch 2.11.0+cpu  
-**Methodology:** Criterion for Rust (automated warm-up + statistical analysis);
-custom `time.perf_counter` harness for Python (2 warm-up epochs, 10 timed epochs,
-median reported).
+What `dataloader-rs` is measured on, how, and how it compares with
+`torch.utils.data.DataLoader`. Every number below was measured on one laptop (section 2); the
+CI re-runs the regression suites on every pull request and plots them per commit on the
+dashboards for [Rust](https://azhicham.github.io/dataloader-rs/benchmarks/rust/) and
+[Python 3.14t](https://azhicham.github.io/dataloader-rs/benchmarks/python-3.14t/).
 
----
+Two reference runs:
 
-## Rust (Criterion)
+| Run | Code | Python | Sections |
+|---|---|---|---|
+| Synthetic suites | v0.1.0 (April 2026) | CPython 3.13.3 (GIL) and 3.13.3t (`-X gil=0`), torch 2.11.0+cpu | 4, 5 |
+| Real-world workloads | `dev` (October 2026) | CPython 3.13.3 (GIL), torch 2.14.1+cpu, numpy 2.5.4 | 6 |
 
-### `batch_size` — sequential path (InMemoryDs, 4 096 items, num_workers=0)
+Contents:
+
+1. [Summary](#1-summary)
+2. [Setup](#2-setup)
+3. [Method: what is measured and how](#3-method-what-is-measured-and-how)
+4. [Results: Rust](#4-results-rust)
+5. [Results: Python against PyTorch, synthetic](#5-results-python-against-pytorch-synthetic)
+6. [Results: real-world workloads](#6-results-real-world-workloads)
+7. [Reading the results](#7-reading-the-results)
+8. [Caveats](#8-caveats)
+9. [Running it again](#9-running-it-again)
+
+## 1. Summary
+
+Python, `dataloader_rs.PyDataloader` against `torch.utils.data.DataLoader`:
+
+| Workload | Result |
+|---|---|
+| Array samples (read + normalise a file, augment an image), 4 workers | **≈ 7× faster** (6.8–7.0×) |
+| Sequential path (`num_workers=0`), any batch size | **1.5–61× faster** |
+| Parallel, dataset that releases the GIL (SHA-256 of 1 MB) | 2–6 % faster |
+| Network-bound (10 ms per sample, blocking), 16 workers | 1.2× faster; both capped by workers |
+| Pure-Python CPU work holding the GIL, regular CPython | **torch 1.6× faster** (persistent processes) |
+| Parallel, trivial `__getitem__`, medium batch sizes | mixed: torch ahead at `batch_size` 128–1024 on GIL CPython |
+
+Rust (Criterion): the direct path streams **≈ 1 G items/s** at `batch_size` 4096 (pure loader
+overhead); 8 worker threads give 3.1× on a CPU-bound dataset and item-level parallelism 2.9×
+with 8 rayon threads; the random sampler costs 1.6–2× the sequential one.
+
+The pattern: threads win wherever samples are large or the dataset releases the GIL, because
+nothing is pickled between processes; processes win on GIL-bound pure-Python work on regular
+CPython.
+
+## 2. Setup
+
+| | |
+|---|---|
+| Machine | laptop, Intel Core i9-13900H (14 cores / 20 threads), Linux x86_64, on AC power |
+| Rust | stable, `opt-level = 3`, `lto = "thin"`, `codegen-units = 1` (bench profile) |
+| Python | see the reference runs above; the extension built with `maturin develop --release` |
+| PyTorch | CPU wheels; `num_workers` worker processes, default start method |
+
+## 3. Method: what is measured and how
+
+### 3.1 Three families of benchmarks
+
+| Family | Files | Question | Where it runs |
+|---|---|---|---|
+| Rust loader overhead | `benches/*.rs` (Criterion) | what each setting costs or buys, without Python | locally; CI on every PR (regression tracking) |
+| Python regression guards | `bench/test_bench_*.py` (pytest-benchmark) | did the Python path get slower? | CI on every PR, free-threaded 3.14t |
+| Python against PyTorch | `bench/bench_*.py` (own harness) | how do we compare with `torch.utils.data.DataLoader`? | locally, on demand |
+
+Every file is listed with its parameters in [benches/README.md](benches/README.md) and
+[bench/README.md](bench/README.md).
+
+### 3.2 Datasets
+
+The synthetic datasets isolate one cost at a time; the real-world ones run the per-sample work of
+actual datasets.
+
+| Dataset | Per-sample work | Isolates |
+|---|---|---|
+| `InMemoryDs` (Rust, Python) | returns the index | loader, sampler and collation overhead |
+| `LightCpuDs` (Rust) | 1 000 LCG iterations (µs) | pipeline fill: prefetch depth |
+| `HeavyCpuDs` (Rust) | 50 000 LCG iterations (≈ 1 ms), 256 bytes out | parallel scaling |
+| `CpuBoundDs` (Python) | SHA-256 of 1 MB (≈ 1 ms), releases the GIL | parallel scaling through Python |
+| `local_files` | read a 128 KB file (64 KB in Rust), normalise to float32 | I/O fan-out |
+| `image_augment` | random crop 224, flip, normalise a decoded 3×256×256 image (NumPy) | GIL-releasing CPU work |
+| `remote` | 10 ms (2 ms in Rust) blocking sleep | network latency |
+| `python_cpu` | pure-Python tokenisation | GIL-bound CPU work |
+
+### 3.3 What a measurement is
+
+- **Rust**: Criterion's default statistics (warm-up, then samples until the estimate is stable;
+  the tables report the point estimate). One iteration is a **whole epoch**, iterator creation
+  included; the loader is built once, outside the timed loop.
+- **Python against PyTorch**: `time.perf_counter` around a whole epoch, iterator creation
+  included (that is where torch starts its worker processes), after warm-up epochs; the tables
+  report the **median** (2 warm-up + 10 timed epochs for the synthetic sweeps, 1 + 5 for the
+  real-world ones) as items per second.
+- **Same work on both sides**: the real-world workloads are written once as mixins
+  (`bench/real_world.py`) combined with `PyDataset` and with `torch.utils.data.Dataset`, so only
+  the loading differs. Both loaders get the same `batch_size`, `num_workers` and `collate_fn`.
+- **torch, fresh and persistent**: torch is run with its default fresh worker processes per epoch
+  and with `persistent_workers=True`; tables say which.
+- **Regression tracking (CI)**: Criterion's bencher output and pytest-benchmark's JSON go to
+  [github-action-benchmark](https://github.com/benchmark-action/github-action-benchmark), which
+  stores one point per commit on `dev` and comments on a pull request when a benchmark is more
+  than **1.5×** slower than the last `dev` result.
+
+## 4. Results: Rust
+
+Reference run: synthetic suites, v0.1.0. Rust measures the loader alone, without Python.
+
+### 4.1 `batch_size` — sequential path (InMemoryDs, 4 096 items, num_workers=0)
 
 The sequential path processes batches inline in `Iterator::next` with no threads.
 `InMemoryDs::get` is a trivial `Ok(index)` so this measures pure iterator + sampler
@@ -34,7 +129,7 @@ Per-batch overhead (Vec allocation + sampler slice) is amortized at larger batch
 sizes. At `bs=4096` the entire epoch is one batch — cost is dominated by a single
 `Vec::with_capacity` call.
 
-### `batch_size` — parallel path (InMemoryDs, 4 096 items, num_workers=4, prefetch=16)
+### 4.2 `batch_size` — parallel path (InMemoryDs, 4 096 items, num_workers=4, prefetch=16)
 
 
 | batch_size | time / epoch |
@@ -52,7 +147,7 @@ The parallel path plateaus at ~68–77 µs — this is the crossbeam channel rou
 floor (send + reorder buffer lookup). With `InMemoryDs` items are free so the
 channel is the bottleneck.
 
-### `inter_workers` — CPU-bound dataset (HeavyCpuDs, N=256, bs=16, prefetch=32)
+### 4.3 `inter_workers` — CPU-bound dataset (HeavyCpuDs, N=256, bs=16, prefetch=32)
 
 
 | num_workers | time / epoch | speedup vs 0     |
@@ -69,7 +164,7 @@ parallelism gain. Meaningful speedup starts at 2 workers. Scaling to 8 workers
 gives 3.1× on a 20-thread machine — sub-linear because `HeavyCpuDs` is CPU-bound
 and the scheduler saturates physical cores.
 
-### `intra_workers` — rayon intra-batch parallelism (HeavyCpuDs, N=128, bs=64, inter=2)
+### 4.4 `intra_workers` — rayon intra-batch parallelism (HeavyCpuDs, N=128, bs=64, inter=2)
 
 
 | intra_workers     | time / epoch | speedup vs 0     |
@@ -86,7 +181,7 @@ Rayon intra-batch scales well. `inter=4 + intra=4` matches `intra=4` alone — t
 cores are saturated and adding both dimensions adds context-switch pressure without
 further throughput gain.
 
-### `prefetch_depth` (N=128, bs=8, 4 workers)
+### 4.5 `prefetch_depth` (N=128, bs=8, 4 workers)
 
 
 | depth | time / epoch |
@@ -102,7 +197,7 @@ Negligible effect for CPU-bound datasets — workers drain the channel faster th
 the consumer blocks. Depth 4 is sufficient; going higher wastes memory without
 throughput gain. **Recommended: 4–8.**
 
-### `sampler` (InMemoryDs, various N)
+### 4.6 `sampler` (InMemoryDs, various N)
 
 
 | N       | sequential | random  | ratio |
@@ -115,13 +210,13 @@ throughput gain. **Recommended: 4–8.**
 The random sampler (inside-out Fisher-Yates with `fastrand` wyrand) is consistently
 ~1.6–2× slower than the sequential sampler. Both scale O(N).
 
----
+## 5. Results: Python against PyTorch, synthetic
 
-## Python vs PyTorch
+Reference run: synthetic suites, v0.1.0, CPython 3.13 and free-threaded 3.13t, torch 2.11.
+Free-threaded 3.13t is no longer supported (PyO3 requires 3.14t); the 3.13t columns show what
+removing the GIL does, and 3.14t behaves the same way.
 
-Two runs: CPython 3.13 (GIL active) and CPython 3.13t (`-X gil=0`, GIL disabled).
-
-### Why GIL matters here
+### 5.1 Why the GIL matters here
 
 - **Sequential path (`num_workers=0`):** We call `__getitem__` directly in the
 calling thread. Minimal overhead in both modes.
@@ -133,9 +228,7 @@ via C extensions): threads run truly in parallel in both modes. Near parity.
 - **Free-threaded Python (3.13t, `-X gil=0`):** No GIL. Our threads scale freely
 — the process-overhead comparison disappears.
 
----
-
-### Sequential path — `batch_size` sweep (InMemoryDs, N=4 096, num_workers=0)
+### 5.2 Sequential path — `batch_size` sweep (InMemoryDs, N=4 096, num_workers=0)
 
 Our direct path calls `__getitem__` with a cached bound method — no queue, no
 thread, no C++ machinery.
@@ -158,7 +251,7 @@ cost. Advantage over torch: **1.5–33× (GIL) / 1.7–33× (3.13t)**.
 
 ---
 
-### Parallel path — `batch_size` sweep (InMemoryDs, N=4 096, 4 workers)
+### 5.3 Parallel path — `batch_size` sweep (InMemoryDs, N=4 096, 4 workers)
 
 `InMemoryDs.__getitem__` is a trivial `return index` — purely Python, no GIL
 release. This is the stress test for threading overhead.
@@ -190,7 +283,7 @@ workload. Nobody parallelizes a dict lookup. The meaningful comparison is below.
 
 ---
 
-### Parallel path — worker scaling (CpuBoundDs, SHA-256 of 1 MB per item, ~1 ms/item)
+### 5.4 Parallel path — worker scaling (CpuBoundDs, SHA-256 of 1 MB per item, ~1 ms/item)
 
 `hashlib.sha256` releases the GIL during the C computation. This reflects
 real-world I/O- or compute-heavy datasets.
@@ -212,7 +305,7 @@ than inter-process queues.
 
 ---
 
-### Prefetch depth (CpuBoundDs, N=128, bs=16, 4 workers)
+### 5.5 Prefetch depth (CpuBoundDs, N=128, bs=16, 4 workers)
 
 
 | depth | ours GIL | ours 3.13t | torch GIL | torch 3.13t |
@@ -228,7 +321,7 @@ ahead. The 3.13t runs are faster overall because Python object allocation
 
 ---
 
-### Sampler (CpuBoundDs, N=1k–100k, 4 workers)
+### 5.6 Sampler (CpuBoundDs, N=1k–100k, 4 workers)
 
 
 | N       | ours seq | ours shuf | torch seq | torch shuf |
@@ -241,9 +334,9 @@ ahead. The 3.13t runs are faster overall because Python object allocation
 Near parity at all sizes. We edge ahead at small N; torch's `randperm` (C++)
 catches up at N=100k for shuffle. The gap is tiny relative to dataset fetch time.
 
----
+## 6. Results: real-world workloads
 
-## Real-world workloads
+Reference run: real-world workloads, `dev`, October 2026.
 
 The benchmarks above isolate loader overhead with synthetic datasets. These run
 the per-sample work real datasets do — reading files, augmenting images,
@@ -265,7 +358,7 @@ epochs, median, `batch_size=32`, `collate_fn=np.stack` for array samples.
 | `remote` | 10 ms network round trip (`time.sleep`) | 512 | 16 |
 | `python_cpu` | pure-Python tokenisation (holds the GIL) | 2 048 | 4 |
 
-### Python — dataloader_rs vs torch.utils.data.DataLoader (items/s)
+### 6.1 Python — dataloader_rs vs torch.utils.data.DataLoader (items/s)
 
 | workload | ours `w=0` | ours | torch | torch persistent | best ours vs torch |
 |---|---:|---:|---:|---:|---:|
@@ -291,7 +384,7 @@ What the numbers say:
   run in parallel on threads; torch's processes can (1.6× with persistent
   workers, 2.5× ours). Use free-threaded Python (3.14t) for this case.
 
-### Rust (Criterion, `benches/bench_real_world.rs`)
+### 6.2 Rust (Criterion, `benches/bench_real_world.rs`)
 
 `cargo bench --bench bench_real_world`
 
@@ -324,10 +417,9 @@ allocating, not the loader, limit scaling (1.5× at 8 workers).
 Blocking I/O needs one thread per request in flight; throughput scales
 linearly with the thread count.
 
----
+## 7. Reading the results
 
-## Summary
-
+### 7.1 Overview
 
 | Scenario                            | GIL Python                      | 3.13t (no GIL)                         |
 | ----------------------------------- | ------------------------------- | -------------------------------------- |
@@ -337,21 +429,76 @@ linearly with the thread count.
 | **Prefetch depth sensitivity**      | flat, ~6% ahead                 | flat, ~2% ahead                        |
 | **Shuffle sampler throughput**      | parity–7% ahead                 | parity                                 |
 
-
-### When to use this library
+### 7.2 When to use this library
 
 - **Sequential path (`num_workers=0`)**: always faster — 2–60× depending on batch
 size. Zero configuration needed.
 - **GIL-releasing `__getitem__`** (NumPy, PIL, HDF5, file I/O, any C extension
 that releases the GIL): the parallel path gives 2–10% more throughput than torch
 at no cost.
-- **Free-threaded Python (3.13t / 3.14t)**: the intended long-term target. Threads
+- **Free-threaded Python (3.14t)**: the intended long-term target. Threads
 scale without GIL tax and our parallel path is consistently competitive.
 
-### When PyTorch is better
+### 7.3 When PyTorch is better
 
 - **Pure-Python `__getitem__` with medium batch sizes on regular CPython**: torch
 multiprocessing bypasses the GIL. Prefer `num_workers=0` (where we win) or
-switch to 3.13t.
+switch to 3.14t.
 - **Very large shuffle samplers (N≥100k)**: `torch.randperm` is marginally faster.
 Irrelevant relative to actual dataset I/O cost.
+
+## 8. Caveats
+
+- **One machine.** A laptop with performance and efficiency cores and frequency scaling. Ratios
+  between loaders measured in the same session are more reliable than absolute numbers.
+- **Two dates.** Sections 4–5 come from v0.1.0 (April 2026); the loader's code has changed since
+  (errors, panics, `__getitems__`, samplers). Section 6 was measured on `dev` in October 2026.
+  Rerun before quoting a number (section 9).
+- **Synthetic datasets are extremes.** `InMemoryDs` makes the loader itself the whole cost; real
+  datasets add I/O and compute that usually dominate — section 6 is closer to practice.
+- **Page cache.** `local_files` reads files that are in the page cache after the first epoch: it
+  measures the file API and the copy, not a disk.
+- **Allocator.** The Rust `local_files` numbers depend on glibc's trimming (section 6): measure
+  your own dataset with the allocator you ship.
+- **CI numbers are noisy.** Shared GitHub runners vary by 1.5× and more between runs; the CI
+  alert threshold (1.5×) catches large regressions, not small ones. Use an interleaved local A/B
+  (section 9.4) to measure a change.
+
+## 9. Running it again
+
+### 9.1 Rust (Criterion)
+
+```bash
+cargo bench                                  # every suite
+cargo bench --bench bench_inter_workers      # one suite
+cargo bench -- num_workers/4                 # filter inside a suite
+cargo bench --bench bench_real_world         # file reads + network latency
+```
+
+HTML reports land in `target/criterion/`.
+
+### 9.2 Python regression guards (as in CI)
+
+```bash
+uv sync --group dev
+uv run maturin develop --release --features python
+uv run pytest bench/ -m bench --benchmark-enable --benchmark-warmup=on --benchmark-min-rounds=10
+```
+
+### 9.3 Python against PyTorch
+
+```bash
+uv run python bench/bench_batch_size.py     --warmup 2 --repeats 10
+uv run python bench/bench_inter_workers.py  --warmup 2 --repeats 10
+uv run python bench/bench_prefetch_depth.py --warmup 2 --repeats 10
+uv run python bench/bench_sampler.py        --warmup 2 --repeats 10
+uv run python bench/bench_real_world.py     --workers 4
+```
+
+For the free-threaded build: `uv run --python 3.14t python -X gil=0 bench/...`.
+
+### 9.4 Comparing two versions
+
+Run both builds alternately in the same session (A, B, A, B, …) and compare medians: machine
+state drifts more between sessions than between two interleaved runs. For Criterion, delete
+`target/criterion` between builds so it does not compare against the other build's baseline.

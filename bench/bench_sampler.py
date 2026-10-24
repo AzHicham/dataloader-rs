@@ -8,7 +8,7 @@ real-world usage: shuffle overhead amortised over actual CPU work.
 Compares sequential vs shuffle for ours and torch across N=[1k, 10k, 100k].
 
 Run:
-  uv run --python 3.13t python -X gil=0 bench/bench_sampler.py
+  uv run --python 3.14t python -X gil=0 bench/bench_sampler.py
 """
 
 from __future__ import annotations
