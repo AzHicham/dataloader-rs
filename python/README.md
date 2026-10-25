@@ -147,9 +147,12 @@ loaded the batch (or the calling thread with `num_workers=0`), so heavy collatio
 
 - `shuffle=True`: a Rust permutation, new every epoch; with `seed=` two loaders produce the same
   sequence of orders.
-- `sampler=`: any iterable of indices — a list, a generator-producing object, a weighted sampler.
-  It is iterated once at the start of each epoch. `len(loader)` uses `len(sampler)`, so a sampler
-  without `__len__` makes `len(loader)` raise `TypeError`, as in PyTorch; iteration still works.
+- `sampler=`: any finite iterable of indices — a list, a generator-producing object, a weighted
+  sampler. It is read whole at the start of each epoch (`iter(loader)`), so an endless sampler
+  (`itertools.cycle`, the infinite samplers of iteration-based training) never starts one: give
+  each epoch a finite sampler instead (Ctrl-C stops one that never ends). `len(loader)` uses
+  `len(sampler)`, so a sampler without `__len__` makes `len(loader)` raise `TypeError`, as in
+  PyTorch; iteration still works.
 
 ```python
 import random

@@ -207,9 +207,10 @@ On regular CPython the tasks' Python code is serialised by the GIL; work that re
 ### 6.2 Samplers
 
 `shuffle=True` uses the Rust `RandomSampler` (seeded with `seed`, or from OS entropy); `sampler=`
-accepts any Python iterable of `int`. The Python sampler is iterated, under the interpreter, at
-the start of each epoch in `iter(loader)`. `len(loader)` uses `len(sampler)` when a sampler is
-given, so a sampler without `__len__` raises `TypeError`, as in PyTorch.
+accepts any finite Python iterable of `int`. The Python sampler is read whole, under the
+interpreter, at the start of each epoch in `iter(loader)`, with signal handlers run every 65,536
+indices so that Ctrl-C stops one that never ends. `len(loader)` uses `len(sampler)` when a sampler
+is given, so a sampler without `__len__` raises `TypeError`, as in PyTorch.
 
 ### 6.3 Errors
 

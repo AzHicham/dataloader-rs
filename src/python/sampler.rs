@@ -53,11 +53,23 @@ impl PySampler {
     }
 }
 
-/// Iterate a Python sampler, failing on the first exception or non-index item.
+/// Indices read from a Python sampler between two runs of the signal handlers.
+const SIGNAL_CHECK_EVERY: usize = 1 << 16;
+
+/// Iterate a Python sampler, failing on the first exception or non-index
+/// item. An epoch's indices are all read up front, so a sampler that never
+/// ends would fill memory: signal handlers run every 65,536 indices, so
+/// Ctrl-C stops it even when it runs no bytecode (`itertools.cycle`), where
+/// Python would not check them itself.
 fn python_indices(py: Python<'_>, sampler: &Py<PyAny>) -> PyResult<Vec<usize>> {
-    PyIterator::from_object(sampler.bind(py))?
-        .map(|item| item?.extract::<usize>())
-        .collect()
+    let mut indices = Vec::new();
+    for item in PyIterator::from_object(sampler.bind(py))? {
+        if indices.len() % SIGNAL_CHECK_EVERY == 0 {
+            py.check_signals()?;
+        }
+        indices.push(item?.extract::<usize>()?);
+    }
+    Ok(indices)
 }
 
 // `len` keeps the trait default, which is right for the built-in samplers.

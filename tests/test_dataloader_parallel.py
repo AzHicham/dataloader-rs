@@ -333,3 +333,44 @@ def test_par_workers_recurse_as_deep_as_the_main_thread():
     expected = _DeepJson()[0]
     assert list(DataLoader(_DeepJson(), num_workers=1)) == [[expected]]
 
+
+_ENDLESS_SAMPLER = """
+import itertools
+from dataloader_rs import PyDataloader, PyDataset
+
+class Ds(PyDataset):
+    def __len__(self):
+        return 4
+
+    def __getitem__(self, index):
+        return index
+
+loader = PyDataloader(Ds(), sampler=itertools.repeat(0))
+print("reading", flush=True)
+try:
+    iter(loader)
+except KeyboardInterrupt:
+    print("interrupted", flush=True)
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+def test_par_ctrl_c_stops_an_endless_sampler():
+    """iter() reads the whole epoch; Ctrl-C stops a sampler that never ends."""
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _ENDLESS_SAMPLER],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stdout.readline().strip() == "reading"
+        time.sleep(0.2)
+        start = time.monotonic()
+        proc.send_signal(signal.SIGINT)
+        out, err = proc.communicate(timeout=10)
+    finally:
+        proc.kill()
+    assert out.strip() == "interrupted", err
+    assert time.monotonic() - start < 2
+
