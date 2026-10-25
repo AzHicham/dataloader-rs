@@ -6,6 +6,9 @@ or use-after-free bugs when iterators are dropped mid-epoch.
 
 import gc
 import threading
+import weakref
+
+import pytest
 
 from dataloader_rs import PyDataloader as DataLoader
 from tests.py_dataloader_test_utils import ListDataset, SlowDs
@@ -200,3 +203,29 @@ def test_loader_iterated_and_dropped_on_other_threads():
     assert errors == []
     assert batches == [[0, 1, 2, 3], [4, 5, 6, 7]]
     assert _full_epoch(loader) == list(range(8))
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_loader_in_a_reference_cycle_is_collected(num_workers):
+    """A loader and iterator kept by an object that its collate_fn is bound to are freed by gc."""
+
+    class Pipeline:
+        def __init__(self):
+            self.loader = DataLoader(
+                ListDataset(range(8)),
+                batch_size=4,
+                num_workers=num_workers,
+                collate_fn=self.collate,
+            )
+
+        def collate(self, items):
+            return items
+
+    pipeline = Pipeline()
+    assert list(pipeline.loader) == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    pipeline.it = iter(pipeline.loader)
+    next(pipeline.it)
+    ref = weakref.ref(pipeline)
+    del pipeline
+    gc.collect()
+    assert ref() is None

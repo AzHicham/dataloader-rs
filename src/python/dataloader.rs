@@ -2,6 +2,7 @@ use crate::loader as core_loader;
 use crate::sampler::RandomSampler;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::{PyTraverseError, PyVisit};
 
 use crate::python::collator::PyCollator;
 use crate::python::dataset::{Fetcher, PyDataset, len_py};
@@ -120,6 +121,17 @@ impl PyDataloader {
         };
         drop(loader);
         Ok(PyDataloaderIter { _owner: slf, inner })
+    }
+
+    /// Tell the garbage collector which Python objects this loader holds, so
+    /// a reference cycle through them (a `collate_fn` bound to an object that
+    /// keeps the loader, a dataset that refers back to it) can be freed.
+    /// Running epochs share these objects through `Arc`s and add no
+    /// references of their own.
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(self.inner.dataset())?;
+        visit.call(self.inner.sampler().python_sampler())?;
+        visit.call(self.inner.collator().collate_fn())
     }
 
     /// Batches per epoch. With a Python sampler this is `len(sampler)`

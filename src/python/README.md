@@ -47,3 +47,8 @@ iter(loader)
   of producing an empty or shorter epoch.
 - **The loader outlives its iterators.** `PyDataloaderIter` holds a strong reference to its
   `PyDataloader`.
+- **The garbage collector sees every Python reference, once.** `__traverse__` reports the
+  dataset, the Python sampler and `collate_fn` from the loader, and `_owner` plus the direct path's
+  own references from an iterator, so cycles through them are freed. Running epochs share the
+  loader's objects through `Arc`s and hold no references of their own; reporting one twice would
+  let the collector free a live object.

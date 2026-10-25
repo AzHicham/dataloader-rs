@@ -66,6 +66,13 @@ impl Fetcher {
         })
     }
 
+    /// The bound method this fetcher calls.
+    pub(crate) fn method(&self) -> &Py<PyAny> {
+        match self {
+            Self::Batched(method) | Self::PerItem(method) => method,
+        }
+    }
+
     pub(crate) fn fetch(&self, py: Python<'_>, indices: &[usize]) -> PyResult<Vec<Py<PyAny>>> {
         match self {
             Self::PerItem(getitem) => indices.iter().map(|&i| getitem.call1(py, (i,))).collect(),

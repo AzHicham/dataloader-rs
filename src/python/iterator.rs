@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::{PyTraverseError, PyVisit};
 
 use crate::python::collator::PyCollator;
 use crate::python::dataloader::PyDataloader;
@@ -65,6 +66,20 @@ impl PyDataloaderIter {
             }
         };
         batch.into_py(py).map(Some)
+    }
+
+    /// The loader, plus the references the direct path holds itself; a
+    /// threaded epoch shares the loader's objects.
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self._owner)?;
+        if let PyIterInner::Direct {
+            fetcher, collator, ..
+        } = &self.inner
+        {
+            visit.call(fetcher.method())?;
+            visit.call(collator.collate_fn())?;
+        }
+        Ok(())
     }
 
     fn __len__(&self) -> usize {

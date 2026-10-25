@@ -25,6 +25,11 @@ impl PyCollator {
         Self { collate_fn }
     }
 
+    /// The user's `collate_fn`, if any.
+    pub(crate) fn collate_fn(&self) -> Option<&Py<PyAny>> {
+        self.collate_fn.as_ref()
+    }
+
     pub(crate) fn clone_ref(&self, py: Python<'_>) -> Self {
         Self {
             collate_fn: self.collate_fn.as_ref().map(|f| f.clone_ref(py)),
