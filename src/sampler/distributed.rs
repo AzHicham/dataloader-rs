@@ -27,14 +27,11 @@ impl<S: Sampler> DistributedSampler<S> {
 impl<S: Sampler> Sampler for DistributedSampler<S> {
     fn indices(&mut self, dataset_len: usize) -> Vec<usize> {
         let all = self.inner.indices(dataset_len);
-
-        let padded_len = all.len().div_ceil(self.world_size) * self.world_size;
-        let padded: Vec<usize> = all.iter().copied().cycle().take(padded_len).collect();
-
-        padded
-            .into_iter()
-            .skip(self.rank)
-            .step_by(self.world_size)
+        // As in PyTorch: pad the epoch to a multiple of `world_size` by
+        // wrapping around, so every rank gets as many indices, and give this
+        // rank every `world_size`-th position from `rank`.
+        (0..all.len().div_ceil(self.world_size))
+            .map(|i| all[(self.rank + i * self.world_size) % all.len()])
             .collect()
     }
 
@@ -81,6 +78,22 @@ mod tests {
                 assert_eq!(ds.len(n), ds.indices(n).len(), "n={n} world={world_size}");
             }
         }
+    }
+
+    #[test]
+    fn distributed_pads_by_wrapping_around() {
+        let shard = |n, rank, world_size| {
+            DistributedSampler::new(SequentialSampler, rank, world_size).indices(n)
+        };
+        // 10 indices padded to 12 with 0 and 1.
+        assert_eq!(shard(10, 0, 4), vec![0, 4, 8]);
+        assert_eq!(shard(10, 2, 4), vec![2, 6, 0]);
+        assert_eq!(shard(10, 3, 4), vec![3, 7, 1]);
+        // Padding longer than the epoch wraps more than once.
+        for rank in 0..4 {
+            assert_eq!(shard(1, rank, 4), vec![0]);
+        }
+        assert_eq!(shard(0, 1, 4), Vec::<usize>::new());
     }
 
     #[test]
