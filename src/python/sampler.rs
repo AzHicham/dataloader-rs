@@ -1,15 +1,56 @@
-use std::sync::{Arc, Mutex};
-
-use crate::{
-    error::Error,
-    sampler::{RandomSampler, Sampler, SequentialSampler},
-};
+use crate::sampler::{RandomSampler, Sampler, SequentialSampler};
 use pyo3::{prelude::*, types::PyIterator};
 
-pub(crate) enum PySampler {
-    Sequential(SequentialSampler),
+/// The loader's sampler: sequential, shuffled by the Rust `RandomSampler`,
+/// or a Python iterable of indices.
+///
+/// [`Sampler::indices`] cannot fail, so an exception raised by a Python
+/// sampler is kept here and re-raised by `PyDataloader.__iter__` via
+/// [`take_error`](Self::take_error) instead of silently producing an empty
+/// epoch.
+pub(crate) struct PySampler {
+    order: Order,
+    error: Option<PyErr>,
+}
+
+enum Order {
+    Sequential,
     Random(RandomSampler),
     Python(Py<PyAny>),
+}
+
+impl PySampler {
+    pub(crate) fn sequential() -> Self {
+        Self::new(Order::Sequential)
+    }
+
+    pub(crate) fn random(sampler: RandomSampler) -> Self {
+        Self::new(Order::Random(sampler))
+    }
+
+    /// A Python sampler: any iterable of `int`; anything else raises
+    /// `TypeError`, as in PyTorch.
+    pub(crate) fn python(py: Python<'_>, sampler: Py<PyAny>) -> PyResult<Self> {
+        PyIterator::from_object(sampler.bind(py))?;
+        Ok(Self::new(Order::Python(sampler)))
+    }
+
+    fn new(order: Order) -> Self {
+        Self { order, error: None }
+    }
+
+    /// The user's sampler object, if one was given.
+    pub(crate) fn python_sampler(&self) -> Option<&Py<PyAny>> {
+        match &self.order {
+            Order::Python(sampler) => Some(sampler),
+            Order::Sequential | Order::Random(_) => None,
+        }
+    }
+
+    /// The exception raised while producing the last epoch's indices, if any.
+    pub(crate) fn take_error(&mut self) -> Option<PyErr> {
+        self.error.take()
+    }
 }
 
 /// Iterate a Python sampler, failing on the first exception or non-index item.
@@ -19,56 +60,21 @@ fn python_indices(py: Python<'_>, sampler: &Py<PyAny>) -> PyResult<Vec<usize>> {
         .collect()
 }
 
-/// Sampler handed to the core loader.
-///
-/// [`Sampler::indices`] cannot fail, so an exception raised by a Python
-/// sampler is stored here and re-raised by `PyDataloader.__iter__` via
-/// [`take_error`](Self::take_error) instead of silently producing an empty
-/// epoch.
-#[derive(Clone)]
-pub(crate) struct SharedPySampler {
-    inner: Arc<Mutex<PySampler>>,
-    error: Arc<Mutex<Option<PyErr>>>,
-}
-
-impl SharedPySampler {
-    pub(crate) fn new(sampler: PySampler) -> Self {
-        Self {
-            inner: Arc::new(Mutex::new(sampler)),
-            error: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    /// The exception raised while producing the last epoch's indices, if any.
-    pub(crate) fn take_error(&self) -> Option<PyErr> {
-        self.error.lock().unwrap_or_else(|e| e.into_inner()).take()
-    }
-}
-
 // `len` keeps the trait default, which is right for the built-in samplers.
 // `PyDataloader.__len__` calls `len()` on a Python sampler itself so that a
 // missing or raising `__len__` reaches Python instead of being guessed.
-impl Sampler for SharedPySampler {
+impl Sampler for PySampler {
     fn indices(&mut self, dataset_len: usize) -> Vec<usize> {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        match &mut *guard {
-            PySampler::Sequential(s) => s.indices(dataset_len),
-            PySampler::Random(s) => s.indices(dataset_len),
-            PySampler::Python(py_sampler) => Python::attach(|py| python_indices(py, py_sampler))
+        match &mut self.order {
+            Order::Sequential => SequentialSampler.indices(dataset_len),
+            Order::Random(sampler) => sampler.indices(dataset_len),
+            Order::Python(sampler) => Python::attach(|py| python_indices(py, sampler))
                 .unwrap_or_else(|err| {
                     // Re-raised by `PyDataloader.__iter__`; the empty epoch is
                     // never iterated.
-                    *self.error.lock().unwrap_or_else(|e| e.into_inner()) = Some(err);
+                    self.error = Some(err);
                     Vec::new()
                 }),
         }
     }
-}
-
-pub(crate) fn validate_python_sampler(sampler: &Py<PyAny>) -> Result<(), Error> {
-    Python::attach(|py| {
-        let _ = PyIterator::from_object(sampler.bind(py))?;
-        Ok::<_, PyErr>(())
-    })
-    .map_err(|e| e.into())
 }

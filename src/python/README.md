@@ -9,7 +9,7 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 | `dataset.rs` | `PyDatasetBase` (the `PyDataset` base class), `Dataset` for `Py<PyDatasetBase>`, `Fetcher` (`__getitems__` or `__getitem__`) |
 | `dataloader.rs` | `PyDataloader`: arguments, validation, `__iter__`, `__len__` |
 | `iterator.rs` | `PyDataloaderIter`: the direct and threaded epochs, `__next__` |
-| `sampler.rs` | `PySampler` (sequential, random, or a Python iterable) behind `SharedPySampler` |
+| `sampler.rs` | `PySampler`: sequential, random, or a Python iterable, and the exception it raised |
 | `collator.rs` | `PyCollator`: `collate_fn`, or a plain `list` |
 | `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread |
 

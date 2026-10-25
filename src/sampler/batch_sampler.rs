@@ -2,7 +2,7 @@ use crate::sampler::Sampler;
 
 /// Batches indices produced by an inner [`Sampler`].
 pub struct BatchSampler<S: Sampler> {
-    sampler: S,
+    pub(crate) sampler: S,
     batch_size: usize,
     drop_last: bool,
 }

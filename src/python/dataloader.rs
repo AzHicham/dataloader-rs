@@ -1,27 +1,19 @@
 use crate::loader as core_loader;
-use crate::sampler::{RandomSampler, SequentialSampler};
+use crate::sampler::RandomSampler;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::python::collator::PyCollator;
 use crate::python::dataset::{Fetcher, PyDataset, len_py};
-use crate::python::into_py_err;
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
 use crate::python::pool::run_attached;
-use crate::python::sampler::{PySampler, SharedPySampler, validate_python_sampler};
+use crate::python::sampler::PySampler;
 
-type CorePyLoader = core_loader::DataLoader<PyDataset, SharedPySampler, PyCollator>;
+type CorePyLoader = core_loader::DataLoader<PyDataset, PySampler, PyCollator>;
 
 #[pyclass(name = "PyDataloader", module = "dataloader_rs", unsendable)]
 pub struct PyDataloader {
     inner: CorePyLoader,
-    /// The user's sampler, kept to answer `len(loader)` with `len(sampler)`.
-    py_sampler: Option<Py<PyAny>>,
-    /// Items of one batch fetched in parallel; with more than one, epochs
-    /// always use the core iterator.
-    items_in_parallel: usize,
-    /// Shared with `inner`; reports exceptions raised by a Python sampler.
-    sampler: SharedPySampler,
 }
 
 #[pymethods]
@@ -71,17 +63,12 @@ impl PyDataloader {
             return Err(PyValueError::new_err("items_in_parallel must be > 0"));
         }
 
-        let py_sampler = sampler.as_ref().map(|s| s.clone_ref(py));
         let sampler = match sampler {
-            Some(py_sampler) => {
-                validate_python_sampler(&py_sampler).map_err(into_py_err)?;
-                SharedPySampler::new(PySampler::Python(py_sampler))
-            }
+            Some(sampler) => PySampler::python(py, sampler)?,
             None if shuffle => {
-                let sampler = seed.map_or_else(RandomSampler::from_entropy, RandomSampler::new);
-                SharedPySampler::new(PySampler::Random(sampler))
+                PySampler::random(seed.map_or_else(RandomSampler::from_entropy, RandomSampler::new))
             }
-            None => SharedPySampler::new(PySampler::Sequential(SequentialSampler)),
+            None => PySampler::sequential(),
         };
 
         // With items_in_parallel > 1, lanes on the pool call `__getitem__` for
@@ -93,64 +80,48 @@ impl PyDataloader {
             .num_workers(num_workers)
             .items_in_parallel(items_in_parallel)
             .thread_main(run_attached)
-            .sampler(sampler.clone())
+            .sampler(sampler)
             .collator(PyCollator::new(collate_fn))
             .build();
 
-        Ok(Self {
-            inner,
-            py_sampler,
-            sampler,
-            items_in_parallel,
-        })
+        Ok(Self { inner })
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
         let mut loader = slf.borrow_mut(py);
+        let core = &mut loader.inner;
         // `Dataset::len` cannot fail; surface a raising `__len__` here instead
         // of letting the core panic on it.
-        len_py(loader.inner.dataset(), py)?;
-
-        if !loader.inner.has_workers() && loader.items_in_parallel == 1 {
-            // Direct path (num_workers=0): call Python directly inside __next__
-            // using the py token already held — zero extra GIL acquisitions.
-            let chunks = loader.inner.epoch_chunks();
-            if let Some(err) = loader.sampler.take_error() {
-                return Err(err);
-            }
-            let fetcher = Fetcher::new(loader.inner.dataset(), py)?;
-            let collator = loader.inner.collator().clone();
-            drop(loader);
-            return Ok(PyDataloaderIter {
-                _owner: slf,
-                inner: PyIterInner::Direct {
-                    chunks: chunks.into_iter(),
-                    fetcher,
-                    collator,
-                },
-            });
-        }
-
-        // Core iterator: batch tasks on the loader's pool (one Python::attach
-        // per batch via get_batch), or with items_in_parallel > 1 one attach
-        // per item in the batch's lanes. `__next__` waits with the interpreter
-        // released, which item lanes need even with num_workers=0.
-        let inner = loader.inner.iter();
-        if let Some(err) = loader.sampler.take_error() {
+        len_py(core.dataset(), py)?;
+        let chunks = core.epoch_chunks();
+        if let Some(err) = core.sampler_mut().take_error() {
             return Err(err);
         }
+
+        let inner = if core.has_pool() {
+            // Core iterator: batch tasks on the loader's pool (one Python::attach
+            // per batch via get_batch), or with items_in_parallel > 1 one attach
+            // per item in the batch's lanes. `__next__` waits with the interpreter
+            // released, which item lanes need even with num_workers=0.
+            PyIterInner::Threaded(Some(core.iter_chunks(chunks)))
+        } else {
+            // Direct path (num_workers=0): call Python directly inside __next__
+            // using the py token already held — zero extra GIL acquisitions.
+            PyIterInner::Direct {
+                chunks: chunks.into_iter(),
+                fetcher: Fetcher::new(core.dataset(), py)?,
+                collator: core.collator().clone_ref(py),
+            }
+        };
         drop(loader);
-        Ok(PyDataloaderIter {
-            _owner: slf,
-            inner: PyIterInner::Threaded(Some(inner)),
-        })
+        Ok(PyDataloaderIter { _owner: slf, inner })
     }
 
     /// Batches per epoch. With a Python sampler this is `len(sampler)`
     /// batched, so a sampler without `__len__` raises `TypeError` like
     /// PyTorch, and an exception from `__len__` propagates.
     fn __len__(&self, py: Python<'_>) -> PyResult<usize> {
-        match &self.py_sampler {
+        match self.inner.sampler().python_sampler() {
             Some(sampler) => Ok(self.inner.num_batches(sampler.bind(py).len()?)),
             None => {
                 len_py(self.inner.dataset(), py)?;

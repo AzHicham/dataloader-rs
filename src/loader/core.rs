@@ -112,6 +112,15 @@ where
         C::Batch: Send + 'static,
     {
         let chunks = self.batch_sampler.batch_indices(self.dataset.len());
+        self.iter_chunks(chunks)
+    }
+
+    /// Start one epoch over `chunks`, the batches of indices of
+    /// [`epoch_chunks`](Self::epoch_chunks).
+    pub(crate) fn iter_chunks(&mut self, chunks: Vec<Vec<usize>>) -> DataLoaderIter<D, C>
+    where
+        C::Batch: Send + 'static,
+    {
         DataLoaderIter::new(
             &self.dataset,
             &self.collator,
@@ -133,10 +142,21 @@ where
         &self.collator
     }
 
-    /// Returns `true` when inter-batch worker threads are active.
+    /// Whether batches run on the loader's pool (`num_workers > 0` or
+    /// `items_in_parallel > 1`) rather than in `next` on the caller's thread.
     #[cfg(feature = "python")]
-    pub(crate) fn has_workers(&self) -> bool {
-        self.num_workers > 0
+    pub(crate) fn has_pool(&self) -> bool {
+        self.pool.is_some()
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn sampler(&self) -> &S {
+        &self.batch_sampler.sampler
+    }
+
+    #[cfg(feature = "python")]
+    pub(crate) fn sampler_mut(&mut self) -> &mut S {
+        &mut self.batch_sampler.sampler
     }
 
     /// Generate batch index chunks for one epoch, advancing the sampler.

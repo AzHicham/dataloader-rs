@@ -180,7 +180,7 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
 | Python | Rust |
 |---|---|
 | `PyDataset` (subclass it) | `Py<PyDatasetBase>`, which implements `Dataset` by calling `__getitem__` / `__getitems__` / `__len__` |
-| `PyDataloader` | `DataLoader<PyDataset, SharedPySampler, PyCollator>` |
+| `PyDataloader` | `DataLoader<PyDataset, PySampler, PyCollator>` |
 | `PyDataloaderIter` | the epoch: a direct path, or the core parallel iterator |
 
 ### 6.1 Fetching and collating
