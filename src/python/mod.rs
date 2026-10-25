@@ -29,5 +29,6 @@ fn dataloader_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDataloader>()?;
     m.add_class::<PyDataloaderIter>()?;
     m.add_class::<PyDatasetBase>()?;
+    m.add_function(wrap_pyfunction!(pool::keep_pools_alive, m)?)?;
     Ok(())
 }

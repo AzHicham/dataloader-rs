@@ -156,6 +156,12 @@ where
         self.pool.is_some()
     }
 
+    /// The loader's pool, if it has one, without keeping it alive.
+    #[cfg(feature = "python")]
+    pub(crate) fn pool_handle(&self) -> Option<std::sync::Weak<rayon::ThreadPool>> {
+        self.pool.as_ref().map(|p| Arc::downgrade(&p.pool))
+    }
+
     #[cfg(feature = "python")]
     pub(crate) fn sampler(&self) -> &S {
         &self.batch_sampler.sampler

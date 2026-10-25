@@ -13,6 +13,7 @@ Tests verify:
 
 import json
 import multiprocessing
+import os
 import signal
 import subprocess
 import sys
@@ -374,3 +375,39 @@ def test_par_ctrl_c_stops_an_endless_sampler():
     assert out.strip() == "interrupted", err
     assert time.monotonic() - start < 2
 
+
+_POOLS_AT_EXIT = """
+import gc, os, time
+import dataloader_rs.dataloader_rs as ext
+from dataloader_rs import PyDataloader, PyDataset
+
+class Ds(PyDataset):
+    def __len__(self):
+        return 8
+
+    def __getitem__(self, index):
+        return index
+
+def threads():
+    return len(os.listdir("/proc/self/task"))
+
+loader = PyDataloader(Ds(), batch_size=4, num_workers=3)
+assert sum(len(batch) for batch in loader) == 8
+before = threads()
+ext._keep_pools_alive()  # what atexit runs
+del loader
+gc.collect()
+time.sleep(0.3)
+print(before, threads())
+"""
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/task"), reason="counts threads in /proc")
+def test_par_exit_hook_keeps_pools_parked():
+    """After the exit hook, freeing a loader leaves its threads parked instead of waking them."""
+    result = subprocess.run(
+        [sys.executable, "-c", _POOLS_AT_EXIT], capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr
+    before, after = map(int, result.stdout.split())
+    assert after == before

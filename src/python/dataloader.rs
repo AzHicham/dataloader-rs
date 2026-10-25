@@ -7,7 +7,7 @@ use pyo3::{PyTraverseError, PyVisit};
 use crate::python::collator::PyCollator;
 use crate::python::dataset::{Fetcher, PyDataset, len_py};
 use crate::python::iterator::{PyDataloaderIter, PyIterInner};
-use crate::python::pool::run_attached;
+use crate::python::pool::{run_attached, track};
 use crate::python::sampler::PySampler;
 
 type CorePyLoader = core_loader::DataLoader<PyDataset, PySampler, PyCollator>;
@@ -89,6 +89,9 @@ impl PyDataloader {
             .sampler(sampler)
             .collator(PyCollator::new(collate_fn))
             .build();
+        if let Some(pool) = inner.pool_handle() {
+            track(pool);
+        }
 
         Ok(Self { inner })
     }
@@ -109,7 +112,12 @@ impl PyDataloader {
             // per batch via get_batch), or with items_in_parallel > 1 one attach
             // per item in the batch's lanes. `__next__` waits with the interpreter
             // released, which item lanes need even with num_workers=0.
-            PyIterInner::Threaded(core.iter_chunks(chunks))
+            let epoch = core.iter_chunks(chunks);
+            // A forked child gets a new pool on its first epoch.
+            if let Some(pool) = core.pool_handle() {
+                track(pool);
+            }
+            PyIterInner::Threaded(epoch)
         } else {
             // Direct path (num_workers=0): call Python directly inside __next__
             // using the py token already held — zero extra GIL acquisitions.
