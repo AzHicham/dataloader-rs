@@ -5,6 +5,7 @@ or use-after-free bugs when iterators are dropped mid-epoch.
 """
 
 import gc
+import threading
 
 from dataloader_rs import PyDataloader as DataLoader
 from tests.py_dataloader_test_utils import ListDataset, SlowDs
@@ -165,3 +166,37 @@ def test_early_drop_more_workers_than_batches():
     del it
 
     assert _full_epoch(loader) == list(range(n))
+
+
+# ── Other threads ─────────────────────────────────────────────────────────────
+
+
+def _on_thread(target, errors):
+    """Run ``target`` on a new thread, recording what it raises."""
+
+    def run():
+        try:
+            target()
+        except BaseException as e:  # a PyO3 panic is a BaseException
+            errors.append(e)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    thread.join()
+
+
+def test_loader_iterated_and_dropped_on_other_threads():
+    """A loader made on one thread can be iterated, and its iterator dropped, on another."""
+    loader = DataLoader(ListDataset(range(8)), batch_size=4, num_workers=2)
+    batches, errors = [], []
+    _on_thread(lambda: batches.extend(loader), errors)
+
+    it = iter(loader)
+    next(it)
+    holder = [it]
+    del it
+    _on_thread(holder.clear, errors)
+
+    assert errors == []
+    assert batches == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    assert _full_epoch(loader) == list(range(8))

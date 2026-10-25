@@ -21,7 +21,7 @@ pub(crate) enum PyIterInner {
     Threaded(CorePyDataloaderIter),
 }
 
-#[pyclass(name = "PyDataloaderIter", module = "dataloader_rs", unsendable)]
+#[pyclass(name = "PyDataloaderIter", module = "dataloader_rs")]
 pub struct PyDataloaderIter {
     /// Keeps the `PyDataloader` alive while the iterator exists.
     pub(crate) _owner: Py<PyDataloader>,

@@ -11,7 +11,7 @@ use crate::python::sampler::PySampler;
 
 type CorePyLoader = core_loader::DataLoader<PyDataset, PySampler, PyCollator>;
 
-#[pyclass(name = "PyDataloader", module = "dataloader_rs", unsendable)]
+#[pyclass(name = "PyDataloader", module = "dataloader_rs")]
 pub struct PyDataloader {
     inner: CorePyLoader,
 }
