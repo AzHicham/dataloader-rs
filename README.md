@@ -26,8 +26,8 @@ with a Python binding that runs the same pipeline on threads instead of worker p
 - **Failures surface**: a dataset or collator error is returned for its batch, a panic is
   re-raised on the consumer, and Python exceptions keep their type.
 - **Python binding**: `PyDataloader` mirrors the PyTorch arguments (`batch_size`, `shuffle`,
-  `sampler`, `collate_fn`, `drop_last`, `seed`, `__getitems__`); wheels for free-threaded
-  CPython 3.14t and 3.15t on Linux (x86_64, arm64) and macOS (arm64).
+  `sampler`, `collate_fn`, `drop_last`, `seed`, `__getitems__`); wheels for CPython 3.13 to 3.15
+  and free-threaded 3.14t / 3.15t on Linux (x86_64, arm64) and macOS (arm64).
 - **No unsafe code**: `#![forbid(unsafe_code)]`.
 
 > **When PyTorch is faster.** The workers are threads in one process, not processes. On regular
@@ -223,8 +223,8 @@ Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/
 ## Building and testing
 
 Prerequisites: Rust ≥ 1.95, [uv](https://docs.astral.sh/uv/). The development environment uses
-free-threaded CPython 3.14t (`.python-version`), like CI and the published wheels; for a GIL build
-prefix commands with `uv run --python 3.13`.
+free-threaded CPython 3.14t (`.python-version`); for a GIL build prefix commands with
+`uv run --python 3.13`.
 
 ```bash
 # Rust

@@ -26,14 +26,17 @@ env:
 
 jobs:
   # ── Build Python wheels (always — validates compilation on dev too) ───────
-  # 6 combinations: 3 platforms × free-threaded 3.14t and 3.15t.
+  # 15 combinations: 3 platforms × CPython 3.13, 3.14, 3.15 (GIL) and
+  # free-threaded 3.14t, 3.15t. One wheel per interpreter rather than abi3:
+  # the limited API is slower on the per-batch paths, and has no free-threaded
+  # form.
   build-wheels:
     name: Wheel (${{ matrix.platform.target }}, ${{ matrix.python }})
     runs-on: ${{ matrix.platform.os }}
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.14t", "3.15t"]
+        python: ["3.13", "3.14", "3.15", "3.14t", "3.15t"]
         platform:
           - os: ubuntu-26.04
             target: x86_64-unknown-linux-gnu

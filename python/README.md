@@ -12,8 +12,9 @@ Python — with no PyTorch dependency.
 - **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
 - **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
 - **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
-- **Free-threaded Python**: built for CPython 3.14t and 3.15t, where worker threads run Python
-  code in parallel.
+- **Free-threaded Python**: on CPython 3.14t and 3.15t, worker threads run Python code in
+  parallel. Wheels for the GIL builds (3.13 to 3.15) too: there, threads help work that releases
+  the GIL (see below).
 
 > **When PyTorch is faster.** The workers are threads in one process, not processes. On regular
 > CPython (the GIL build, such as 3.13), only one thread runs Python code at a time: a
@@ -49,7 +50,7 @@ pip install dataloader-rs
 
 | Wheels | Platforms |
 |---|---|
-| free-threaded CPython 3.14t, 3.15t | Linux x86_64 (x86-64-v3 CPU: AVX2, Intel 2013+ / AMD 2017+) and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
+| CPython 3.13, 3.14, 3.15 and free-threaded 3.14t, 3.15t | Linux x86_64 (x86-64-v3 CPU: AVX2, Intel 2013+ / AMD 2017+) and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
 
 Other interpreters and platforms build from the source distribution, which needs a Rust
 toolchain; from a checkout: `pip install maturin && maturin develop --release --features python`.
