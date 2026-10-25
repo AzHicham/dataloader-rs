@@ -166,13 +166,22 @@ where
     }
 
     fn claim(&self) -> Option<usize> {
-        increment_if(&self.next_claim, |claim| self.claimable(claim))
+        self.next_claim
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |claim| {
+                self.claimable(claim).then_some(claim + 1)
+            })
+            .ok()
     }
 
     /// Reserve a task if a batch is claimable and fewer than `max_tasks` run.
     fn reserve_task(&self) -> bool {
         self.claimable(self.next_claim.load(Ordering::SeqCst))
-            && increment_if(&self.tasks, |running| running < self.max_tasks).is_some()
+            && self
+                .tasks
+                .try_update(Ordering::SeqCst, Ordering::SeqCst, |running| {
+                    (running < self.max_tasks).then_some(running + 1)
+                })
+                .is_ok()
     }
 
     /// Start batch tasks until `max_tasks` run or nothing is claimable.
@@ -224,24 +233,4 @@ where
             }
         }
     }
-}
-
-/// Increment `counter` if `allowed` accepts its value, and return that value.
-///
-/// A plain CAS loop rather than `fetch_update`, which newer clippy rewrites
-/// to `try_update` (Rust 1.95+, above the MSRV).
-fn increment_if(counter: &AtomicUsize, allowed: impl Fn(usize) -> bool) -> Option<usize> {
-    let mut current = counter.load(Ordering::SeqCst);
-    while allowed(current) {
-        match counter.compare_exchange_weak(
-            current,
-            current + 1,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        ) {
-            Ok(_) => return Some(current),
-            Err(actual) => current = actual,
-        }
-    }
-    None
 }

@@ -50,8 +50,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "MSRV (1.91)"
-            toolchain: "1.91"
+          - name: "MSRV (1.95)"
+            toolchain: "1.95"
           - name: "stable"
             toolchain: stable
 

@@ -4,7 +4,7 @@
 [![Crates.io](https://img.shields.io/crates/v/dataloader-rs)](https://crates.io/crates/dataloader-rs)
 [![docs.rs](https://img.shields.io/docsrs/dataloader-rs)](https://docs.rs/dataloader-rs)
 [![PyPI](https://img.shields.io/pypi/v/dataloader-rs)](https://pypi.org/project/dataloader-rs/)
-[![MSRV](https://img.shields.io/badge/rustc-1.91%2B-orange.svg)](#minimum-supported-rust-version)
+[![MSRV](https://img.shields.io/badge/rustc-1.95%2B-orange.svg)](#minimum-supported-rust-version)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 PyTorch's `DataLoader` model — dataset, sampler, collator, loader — as a typed Rust library,
@@ -222,7 +222,7 @@ Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/
 
 ## Building and testing
 
-Prerequisites: Rust ≥ 1.91, [uv](https://docs.astral.sh/uv/). The development environment uses
+Prerequisites: Rust ≥ 1.95, [uv](https://docs.astral.sh/uv/). The development environment uses
 free-threaded CPython 3.14t (`.python-version`), like CI and the published wheels; for a GIL build
 prefix commands with `uv run --python 3.13`.
 
@@ -247,7 +247,7 @@ changelog, the crate and the wheels are published by semantic-release from `main
 
 ## Minimum supported Rust version
 
-Rust **1.91** (`rust-version` in `Cargo.toml`), checked in CI by the `Rust tests (MSRV)` job.
+Rust **1.95** (`rust-version` in `Cargo.toml`), checked in CI by the `Rust tests (MSRV)` job.
 
 ## License
 
