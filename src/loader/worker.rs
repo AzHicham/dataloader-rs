@@ -16,7 +16,8 @@ pub(super) type WorkerMsg<B> = (usize, std::thread::Result<Result<B>>);
 /// Fetch the items of one batch, then collate them.
 ///
 /// With `items_in_parallel == 1` the batch is one `Dataset::get_batch` call;
-/// otherwise it is fetched by lanes on `pool` (see [`fetch_in_lanes`]).
+/// otherwise each item is one `Dataset::get` call, made by lanes on `pool`
+/// (see [`fetch_in_lanes`]).
 pub(super) fn process_batch<D, C>(
     dataset: &D,
     indices: &[usize],
@@ -28,8 +29,10 @@ where
     D: Dataset,
     C: Collator<D::Item>,
 {
-    let items = match pool {
-        Some(pool) if items_in_parallel > 1 && indices.len() > 1 => {
+    let items = match (pool, indices) {
+        // A single item needs no lane, but is still fetched with `get`.
+        (Some(_), &[index]) if items_in_parallel > 1 => vec![dataset.get(index)?],
+        (Some(pool), _) if items_in_parallel > 1 => {
             fetch_in_lanes(dataset, indices, items_in_parallel, pool)?
         }
         _ => dataset.get_batch(indices)?,

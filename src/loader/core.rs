@@ -635,6 +635,30 @@ mod tests {
     }
 
     #[test]
+    fn items_in_parallel_fetches_a_single_item_with_get() {
+        struct GetOnly;
+        impl Dataset for GetOnly {
+            type Item = usize;
+            fn get(&self, index: usize) -> Result<usize> {
+                Ok(index)
+            }
+            fn get_batch(&self, _: &[usize]) -> Result<Vec<usize>> {
+                Err("get_batch must not be used with items_in_parallel > 1".into())
+            }
+            fn len(&self) -> usize {
+                7
+            }
+        }
+
+        let mut loader = DataLoader::builder(GetOnly)
+            .batch_size(3)
+            .items_in_parallel(2)
+            .build();
+        let batches: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
+        assert_eq!(batches, vec![vec![0, 1, 2], vec![3, 4, 5], vec![6]]);
+    }
+
+    #[test]
     fn early_drop_does_not_hang() {
         let mut loader = DataLoader::builder(CountingDs { len: 100 })
             .batch_size(5)

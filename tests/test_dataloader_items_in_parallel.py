@@ -87,8 +87,9 @@ def test_items_in_parallel_fetches_with_getitem_even_if_getitems_exists():
         def __getitems__(self, indices):
             raise AssertionError("__getitems__ must not be used with items_in_parallel > 1")
 
-    loader = DataLoader(BatchedDs(range(6)), batch_size=3, items_in_parallel=2)
-    assert list(loader) == [[0, 1, 2], [3, 4, 5]]
+    # The last batch holds a single item, which needs no lane.
+    loader = DataLoader(BatchedDs(range(7)), batch_size=3, items_in_parallel=2)
+    assert list(loader) == [[0, 1, 2], [3, 4, 5], [6]]
 
 
 def test_rejects_zero_items_in_parallel():
