@@ -43,6 +43,15 @@ per second; above 1, `dataloader_rs` is faster.
 | `python_cpu` | 0.41× | 0.34× | 0.40× |
 | `python_cpu_local` | 0.39× | **1.16×** | **1.19×** |
 
+> **Where PyTorch is faster, and why.** The workers are threads in one process. On regular CPython
+> (the GIL build, 3.13 here), only one thread runs Python code at a time, so pure-Python work in
+> `__getitem__` does not run in parallel, while PyTorch's worker processes each run their own
+> interpreter: PyTorch is 2.4–2.6× faster on `python_cpu` and `python_cpu_local`. On free-threaded
+> 3.14t / 3.15t the threads do run Python in parallel, but threads that all read one shared dict
+> or list contend on its reference count: PyTorch is 2.5–2.9× faster on `python_cpu`, and
+> `dataloader_rs` 1.16–1.19× faster once each thread has its own tables (`python_cpu_local`).
+> Work that releases the GIL (I/O, NumPy, image decoding) is not affected.
+
 - **Loader overhead** (`in_memory`, items that cost nothing): **4.9–6.6× faster**. Without
   workers the whole loop runs in Rust; torch's runs in Python. With 4 workers, `dataloader_rs`
   hands over 5.6–12 M items/s against 1.0–1.4 M for torch's persistent workers.

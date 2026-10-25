@@ -15,6 +15,16 @@ Python — with no PyTorch dependency.
 - **Free-threaded Python**: built for CPython 3.14t and 3.15t, where worker threads run Python
   code in parallel.
 
+> **When PyTorch is faster.** The workers are threads in one process, not processes. On regular
+> CPython (the GIL build, such as 3.13), only one thread runs Python code at a time: a
+> `__getitem__` that spends its time in pure Python (tokenising text, parsing records, Python
+> loops) gets no faster with more workers, while PyTorch's worker processes each run their own
+> interpreter and are 2.4–2.6× faster on such datasets. Threads win when the work releases the
+> GIL (file and network I/O, NumPy, image decoding), and on free-threaded CPython 3.14t / 3.15t.
+> Even there, threads that all read one shared Python dict or list contend on its reference
+> count, and PyTorch is 2.5–2.9× faster: give each thread its own copy (`threading.local`, see
+> [Workers, threads and the GIL](#workers-threads-and-the-gil)).
+
 Requires Python ≥ 3.13.
 
 ## Contents
@@ -168,7 +178,9 @@ batches ahead while your loop runs and the loader returns them in order.
 
 - **Regular CPython**: the threads share the GIL. Work that releases it — file reads, NumPy,
   image decoding, hashing, most C extensions — runs in parallel; pure-Python code in
-  `__getitem__` does not.
+  `__getitem__` does not, and for such datasets PyTorch's worker processes are faster (2.4–2.6×
+  in the benchmarks). Use free-threaded CPython, or keep the per-item work in code that releases
+  the GIL.
 - **Free-threaded CPython 3.14t / 3.15t**: no GIL, so pure-Python code runs in parallel too.
 
   ```bash

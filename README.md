@@ -30,6 +30,16 @@ with a Python binding that runs the same pipeline on threads instead of worker p
   CPython 3.14t and 3.15t on Linux (x86_64, arm64) and macOS (arm64).
 - **No unsafe code**: `#![forbid(unsafe_code)]`.
 
+> **When PyTorch is faster.** The workers are threads in one process, not processes. On regular
+> CPython (the GIL build, such as 3.13), only one thread runs Python code at a time: a
+> `__getitem__` that spends its time in pure Python (tokenising text, parsing records, Python
+> loops) gets no faster with more workers, while PyTorch's worker processes each run their own
+> interpreter and are 2.4–2.6× faster on such datasets. Threads win when the work releases the
+> GIL (file and network I/O, NumPy, image decoding), and on free-threaded CPython 3.14t / 3.15t.
+> Even there, threads that all read one shared Python dict or list contend on its reference
+> count, and PyTorch is 2.5–2.9× faster: give each thread its own copy (`threading.local`).
+> Measurements: [BENCH.md](BENCH.md#1-summary).
+
 ## Contents
 
 - [Quick start: Rust](#quick-start-rust)
