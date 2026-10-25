@@ -4,14 +4,20 @@ use std::time::Instant;
 
 #[cfg(feature = "python")]
 use crossbeam_channel::RecvTimeoutError;
-use crossbeam_channel::{Receiver, unbounded};
+use crossbeam_channel::{Receiver, TryRecvError, unbounded};
 
 use crate::{
     collator::Collator,
     dataset::Dataset,
-    error::Result,
+    error::{Error, Result},
     loader::worker::{Epoch, WorkerMsg, process_batch},
 };
+
+/// The error of an epoch used in a process `fork()`ed after it started: the
+/// pool's threads do not exist there, so its batches would never arrive.
+fn forked() -> Error {
+    "this epoch was started before fork(); start a new one in this process (iter())".into()
+}
 
 // ── ParallelCore ──────────────────────────────────────────────────────────────
 
@@ -32,6 +38,8 @@ where
     /// `next_out..next_out + window` (see [`Epoch`]), so no two share a slot.
     reorder: Vec<Option<Result<C::Batch>>>,
     next_out: usize,
+    /// The process that started the epoch (see [`forked`]).
+    pid: u32,
 }
 
 impl<D, C> ParallelCore<D, C>
@@ -72,7 +80,19 @@ where
             result_rx,
             reorder: std::iter::repeat_with(|| None).take(window).collect(),
             next_out: 0,
+            pid: std::process::id(),
         }
+    }
+
+    /// End the epoch with [`forked`] if this process is not the one that
+    /// started it. Checked only when about to wait, where a `getpid` costs
+    /// nothing next to the wait.
+    fn check_forked(&mut self) -> Result<()> {
+        if self.pid == std::process::id() {
+            return Ok(());
+        }
+        self.next_out = self.epoch.len();
+        Err(forked())
     }
 
     fn next(&mut self) -> Option<Result<C::Batch>> {
@@ -86,10 +106,21 @@ where
                 self.epoch.advance(self.next_out);
                 return Some(batch);
             }
-            match self.result_rx.recv() {
-                Ok(msg) => self.store(msg),
-                Err(_) => return None,
-            }
+            let msg = match self.result_rx.try_recv() {
+                Ok(msg) => msg,
+                // About to wait: first make sure a batch can still arrive.
+                Err(TryRecvError::Empty) => {
+                    if let Err(e) = self.check_forked() {
+                        return Some(Err(e));
+                    }
+                    match self.result_rx.recv() {
+                        Ok(msg) => msg,
+                        Err(_) => return None,
+                    }
+                }
+                Err(TryRecvError::Disconnected) => return None,
+            };
+            self.store(msg);
         }
     }
 
@@ -104,12 +135,15 @@ where
         while self.reorder[self.next_out % window].is_none() {
             let msg = match deadline {
                 None => self.result_rx.try_recv().ok()?,
-                Some(deadline) => match self.result_rx.recv_deadline(deadline) {
-                    Ok(msg) => msg,
-                    Err(RecvTimeoutError::Timeout) => return None,
-                    // The epoch holds a sender, so this does not happen; `next`
-                    // ends the epoch in that case too.
-                    Err(RecvTimeoutError::Disconnected) => return Some(None),
+                Some(deadline) => match self.check_forked() {
+                    Err(e) => return Some(Some(Err(e))),
+                    Ok(()) => match self.result_rx.recv_deadline(deadline) {
+                        Ok(msg) => msg,
+                        Err(RecvTimeoutError::Timeout) => return None,
+                        // The epoch holds a sender, so this does not happen;
+                        // `next` ends the epoch in that case too.
+                        Err(RecvTimeoutError::Disconnected) => return Some(None),
+                    },
                 },
             };
             self.store(msg);
@@ -165,6 +199,9 @@ where
         collator: Arc<C>,
         items_in_parallel: usize,
         pool: Option<Arc<rayon::ThreadPool>>,
+        /// The process that started the epoch: item lanes run on the pool,
+        /// which has no threads in a `fork()`ed child.
+        pid: u32,
     },
     /// num_workers>0: batch tasks on the loader's rayon pool.
     Parallel(ParallelCore<D, C>),
@@ -213,6 +250,7 @@ where
                 collator: Arc::clone(collator),
                 items_in_parallel,
                 pool: pool.cloned(),
+                pid: std::process::id(),
             },
         };
         Self { inner }
@@ -252,8 +290,13 @@ where
                 collator,
                 items_in_parallel,
                 pool,
+                pid,
             } => {
                 let indices = chunks.next()?;
+                if pool.is_some() && *pid != std::process::id() {
+                    *chunks = Vec::new().into_iter();
+                    return Some(Err(forked()));
+                }
                 Some(process_batch(
                     &**dataset,
                     &indices,

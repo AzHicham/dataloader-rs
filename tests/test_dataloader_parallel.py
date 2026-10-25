@@ -192,6 +192,39 @@ def test_par_forked_child_can_iterate():
     assert queue.get(timeout=5) == 5
 
 
+def _iterate_inherited(it, queue):
+    try:
+        queue.put(("finished", len(list(it))))
+    except RuntimeError as e:
+        queue.put(("RuntimeError", str(e)))
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="fork start method is Linux-only here")
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
+@pytest.mark.parametrize(("num_workers", "items_in_parallel"), [(2, 1), (0, 2)])
+def test_par_iterator_from_before_fork_raises_in_child(num_workers, items_in_parallel):
+    """An epoch started in the parent cannot run in a forked child: it raises instead of hanging."""
+    loader = DataLoader(
+        ListDataset(range(64)),
+        batch_size=4,
+        num_workers=num_workers,
+        items_in_parallel=items_in_parallel,
+    )
+    it = iter(loader)
+    next(it)
+
+    ctx = multiprocessing.get_context("fork")
+    queue = ctx.Queue()
+    child = ctx.Process(target=_iterate_inherited, args=(it, queue))
+    child.start()
+    child.join(30)
+    if child.is_alive():
+        child.kill()
+        pytest.fail("forked child hung on an iterator from its parent")
+    kind, detail = queue.get(timeout=5)
+    assert kind == "RuntimeError" and "fork()" in detail
+
+
 # ── interpreter shutdown ──────────────────────────────────────────────────────
 
 _DS = """
@@ -299,3 +332,4 @@ def test_par_workers_recurse_as_deep_as_the_main_thread():
     """A worker's stack is a main thread's: deep recursion succeeds, or fails, the same way."""
     expected = _DeepJson()[0]
     assert list(DataLoader(_DeepJson(), num_workers=1)) == [[expected]]
+
