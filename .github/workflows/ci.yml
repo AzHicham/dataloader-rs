@@ -87,7 +87,7 @@ jobs:
           PYO3_PYTHON: ${{ steps.python.outputs.python-path }}
         run: cargo test --all-features
 
-  # ── Python tests (3.14t · 3.15t) ─────────────────────────────────────────
+  # ── Python tests (3.13 · 3.14t · 3.15t) ──────────────────────────────────
   test-python:
     name: Python tests (${{ matrix.python }})
     runs-on: ubuntu-26.04
@@ -95,6 +95,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 3.13 has no wheel (it builds from the sdist) and is the only GIL
+          # build: its threads take turns on the GIL, which the free-threaded
+          # builds never exercise.
+          - python: "3.13"
           - python: "3.14t"
           - python: "3.15t"
 
@@ -118,5 +122,6 @@ jobs:
       - name: Build & install wheel
         run: uv run maturin develop --features python
 
+      # -X gil=0 keeps the GIL off on free-threaded builds; 3.13 has no such flag.
       - name: pytest
-        run: uv run python -X gil=0 -m pytest -v
+        run: uv run python ${{ endsWith(matrix.python, 't') && '-X gil=0' || '' }} -m pytest -v

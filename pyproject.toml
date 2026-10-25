@@ -77,3 +77,6 @@ manifest-path = "Cargo.toml"
 module-name = "dataloader_rs"
 python-source = "."
 features = ["python", "pyo3/extension-module"]
+# A source build is the fallback where no wheel fits; it must not inherit the
+# wheels' x86-64-v3 target, so the sdist leaves the cargo config out.
+exclude = [{ path = ".cargo/config.toml", format = "sdist" }]

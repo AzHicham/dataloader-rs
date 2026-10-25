@@ -89,11 +89,31 @@ jobs:
           name: wheel-${{ matrix.platform.target }}-${{ matrix.python }}
           path: dist/*.whl
 
+  # ── Source distribution: other interpreters and platforms build from it ──
+  build-sdist:
+    name: Source distribution
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      # Named like the wheels so that publish-pypi picks it up with them.
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: wheel-sdist
+          path: dist/*.tar.gz
+
   # ── Publish to PyPI — real releases only ─────────────────────────────────
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-26.04
-    needs: build-wheels
+    needs: [build-wheels, build-sdist]
     if: github.event_name == 'release'
     environment: pypi
     permissions:
