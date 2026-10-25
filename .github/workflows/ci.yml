@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [dev]
 
+# Jobs get a read-only token unless they ask for more. The repository's
+# default is read/write, which would hand it to every dependency, tool and
+# action these jobs run.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
