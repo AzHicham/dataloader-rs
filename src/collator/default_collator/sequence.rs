@@ -20,8 +20,8 @@ where
             .collect();
 
         for row in items {
-            for (i, value) in row.into_iter().enumerate() {
-                columns[i].push(value);
+            for (column, value) in columns.iter_mut().zip(row) {
+                column.push(value);
             }
         }
 

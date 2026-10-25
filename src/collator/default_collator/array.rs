@@ -10,17 +10,29 @@ where
         let mut columns: [Vec<T>; N] = std::array::from_fn(|_| Vec::with_capacity(items.len()));
 
         for row in items {
-            for (i, value) in row.into_iter().enumerate() {
-                columns[i].push(value);
+            for (column, value) in columns.iter_mut().zip(row) {
+                column.push(value);
             }
         }
 
-        let mut out: Vec<T::Batch> = Vec::with_capacity(N);
-        for col in columns {
-            out.push(T::collate_items(col)?);
-        }
-
-        out.try_into()
+        columns
+            .into_iter()
+            .map(T::collate_items)
+            .collect::<Result<Vec<_>>>()?
+            .try_into()
             .map_err(|_| "internal error while building array batch".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::collator::{Collator, DefaultCollator};
+
+    #[test]
+    fn collates_arrays_by_position() {
+        let out = DefaultCollator
+            .collate(vec![[1u8, 2, 3], [4, 5, 6]])
+            .unwrap();
+        assert_eq!(out, [vec![1, 4], vec![2, 5], vec![3, 6]]);
     }
 }

@@ -3,18 +3,14 @@ use crate::collator::Collator;
 /// Torch-only wrapper collator that optionally pins Tensor batches.
 pub struct TorchPinnedCollator<C> {
     inner: C,
-    enabled: bool,
-    can_pin: bool,
+    /// Pinning was asked for, and a CUDA or MPS device can use pinned memory.
+    pin: bool,
 }
 
 impl<C> TorchPinnedCollator<C> {
     pub fn new(inner: C, enabled: bool) -> Self {
-        let can_pin = enabled && (tch::Cuda::is_available() || tch::utils::has_mps());
-        Self {
-            inner,
-            enabled,
-            can_pin,
-        }
+        let pin = enabled && (tch::Cuda::is_available() || tch::utils::has_mps());
+        Self { inner, pin }
     }
 }
 
@@ -26,7 +22,7 @@ where
 
     fn collate(&self, items: Vec<Item>) -> crate::error::Result<Self::Batch> {
         let batch = self.inner.collate(items)?;
-        if self.enabled && self.can_pin {
+        if self.pin {
             batch.f_pin_memory(tch::Device::Cpu).map_err(|e| e.into())
         } else {
             Ok(batch)
