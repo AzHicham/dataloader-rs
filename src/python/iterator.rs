@@ -17,9 +17,8 @@ pub(crate) enum PyIterInner {
         /// Collator cloned at `__iter__` time so `__next__` skips borrowing `_owner`.
         collator: PyCollator,
     },
-    /// Parallel (num_workers>0): batch tasks on the loader's pool. `None` once
-    /// an error has ended the epoch.
-    Threaded(Option<CorePyDataloaderIter>),
+    /// Parallel (num_workers>0): batch tasks on the loader's pool.
+    Threaded(CorePyDataloaderIter),
 }
 
 #[pyclass(name = "PyDataloaderIter", module = "dataloader_rs", unsendable)]
@@ -50,10 +49,7 @@ impl PyDataloaderIter {
                 collator.collate_with_py(py, items).map_err(into_py_err)?
             }
 
-            PyIterInner::Threaded(slot) => {
-                let Some(inner) = slot else {
-                    return Ok(None);
-                };
+            PyIterInner::Threaded(inner) => {
                 // A batch that already arrived is taken without releasing the
                 // interpreter; otherwise wait with it released, so workers can
                 // attach. A worker's panic unwinds from here to PyO3, which
@@ -62,17 +58,10 @@ impl PyDataloaderIter {
                     Some(next) => next,
                     None => py.detach(|| inner.next()),
                 };
-                match next {
-                    Some(Ok(batch)) => batch,
-                    Some(Err(e)) => {
-                        *slot = None;
-                        return Err(into_py_err(e));
-                    }
-                    None => {
-                        *slot = None;
-                        return Ok(None);
-                    }
-                }
+                let Some(batch) = next else {
+                    return Ok(None);
+                };
+                batch.map_err(into_py_err)?
             }
         };
         batch.into_py(py).map(Some)
@@ -81,7 +70,7 @@ impl PyDataloaderIter {
     fn __len__(&self) -> usize {
         match &self.inner {
             PyIterInner::Direct { chunks, .. } => chunks.len(),
-            PyIterInner::Threaded(inner) => inner.as_ref().map_or(0, |it| it.len()),
+            PyIterInner::Threaded(inner) => inner.len(),
         }
     }
 }

@@ -214,9 +214,9 @@ given, so a sampler without `__len__` raises `TypeError`, as in PyTorch.
 
 Python exceptions cross the Rust core as boxed `PyErr`s and are restored with their original
 type and traceback (`into_py_err`); only errors that did not come from Python become
-`RuntimeError`. With `num_workers = 0` an exception is raised for its batch and iteration can
-continue; with workers it ends the epoch. A sampler or `__len__` that raises makes
-`iter(loader)` or `len(loader)` raise.
+`RuntimeError`. An exception is raised for its batch and iteration can continue, with or without
+workers, as in PyTorch. A sampler or `__len__` that raises makes `iter(loader)` or `len(loader)`
+raise.
 
 ### 6.4 Dropping an iterator
 

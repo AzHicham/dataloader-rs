@@ -90,6 +90,19 @@ def test_collate_error_parallel():
         next(it)
 
 
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_iteration_continues_after_an_exception(num_workers):
+    """As in PyTorch, the batches after a failing one are still returned."""
+    it = iter(DataLoader(FailingDs(12, fail_index=5), batch_size=4, num_workers=num_workers))
+    assert next(it) == [0, 1, 2, 3]
+    with pytest.raises(RuntimeError, match="boom at index 5"):
+        next(it)
+    assert len(it) == 1
+    assert next(it) == [8, 9, 10, 11]
+    with pytest.raises(StopIteration):
+        next(it)
+
+
 # ── Reuse after error ─────────────────────────────────────────────────────────
 
 

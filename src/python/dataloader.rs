@@ -103,7 +103,7 @@ impl PyDataloader {
             // per batch via get_batch), or with items_in_parallel > 1 one attach
             // per item in the batch's lanes. `__next__` waits with the interpreter
             // released, which item lanes need even with num_workers=0.
-            PyIterInner::Threaded(Some(core.iter_chunks(chunks)))
+            PyIterInner::Threaded(core.iter_chunks(chunks))
         } else {
             // Direct path (num_workers=0): call Python directly inside __next__
             // using the py token already held — zero extra GIL acquisitions.

@@ -239,8 +239,8 @@ when `items_in_parallel > 1`: each item is its own call.
 ## Errors
 
 - An exception raised by `__getitem__`, `__getitems__` or `collate_fn` reaches you with its own
-  type and message. With `num_workers=0`, the next `next()` continues with the following batch;
-  with workers, the epoch ends.
+  type and message, and the next `next()` continues with the following batch, with or without
+  workers, as in PyTorch.
 - A `__len__` or a sampler that raises, or a sampler that yields something other than a
   non-negative `int`, makes `iter(loader)` raise — an epoch never silently comes out empty or
   short.
