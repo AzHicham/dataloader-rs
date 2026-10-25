@@ -2,9 +2,9 @@
 
 A `DataLoader` for Python with the `torch.utils.data.DataLoader` interface and a Rust core. Workers
 are threads, not processes: samples are handed over by reference instead of being pickled, an
-epoch starts in milliseconds, and against PyTorch it is **5.7–6.2× faster on the loader's own
-overhead, 3.2–3.9× on network-bound datasets** and up to 1.9× on array samples — with no
-PyTorch dependency.
+epoch starts in milliseconds, and against PyTorch it is **4.9–6.6× faster on the loader's own
+overhead, 3.2–3.9× on network-bound datasets and 2.5–3.5× on array samples** with free-threaded
+Python — with no PyTorch dependency.
 
 - **PyTorch's arguments**: `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`,
   `drop_last`, plus `seed` for reproducible shuffling, `prefetch_depth`, and `items_in_parallel`
@@ -184,18 +184,22 @@ batches ahead while your loop runs and the loader returns them in order.
   key them with interned strings (`sys.intern`), which no longer carry this cost. Processes
   (PyTorch's workers) never share objects, so they do not see this.
 
-- **Array samples on Linux: raise glibc's `malloc` thresholds.** NumPy allocates samples and
-  batches with `malloc`; with its default settings glibc returns the memory of every batch to the
-  system and faults it back in, which serialises worker threads. The setting is process-wide, so
-  it is yours to make, at start-up:
+- **Array samples on Linux: tune the allocator NumPy uses.** With default settings, the memory of
+  every batch goes back to the system and is faulted back in, which serialises worker threads.
+  The settings are process-wide, so they are yours to make, at start-up:
 
   ```bash
+  # CPython 3.13 and 3.14t: NumPy allocates with glibc's malloc
   GLIBC_TUNABLES=glibc.malloc.trim_threshold=67108864:glibc.malloc.mmap_threshold=33554432 python train.py
+  # CPython 3.15t: NumPy's buffers come from CPython's mimalloc
+  MIMALLOC_PURGE_DELAY=-1 python train.py
   ```
 
-  Array samples then load 1.5–1.9× faster than with PyTorch on 4 workers, and the process keeps
-  some free memory for reuse (about 100 MB more in the benchmarks). Raise both thresholds: either
-  one alone turns off glibc's adjustment of the other and is slower than the defaults.
+  On 3.14t this is worth up to 2× for array samples with 4 workers, and the process keeps some
+  free memory for reuse (80–100 MB in the benchmarks). With glibc, raise both thresholds: either
+  one alone turns off glibc's adjustment of the other and is slower than the defaults. Batches of
+  16 MiB and more hit a mimalloc path no setting avoids on 3.15t: smaller batches are faster
+  there.
 - **Breaking out of a loop** returns immediately; batches already being loaded finish in the
   background and are discarded.
 - **`multiprocessing` with `fork`**: a child process can use a loader its parent already
@@ -246,13 +250,13 @@ when `items_in_parallel > 1`: each item is its own call.
 ## Performance
 
 Against `torch.utils.data.DataLoader` with the same dataset code, on 4 cores of an Intel Core
-i9-13900H: 5.7–6.2× faster on the loader's own overhead, 3.2–3.9× on network-bound datasets
-(`items_in_parallel`), first batches in milliseconds against 13–335 ms for torch's fresh worker
-processes, and 1.0–1.8× on array samples (file reads, NumPy augmentation), 1.5–1.9× with
-glibc's `malloc` thresholds raised (see [Workers, threads and the GIL](#workers-threads-and-the-gil)).
-Pure-Python CPU work with per-thread tables is on par to 1.2× faster on 3.14t and 3.15t; on
-shared objects or under the GIL, torch's processes are 2.3–2.9× faster. Every number, the method
-and the caveats:
+i9-13900H, with the allocator settings of [Workers, threads and the GIL](#workers-threads-and-the-gil)
+for both: 4.9–6.6× faster on the loader's own overhead, 3.2–3.9× on network-bound datasets
+(`items_in_parallel`), first batches in milliseconds against 11–334 ms for torch's fresh worker
+processes, and 2.5–3.5× on array samples (file reads, NumPy augmentation) with free-threaded
+3.14t / 3.15t, 1.0–1.5× on 3.13. Pure-Python CPU work with per-thread tables is about 1.2×
+faster on 3.14t and 3.15t; on shared objects or under the GIL, torch's processes are 2.4–2.9×
+faster. Every number, the method and the caveats:
 [BENCH.md](https://github.com/AzHicham/dataloader-rs/blob/dev/BENCH.md).
 
 Source, issues and the Rust crate: [github.com/AzHicham/dataloader-rs](https://github.com/AzHicham/dataloader-rs).

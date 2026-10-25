@@ -14,9 +14,9 @@ with a Python binding that runs the same pipeline on threads instead of worker p
   monomorphized; batches come out in epoch order as `Result<Batch>`.
 - **Threads, not processes**: workers share the dataset through `Arc`, so samples are handed
   over by reference instead of being pickled across processes. Against
-  `torch.utils.data.DataLoader` on 4 cores, the Python binding is **5.7–6.2× faster on the
-  loader's own overhead, 3.2–3.9× on network-bound datasets**, up to 1.9× on array samples, and
-  starts an epoch in milliseconds
+  `torch.utils.data.DataLoader` on 4 cores, the Python binding is **4.9–6.6× faster on the
+  loader's own overhead, 3.2–3.9× on network-bound datasets, 2.5–3.5× on array samples** with
+  free-threaded Python, and starts an epoch in milliseconds
   ([BENCH.md](BENCH.md)).
 - **Two explicit levels of parallelism**: `num_workers` batches in parallel and
   `items_in_parallel` items of each batch — on one thread pool built with the loader and reused
@@ -179,12 +179,12 @@ Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/
 
 | Python workload, against `torch.utils.data.DataLoader` (best configuration of each) | Result |
 |---|---|
-| Loader overhead (in-memory samples) | **5.7–6.2× faster** |
+| Loader overhead (in-memory samples) | **4.9–6.6× faster** |
 | Network-bound samples (10 ms each), `items_in_parallel` | **3.2–3.9× faster**; first batch 21 ms against 320+ ms |
-| First batch of an epoch | **milliseconds**, against 13–335 ms for torch's fresh worker processes |
-| Array samples: read + normalise a file, augment an image | **1.0–1.8× faster**; **1.5–1.9×** with glibc's `malloc` thresholds raised for the process ([BENCH.md, section 8](BENCH.md#8-caveats-and-known-bottlenecks)) |
-| Pure-Python CPU work, per-thread tables, free-threaded 3.14t / 3.15t | on par to 1.2× faster |
-| Pure-Python CPU work on shared objects, or under the GIL | torch 2.3–2.9× faster (processes share nothing) |
+| First batch of an epoch | **milliseconds**, against 11–334 ms for torch's fresh worker processes |
+| Array samples: read + normalise a file, augment an image (4 workers) | **2.5–3.5× faster** on 3.14t / 3.15t, 1.0–1.5× on 3.13; with the allocator settings of [BENCH.md, section 8](BENCH.md#8-caveats-and-known-bottlenecks) |
+| Pure-Python CPU work, per-thread tables, free-threaded 3.14t / 3.15t | **≈ 1.2× faster** |
+| Pure-Python CPU work on shared objects, or under the GIL | torch 2.4–2.9× faster (processes share nothing) |
 
 ## Documentation
 
