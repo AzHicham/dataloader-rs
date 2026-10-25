@@ -49,7 +49,7 @@ pip install dataloader-rs
 
 | Wheels | Platforms |
 |---|---|
-| free-threaded CPython 3.14t, 3.15t | Linux x86_64 and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
+| free-threaded CPython 3.14t, 3.15t | Linux x86_64 (x86-64-v3 CPU: AVX2, Intel 2013+ / AMD 2017+) and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
 
 Other interpreters and platforms build from the source distribution, which needs a Rust
 toolchain; from a checkout: `pip install maturin && maturin develop --release --features python`.

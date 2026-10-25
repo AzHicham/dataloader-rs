@@ -8,14 +8,8 @@ progress.width = 80    # width of progress bar
 [net]
 git-fetch-with-cli = true # whether cargo uses git cli for git fetch
 
-[target.x86_64-apple-darwin]
-rustflags = ["-C", "target-feature=+avx2,+fma"]
-
+# Linux x86-64 builds, including the published wheels, need an x86-64-v3 CPU
+# (AVX2, FMA, BMI2: Intel Haswell 2013+, AMD Zen 2017+). aarch64-apple-darwin
+# already targets the Apple M1 (lse, rdm, crc, rcpc, fp16, dotprod, ...).
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "target-feature=+avx2,+fma"]
-
-[target.aarch64-apple-darwin]
-rustflags = ["-C", "target-feature=+neon"]
-
-[target.aarch64-unknown-linux-gnu]
-rustflags = ["-C", "target-feature=+neon"]
+rustflags = ["-C", "target-cpu=x86-64-v3"]
