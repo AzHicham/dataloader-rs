@@ -3,8 +3,14 @@
 //! The dataset does what a real one does; the benchmark measures how well the
 //! loader spreads it across workers:
 //!
-//!   local_files  read a 64 KB file + normalise to f32   (I/O + light CPU)
+//!   local_files  read a 16 KB file + normalise to f32   (I/O + light CPU)
 //!   remote       2 ms blocking network round trip        (I/O-bound)
+//!
+//! The suite pins glibc's malloc thresholds first, like the Python harnesses
+//! (BENCH.md, section 8): with the defaults, glibc returns the memory of every
+//! dropped batch to the system and the next batch faults it in again, so the
+//! suite would measure the allocator (3.4x at 16 KB per file) instead of the
+//! loader. Small files keep an epoch within this machine's memory bandwidth.
 //!
 //! Throughput unit: samples per epoch.
 
@@ -15,7 +21,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use dataloader_rs::{DataLoader, Dataset, error::Result};
 
 const BATCH_SIZE: usize = 32;
-const FILE_BYTES: usize = 64 * 1024;
+const FILE_BYTES: usize = 16 * 1024;
 
 fn file_tree(n: usize) -> PathBuf {
     let root = std::env::temp_dir().join(format!("dataloader_rs_rust_bench_{n}"));
@@ -75,8 +81,24 @@ impl Dataset for Remote {
     }
 }
 
+/// Raise glibc's mmap and trim thresholds to the values of BENCH.md section 8,
+/// so dropped batches stay mapped for reuse.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn pin_allocator() {
+    // SAFETY: mallopt only changes two process-wide thresholds of glibc's
+    // allocator; it runs once, before the suite allocates its datasets.
+    unsafe {
+        libc::mallopt(libc::M_MMAP_THRESHOLD, 32 << 20);
+        libc::mallopt(libc::M_TRIM_THRESHOLD, 64 << 20);
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+fn pin_allocator() {}
+
 fn bench_local_files(c: &mut Criterion) {
-    const N: usize = 1024;
+    const N: usize = 4096;
+    pin_allocator();
     let root = file_tree(N);
     let mut group = c.benchmark_group("real_world/local_files");
     group.throughput(Throughput::Elements(N as u64));

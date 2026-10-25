@@ -78,6 +78,10 @@ version          = "0.26"
 default-features = false
 features         = ["download-libtorch"]
 
+# bench_real_world pins glibc's malloc thresholds (mallopt).
+[dev-dependencies.libc]
+version          = "0.2"
+
 [[bench]]
 name    = "bench_num_workers"
 harness = false

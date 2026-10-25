@@ -14,7 +14,7 @@ the network is the point. Results and their reading:
 | `bench_prefetch_depth` | does loading overlap the consumer's work? | `HeavyCpuDs(64)` | sequential; `prefetch_depth` 1, 2, 4, 8 | `batch_size` 4, 2 workers, a consumer step of ≈ 0.22 ms per batch |
 | `bench_first_batch` | latency to the first batch | `HeavyCpuDs(32)` | (workers, items) (0, 1), (1, 1), (0, 2), (0, 4), (1, 4) | one batch of 32 |
 | `bench_sampler` | sampler cost | `InMemoryDs(N)` | N 1k, 10k, 100k; sequential vs random | `batch_size` 128, no workers |
-| `bench_real_world` | real per-item work | 64 KB files; 2 ms blocking latency | `num_workers` 0, 1, 2, 4; 4, 16, 64 requests in flight | `batch_size` 32 |
+| `bench_real_world` | real per-item work | 4 096 files of 16 KB; 2 ms blocking latency | `num_workers` 0, 1, 2, 4; 4, 16, 64 requests in flight | `batch_size` 32; glibc's malloc thresholds pinned |
 
 `common.rs` holds the shared datasets, collators and consumer work:
 
