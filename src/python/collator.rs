@@ -6,6 +6,16 @@ pub(crate) enum PyBatch {
     Items(Vec<Py<PyAny>>),
 }
 
+impl PyBatch {
+    /// The object `__next__` returns: `collate_fn`'s result, or a `list`.
+    pub(crate) fn into_py(self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        match self {
+            Self::Ready(obj) => Ok(obj),
+            Self::Items(items) => Ok(PyList::new(py, items)?.into_any().unbind()),
+        }
+    }
+}
+
 pub(crate) struct PyCollator {
     collate_fn: Option<Py<PyAny>>,
 }

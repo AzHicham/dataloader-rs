@@ -8,7 +8,7 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 | `mod.rs` | the `#[pymodule]` (`gil_used = false`: loads on free-threaded CPython), `into_py_err` |
 | `dataset.rs` | `PyDatasetBase` (the `PyDataset` base class), `Dataset` for `Py<PyDatasetBase>`, `Fetcher` (`__getitems__` or `__getitem__`) |
 | `dataloader.rs` | `PyDataloader`: arguments, validation, `__iter__`, `__len__` |
-| `iterator.rs` | `PyDataloaderIter`: the direct and threaded epochs, `__next__`, `Drop` |
+| `iterator.rs` | `PyDataloaderIter`: the direct and threaded epochs, `__next__` |
 | `sampler.rs` | `PySampler` (sequential, random, or a Python iterable) behind `SharedPySampler` |
 | `collator.rs` | `PyCollator`: `collate_fn`, or a plain `list` |
 | `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread |
@@ -38,7 +38,8 @@ iter(loader)
 ## Rules this code keeps
 
 - **Never wait for workers while holding the interpreter.** A worker may be waiting to attach
-  (inside `__getitem__` or `collate_fn`); `__next__` and `Drop` detach before receiving or joining.
+  (inside `__getitem__` or `collate_fn`); `__next__` detaches before it waits on the channel, and
+  dropping an iterator does not wait at all.
 - **Python exceptions keep their type.** They cross the core as boxed `PyErr`s; `into_py_err`
   downcasts them back, and only non-Python errors become `RuntimeError`.
 - **Nothing ends an epoch silently.** A raising `__len__`, a sampler that raises or yields a

@@ -220,9 +220,9 @@ continue; with workers it ends the epoch. A sampler or `__len__` that raises mak
 
 ### 6.4 Dropping an iterator
 
-Dropping a `PyDataloaderIter` cancels its epoch without waiting (section 4.3), and releases the
-interpreter first: a task waiting to attach (to call `__getitem__`) can then finish its batch, so a
-`break` or a garbage-collected iterator cannot deadlock. A batch already running keeps calling the
+Dropping a `PyDataloaderIter` cancels its epoch without waiting (section 4.3), so it never holds
+the interpreter while waiting on a worker: a `break` or a garbage-collected iterator cannot
+deadlock. A batch already running keeps calling the
 dataset in the background until it completes.
 
 ## 7. Design choices

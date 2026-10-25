@@ -118,7 +118,6 @@ impl PyDataloader {
             if let Some(err) = loader.sampler.take_error() {
                 return Err(err);
             }
-            let remaining = chunks.len();
             let fetcher = Fetcher::new(loader.inner.dataset(), py)?;
             let collator = loader.inner.collator().clone();
             drop(loader);
@@ -126,7 +125,6 @@ impl PyDataloader {
                 _owner: slf,
                 inner: PyIterInner::Direct {
                     chunks: chunks.into_iter(),
-                    remaining,
                     fetcher,
                     collator,
                 },
@@ -139,8 +137,6 @@ impl PyDataloader {
         // released, which item lanes need even with num_workers=0.
         let inner = loader.inner.iter();
         if let Some(err) = loader.sampler.take_error() {
-            // Join the (idle) workers with the GIL released.
-            py.detach(|| drop(inner));
             return Err(err);
         }
         drop(loader);
