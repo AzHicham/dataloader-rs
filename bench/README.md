@@ -8,7 +8,10 @@ Two kinds of scripts, sharing their datasets:
   `dataloader_rs.PyDataloader` and `torch.utils.data.DataLoader`, run on demand.
 
 Both are sized for a 4-vCPU machine, the CI runner: at most 4 workers, except where waiting on
-the network is the point. Method, results and caveats: [BENCH.md](../BENCH.md).
+the network is the point. Both run with the allocator settings of `real_world.PINNED_ALLOCATOR`
+(glibc's thresholds, mimalloc's purge delay), so they measure the loaders rather than the
+allocators' defaults: `compare_torch.py` re-executes itself with them, and CI sets them for the
+guards. Method, results and caveats: [BENCH.md](../BENCH.md).
 
 ## Regression guards (pytest-benchmark)
 
@@ -25,9 +28,13 @@ Marked `bench`, so a plain `pytest` deselects them.
 
 ```bash
 uv run maturin develop --release --features python
+GLIBC_TUNABLES=glibc.malloc.trim_threshold=67108864:glibc.malloc.mmap_threshold=33554432 \
+MIMALLOC_PURGE_DELAY=-1 \
 uv run python -X gil=0 -m pytest bench/ -m bench --benchmark-enable --benchmark-warmup=on \
   --benchmark-min-rounds=5
 ```
+
+pytest's header says whether the allocator is pinned.
 
 ## Comparison with PyTorch
 
@@ -40,8 +47,8 @@ batch.
 | Workload | Per item | Stands for |
 |---|---|---|
 | `in_memory` | returns the index | the loader's own cost |
-| `local_files` | read a 128 KB file, normalise to float32 | file I/O fan-out |
-| `image_augment` | random crop, flip, normalise a 3×256×256 image | NumPy augmentation |
+| `local_files` | read a 16 KB file, normalise to float32 | file I/O fan-out |
+| `image_augment` | random 112 crop, flip, normalise a 3×128×128 image | NumPy augmentation |
 | `remote` | 10 ms blocking sleep | an object-store or HTTP GET |
 | `python_cpu` | pure-Python tokenisation, shared vocabulary | Python preprocessing |
 | `python_cpu_local` | the same with per-thread tables | the same, written for free-threaded Python |
@@ -52,7 +59,9 @@ taskset -c 0,2,4,6 uv run python -X gil=0 bench/compare_torch.py --workers 4 --r
 uv run --python 3.13 python bench/compare_torch.py --workloads remote   # GIL build, one workload
 ```
 
-`--help` lists the options; without torch installed only `dataloader_rs` runs.
+`--help` lists the options; `--default-allocator` keeps the allocators' defaults; without torch
+installed only `dataloader_rs` runs. Array samples stay small (64 and 147 KB, batches of 2 and
+4.6 MiB): from 16 MiB, mimalloc resets a block freed by another thread whatever its settings.
 
 ## Shared code
 

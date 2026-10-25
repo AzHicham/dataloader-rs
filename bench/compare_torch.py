@@ -14,7 +14,7 @@ every loader configuration this measures, over whole epochs:
 
 Workloads:
   in_memory          returns the index                      (loader overhead only)
-  local_files        read a 128 KB file + normalise         (I/O fan-out)
+  local_files        read a 16 KB file + normalise          (I/O fan-out)
   image_augment      crop / flip / normalise an image       (NumPy, releases the GIL)
   remote             10 ms blocking network round trip      (latency-bound)
   python_cpu         pure-Python tokenisation, shared vocab (GIL-bound; contended on 3.14t)
@@ -22,6 +22,10 @@ Workloads:
 
 Defaults are calibrated for a 4-vCPU machine (a GitHub-hosted runner); pin a
 bigger machine to 4 cores to compare (`taskset -c 0,2,4,6 ...`).
+
+The script runs with the allocator settings of BENCH.md section 8 for both
+loaders, re-executing itself with them when they are missing:
+--default-allocator measures the allocators' defaults instead.
 
 Run:
   python bench/compare_torch.py [--workers 4] [--repeats 5] [--json out.json]
@@ -40,6 +44,7 @@ from dataclasses import asdict, dataclass
 
 sys.path.insert(0, os.path.dirname(__file__))
 from real_world import (
+    PINNED_ALLOCATOR,
     OursImageAugment,
     OursInMemory,
     OursLocalFiles,
@@ -68,12 +73,20 @@ WORKLOADS = [
 ]
 SIZES = {
     "in_memory": 16384,
-    "local_files": 2048,
-    "image_augment": 1024,
+    "local_files": 4096,
+    "image_augment": 2048,
     "remote": 512,
     "python_cpu": 2048,
     "python_cpu_local": 2048,
 }
+
+
+def pin_allocator() -> None:
+    """Re-execute this script with PINNED_ALLOCATOR, unless it already runs with it."""
+    if all(os.environ.get(name) == value for name, value in PINNED_ALLOCATOR.items()):
+        return
+    sys.stdout.flush()
+    os.execve(sys.executable, sys.orig_argv, {**os.environ, **PINNED_ALLOCATOR})
 
 
 @dataclass
@@ -200,7 +213,14 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=5, help="timed epochs per configuration")
     parser.add_argument("--workloads", nargs="+", default=WORKLOADS, choices=WORKLOADS)
     parser.add_argument("--json", help="also write the results to this JSON file")
+    parser.add_argument(
+        "--default-allocator",
+        action="store_true",
+        help="keep the allocators' default settings instead of pinning them",
+    )
     args = parser.parse_args()
+    if not args.default_allocator:
+        pin_allocator()
     # More workers than cores is deliberate for the latency-bound workload.
     warnings.filterwarnings("ignore", message="This DataLoader will create")
     gil = sys._is_gil_enabled() if hasattr(sys, "_is_gil_enabled") else True
@@ -212,6 +232,7 @@ def main() -> None:
         else os.cpu_count(),
         "workers": args.workers,
         "batch_size": BATCH_SIZE,
+        "allocator": "default" if args.default_allocator else "pinned",
     }
     print("# " + " ".join(f"{k}={v}" for k, v in meta.items()), flush=True)
     results = run(args)

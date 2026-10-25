@@ -5,6 +5,12 @@ augmenting images, waiting on the network, running Python code — written
 once as a mixin and combined with both ``dataloader_rs.PyDataset`` and
 ``torch.utils.data.Dataset``, so both loaders run identical work and only
 the loading (scheduling, parallelism, prefetching, collation) differs.
+
+Array samples are sized so that a batch of 32 stays far below 16 MiB: from
+there CPython's mimalloc (where NumPy's buffers come from on 3.15t) resets a
+block freed by another thread, whatever its settings. The harnesses also pin
+the allocator settings (compare_torch.py, BENCH.md section 8), so the numbers
+measure the loaders, not the allocators' defaults.
 """
 
 from __future__ import annotations
@@ -18,6 +24,15 @@ from pathlib import Path
 import numpy as np
 
 from dataloader_rs import PyDataset
+
+# Allocator settings the harnesses run with, for both loaders (BENCH.md,
+# section 8). Both are read when the process starts: glibc's thresholds,
+# which NumPy uses on 3.13 and 3.14t, and the purge delay of mimalloc,
+# CPython's allocator, which NumPy uses on 3.15t.
+PINNED_ALLOCATOR = {
+    "GLIBC_TUNABLES": "glibc.malloc.trim_threshold=67108864:glibc.malloc.mmap_threshold=33554432",
+    "MIMALLOC_PURGE_DELAY": "-1",
+}
 
 # ── in_memory: no work at all, so only the loader's own cost remains ─────────
 
@@ -37,11 +52,11 @@ class InMemoryWork:
 
 # ── local_files: read a file per sample, decode bytes to a normalised array ───
 
-FILE_BYTES = 128 * 1024
+FILE_BYTES = 16 * 1024
 
 
 def make_file_tree(n: int, root: Path | None = None) -> Path:
-    """Write *n* random 128 KB files (once) and return their directory."""
+    """Write *n* random 16 KB files (once) and return their directory."""
     root = root or Path(tempfile.gettempdir()) / f"dataloader_rs_bench_{n}"
     root.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(0)
@@ -69,8 +84,8 @@ class LocalFilesWork:
 
 # ── image_augment: torchvision-style transforms on an already-decoded image ──
 
-IMAGE_SHAPE = (3, 256, 256)
-CROP = 224
+IMAGE_SHAPE = (3, 128, 128)
+CROP = 112
 _MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)[:, None, None]
 _STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)[:, None, None]
 
