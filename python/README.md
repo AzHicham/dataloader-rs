@@ -214,6 +214,13 @@ batches ahead while your loop runs and the loader returns them in order.
   there.
 - **Breaking out of a loop** returns immediately; batches already being loaded finish in the
   background and are discarded.
+- **Ctrl-C** interrupts `next()` within 100 ms while it waits for workers, and the iterator stays
+  usable. A batch fetched on your own thread (`items_in_parallel > 1` without workers) runs to the
+  end first.
+- **Any thread** can create, iterate and drop a loader, one thread at a time per object: a second
+  thread calling `next()` on an iterator that another is advancing gets `RuntimeError`.
+- **Worker threads have an 8 MiB stack**, a main thread's usual size, so a `__getitem__` recurses
+  as deep as it would on your thread.
 - **`multiprocessing` with `fork`**: a child process can use a loader its parent already
   iterated; the loader rebuilds its threads there.
 

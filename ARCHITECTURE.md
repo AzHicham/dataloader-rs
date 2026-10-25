@@ -62,8 +62,8 @@ Two settings decide the parallelism, and nothing else does:
 
 When either parallel setting is above its default, `build()` creates **one rayon pool per
 loader** with `max(n, 1) × k` threads, so at most that many fetches run at once. The pool lives
-as long as the loader and is reused by every epoch; its threads are named `dataloader-N`. Sizing
-it for the machine is the caller's choice.
+as long as the loader and is reused by every epoch; its threads are named `dataloader-N` and have
+a main thread's 8 MiB stack. Sizing it for the machine is the caller's choice.
 
 ### 3.2 Choosing a path
 
@@ -193,7 +193,8 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
   reused by every epoch, and each keeps one Python thread state for its whole life
   (`python/pool.rs`): a task's attach only re-activates it, where creating and destroying a thread
   state per attach would cost about 100 µs on free-threaded builds. The consumer releases the
-  interpreter (`py.detach`) only when it has to wait for the next batch, so workers can run; a
+  interpreter (`py.detach`) only when it has to wait for the next batch, so workers can run, and
+  waits in slices of 100 ms with signal handlers in between, so Ctrl-C interrupts the wait; a
   batch that already arrived is returned without releasing it.
 - **`items_in_parallel > 1`**: a batch's lanes call `__getitem__` concurrently, each attaching to
   the interpreter for its own call (`__getitems__` is not used); such epochs always use the core
@@ -222,8 +223,10 @@ raise.
 
 Dropping a `PyDataloaderIter` cancels its epoch without waiting (section 4.3), so it never holds
 the interpreter while waiting on a worker: a `break` or a garbage-collected iterator cannot
-deadlock. A batch already running keeps calling the
-dataset in the background until it completes.
+deadlock. A batch already running keeps calling the dataset in the background until it
+completes. Loaders and iterators are not tied to a thread: any thread may use or drop them (one at
+a time; PyO3's borrow check refuses concurrent use), and they report the Python objects they hold
+to the garbage collector (`__traverse__`), so reference cycles through a loader are freed.
 
 ## 7. Design choices
 
