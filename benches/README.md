@@ -33,8 +33,9 @@ cargo bench --bench bench_prefetch_depth  # one suite
 cargo bench -- depth/4                    # one case
 ```
 
-Reports: `target/criterion/<group>/report/index.html`. To compare two versions, delete
-`target/criterion` between builds and alternate them ([BENCH.md, section 9.4](../BENCH.md#94-comparing-two-versions)).
+Criterion is built with its minimum features: results go to the console (and `target/criterion`
+for its comparisons); HTML reports need its `html_reports` and `plotters` features. To compare
+two versions, delete `target/criterion` between builds and alternate them ([BENCH.md, section 9.4](../BENCH.md#94-comparing-two-versions)).
 
 ## In CI
 

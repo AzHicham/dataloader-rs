@@ -46,13 +46,13 @@ features         = ["std"]
 
 [dependencies.fastrand]
 version          = "2"
+default-features = false
 
 # ── Optional Runtime dependencies ──────────────────────────────────────────────────────
 
 [dependencies.ndarray]
 version          = "0.17"
 default-features = false
-features         = ["std"]
 optional         = true
 
 [dependencies.tch]
@@ -71,7 +71,7 @@ optional         = true
 [dev-dependencies.criterion]
 version          = "0.8"
 default-features = false
-features         = ["cargo_bench_support", "html_reports", "plotters"]
+features         = ["cargo_bench_support"]
 
 [dev-dependencies.tch]
 version          = "0.26"
@@ -81,6 +81,7 @@ features         = ["download-libtorch"]
 # bench_real_world pins glibc's malloc thresholds (mallopt).
 [dev-dependencies.libc]
 version          = "0.2"
+default-features = false
 
 [[bench]]
 name    = "bench_num_workers"
