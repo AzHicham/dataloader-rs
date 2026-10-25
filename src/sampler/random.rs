@@ -1,3 +1,5 @@
+use std::hash::{BuildHasher, Hasher, RandomState};
+
 use crate::sampler::Sampler;
 
 /// Yields a uniformly shuffled permutation of indices every epoch.
@@ -22,9 +24,9 @@ impl RandomSampler {
 
     /// Seed from OS entropy. Use this when reproducibility is not required.
     pub fn from_entropy() -> Self {
-        Self {
-            rng: fastrand::Rng::new(),
-        }
+        // std draws `RandomState`'s keys from the OS (once per thread, then
+        // varies them per instance), so hashing nothing gives a fresh seed.
+        Self::new(RandomState::new().build_hasher().finish())
     }
 }
 
@@ -83,6 +85,14 @@ mod tests {
         let epoch1 = s.indices(30);
         let epoch2 = s.indices(30);
         assert_ne!(epoch1, epoch2);
+    }
+
+    #[test]
+    fn random_from_entropy_differs_per_sampler() {
+        let orders: Vec<Vec<usize>> = (0..4)
+            .map(|_| RandomSampler::from_entropy().indices(64))
+            .collect();
+        assert!(orders.windows(2).all(|w| w[0] != w[1]));
     }
 
     #[test]
