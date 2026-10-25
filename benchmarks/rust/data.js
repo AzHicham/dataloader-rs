@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792939851809,
+  "lastUpdate": 1792940039002,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -4103,6 +4103,306 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 559184,
             "range": "± 5038",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": false,
+          "id": "6f113a472656eb928f05fa26e7df646f51f63b33",
+          "message": "fix(python): keep thread pools alive while the interpreter shuts down\n\nA loader freed during shutdown (module teardown, or a reference cycle\nthe last collection frees) drops its pool, which wakes the pool's\nthreads. Each then re-attaches to a finalizing interpreter, which CPython\n3.13 answers with `pthread_exit`: that unwinds through Rust frames, and\nRust aborts the process (exit code 134). 3.14+ parks such threads\ninstead. The race was not reproduced locally, but the sdist makes 3.13\ninstallable, and loaders in cycles are now collected, possibly last.\n\nThe package registers `_keep_pools_alive` with `atexit`, which runs\nbefore shutdown starts: it leaks one reference to every live pool (the\nbinding tracks them as loaders are built or rebuilt after a fork), so\ntheir threads stay parked until the process exits.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T15:38:10+01:00",
+          "tree_id": "d408318fad649da97679705bbdd72a6751993502",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/6f113a472656eb928f05fa26e7df646f51f63b33"
+        },
+        "date": 1792940038295,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 161505,
+            "range": "± 559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 46504,
+            "range": "± 1465",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 22234,
+            "range": "± 97",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 11693,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 7265,
+            "range": "± 153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 5951,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 4848,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1407965,
+            "range": "± 111887",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 143687,
+            "range": "± 5008",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 39193,
+            "range": "± 2057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 16364,
+            "range": "± 4095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 11477,
+            "range": "± 3500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 9354,
+            "range": "± 2659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 11734,
+            "range": "± 1033",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items1",
+            "value": 4997546,
+            "range": "± 5048",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items1",
+            "value": 5028577,
+            "range": "± 13070",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items2",
+            "value": 2559457,
+            "range": "± 2904",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items4",
+            "value": 1311671,
+            "range": "± 31105",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items4",
+            "value": 1395470,
+            "range": "± 136350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items1",
+            "value": 20056187,
+            "range": "± 24095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items2",
+            "value": 10113973,
+            "range": "± 62647",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items4",
+            "value": 5408780,
+            "range": "± 486608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w2_items2",
+            "value": 5235862,
+            "range": "± 449308",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w4_items1",
+            "value": 10100282,
+            "range": "± 16131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/0",
+            "value": 39982981,
+            "range": "± 211658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/1",
+            "value": 40191601,
+            "range": "± 656292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/2",
+            "value": 20192948,
+            "range": "± 25375",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/4",
+            "value": 10389610,
+            "range": "± 521912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/sequential",
+            "value": 14978212,
+            "range": "± 5943",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 5669873,
+            "range": "± 7895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 5670091,
+            "range": "± 43676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 5668521,
+            "range": "± 8070",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 5670862,
+            "range": "± 24624",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/0",
+            "value": 25106881,
+            "range": "± 535757",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/1",
+            "value": 26789387,
+            "range": "± 697034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/2",
+            "value": 14862012,
+            "range": "± 313844",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/4",
+            "value": 11248888,
+            "range": "± 385188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/4",
+            "value": 263986535,
+            "range": "± 154917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/16",
+            "value": 77804308,
+            "range": "± 3516272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/64",
+            "value": 20848790,
+            "range": "± 697507",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 1728,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 2992,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 15306,
+            "range": "± 692",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 28419,
+            "range": "± 341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 150030,
+            "range": "± 24767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 290638,
+            "range": "± 6378",
             "unit": "ns/iter"
           }
         ]
