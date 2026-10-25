@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792925560237,
+  "lastUpdate": 1792939851809,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -3803,6 +3803,306 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 282091,
             "range": "± 8619",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": false,
+          "id": "b574f4b90d233a58bb8882eaefba89b259a8cb26",
+          "message": "build: target x86-64-v3 for Linux x86-64\n\n`+avx2,+fma` already made the Linux x86-64 wheels require AVX2, without\nsaying so. They now target the whole x86-64-v3 level (AVX2, FMA, BMI1/2,\nLZCNT, MOVBE, F16C: Intel Haswell 2013+, AMD Zen 2017+), and the Python\nREADME states the requirement next to the wheel table. pip still\ninstalls the wheel on older CPUs, where the import crashes (SIGILL).\n\nThe other entries did nothing: `+neon` is the aarch64 baseline,\naarch64-apple-darwin already targets the Apple M1 (lse, rdm, crc, rcpc,\nfp16, dotprod and more), and x86_64-apple-darwin is not built.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-25T15:37:43+01:00",
+          "tree_id": "062e977bf2b5615b979124c69deb16db9f2fe266",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/b574f4b90d233a58bb8882eaefba89b259a8cb26"
+        },
+        "date": 1792939851192,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 85261,
+            "range": "± 4559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 24977,
+            "range": "± 2348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 11838,
+            "range": "± 1294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 6063,
+            "range": "± 70",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 3489,
+            "range": "± 36",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 2866,
+            "range": "± 172",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 2007,
+            "range": "± 79",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1244601,
+            "range": "± 59758",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 119568,
+            "range": "± 6244",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 27968,
+            "range": "± 771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 10939,
+            "range": "± 1190",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 6551,
+            "range": "± 1578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 5761,
+            "range": "± 1362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 7163,
+            "range": "± 463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items1",
+            "value": 3744410,
+            "range": "± 103593",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items1",
+            "value": 3797427,
+            "range": "± 18892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items2",
+            "value": 1906497,
+            "range": "± 161103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items4",
+            "value": 969979,
+            "range": "± 27877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items4",
+            "value": 965599,
+            "range": "± 42036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items1",
+            "value": 21532002,
+            "range": "± 124019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items2",
+            "value": 10905509,
+            "range": "± 47623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w1_items4",
+            "value": 5519364,
+            "range": "± 112075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w2_items2",
+            "value": 5562103,
+            "range": "± 147459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "items_in_parallel/w4_items1",
+            "value": 10890883,
+            "range": "± 58310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/0",
+            "value": 39987110,
+            "range": "± 241497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/1",
+            "value": 40285839,
+            "range": "± 131732",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/2",
+            "value": 20178683,
+            "range": "± 31717",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/4",
+            "value": 10470216,
+            "range": "± 919316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/sequential",
+            "value": 11209631,
+            "range": "± 116740",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 4276158,
+            "range": "± 69859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 4133533,
+            "range": "± 145076",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 4233998,
+            "range": "± 97166",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 4159119,
+            "range": "± 94462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/0",
+            "value": 30394724,
+            "range": "± 191611",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/1",
+            "value": 30885095,
+            "range": "± 683276",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/2",
+            "value": 16352525,
+            "range": "± 569089",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/4",
+            "value": 11956685,
+            "range": "± 448083",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/4",
+            "value": 264023624,
+            "range": "± 86879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/16",
+            "value": 79711346,
+            "range": "± 3085777",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/64",
+            "value": 20896541,
+            "range": "± 237873",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2817,
+            "range": "± 90",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 5165,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 29446,
+            "range": "± 1036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 50134,
+            "range": "± 321",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 315616,
+            "range": "± 2316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 559184,
+            "range": "± 5038",
             "unit": "ns/iter"
           }
         ]
