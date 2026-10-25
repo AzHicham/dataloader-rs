@@ -14,6 +14,13 @@ pub struct DataLoaderBuilder<D, S, C> {
     dataset: D,
     sampler: S,
     collator: C,
+    settings: Settings,
+}
+
+/// The settings that do not depend on the builder's type parameters, carried
+/// over as they are when [`sampler`](DataLoaderBuilder::sampler),
+/// [`collator`](DataLoaderBuilder::collator) or `pin_memory` change a type.
+struct Settings {
     batch_size: usize,
     drop_last: bool,
     prefetch_depth: usize,
@@ -31,12 +38,14 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
             dataset,
             sampler: SequentialSampler,
             collator: VecCollator,
-            batch_size: 1,
-            drop_last: false,
-            prefetch_depth: 2,
-            num_workers: 0,
-            items_in_parallel: 1,
-            thread_main: None,
+            settings: Settings {
+                batch_size: 1,
+                drop_last: false,
+                prefetch_depth: 2,
+                num_workers: 0,
+                items_in_parallel: 1,
+                thread_main: None,
+            },
         }
     }
 }
@@ -45,7 +54,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     /// Number of items per batch. Default: `1`.
     pub fn batch_size(mut self, n: usize) -> Self {
         assert!(n > 0, "batch_size must be > 0");
-        self.batch_size = n;
+        self.settings.batch_size = n;
         self
     }
 
@@ -54,13 +63,13 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     /// Default: `2`.
     pub fn prefetch_depth(mut self, n: usize) -> Self {
         assert!(n > 0, "prefetch_depth must be > 0");
-        self.prefetch_depth = n;
+        self.settings.prefetch_depth = n;
         self
     }
 
     /// Whether to drop a non-full final batch. Default: `false`.
     pub fn drop_last(mut self, v: bool) -> Self {
-        self.drop_last = v;
+        self.settings.drop_last = v;
         self
     }
 
@@ -69,7 +78,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     /// Batches run on the loader's thread pool, built once and reused by every
     /// epoch. `0` (default) processes batches directly in `Iterator::next`.
     pub fn num_workers(mut self, n: usize) -> Self {
-        self.num_workers = n;
+        self.settings.num_workers = n;
         self
     }
 
@@ -85,7 +94,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     /// threads; sizing it for the machine is the caller's choice.
     pub fn items_in_parallel(mut self, n: usize) -> Self {
         assert!(n > 0, "items_in_parallel must be > 0");
-        self.items_in_parallel = n;
+        self.settings.items_in_parallel = n;
         self
     }
 
@@ -94,7 +103,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     /// the interpreter for its whole life).
     #[cfg(feature = "python")]
     pub(crate) fn thread_main(mut self, main: ThreadMain) -> Self {
-        self.thread_main = Some(main);
+        self.settings.thread_main = Some(main);
         self
     }
 
@@ -111,12 +120,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             dataset: self.dataset,
             sampler: self.sampler,
             collator: TorchPinnedCollator::new(self.collator, enabled),
-            batch_size: self.batch_size,
-            drop_last: self.drop_last,
-            prefetch_depth: self.prefetch_depth,
-            num_workers: self.num_workers,
-            items_in_parallel: self.items_in_parallel,
-            thread_main: self.thread_main,
+            settings: self.settings,
         }
     }
 
@@ -126,12 +130,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             dataset: self.dataset,
             sampler,
             collator: self.collator,
-            batch_size: self.batch_size,
-            drop_last: self.drop_last,
-            prefetch_depth: self.prefetch_depth,
-            num_workers: self.num_workers,
-            items_in_parallel: self.items_in_parallel,
-            thread_main: self.thread_main,
+            settings: self.settings,
         }
     }
 
@@ -141,12 +140,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             dataset: self.dataset,
             sampler: self.sampler,
             collator,
-            batch_size: self.batch_size,
-            drop_last: self.drop_last,
-            prefetch_depth: self.prefetch_depth,
-            num_workers: self.num_workers,
-            items_in_parallel: self.items_in_parallel,
-            thread_main: self.thread_main,
+            settings: self.settings,
         }
     }
 
@@ -157,19 +151,27 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         S: Sampler,
         C: Collator<D::Item>,
     {
+        let Settings {
+            batch_size,
+            drop_last,
+            prefetch_depth,
+            num_workers,
+            items_in_parallel,
+            thread_main,
+        } = self.settings;
         // One pool for batch-level and item-level work: num_workers batches,
         // each with items_in_parallel items in flight.
-        let threads = self.num_workers.max(1) * self.items_in_parallel;
-        let needs_pool = self.num_workers > 0 || self.items_in_parallel > 1;
-        let pool = needs_pool.then(|| LoaderPool::new(threads, self.thread_main));
+        let threads = num_workers.max(1) * items_in_parallel;
+        let needs_pool = num_workers > 0 || items_in_parallel > 1;
+        let pool = needs_pool.then(|| LoaderPool::new(threads, thread_main));
 
         DataLoader {
             dataset: Arc::new(self.dataset),
-            batch_sampler: BatchSampler::new(self.sampler, self.batch_size, self.drop_last),
+            batch_sampler: BatchSampler::new(self.sampler, batch_size, drop_last),
             collator: Arc::new(self.collator),
-            prefetch_depth: self.prefetch_depth,
-            num_workers: self.num_workers,
-            items_in_parallel: self.items_in_parallel,
+            prefetch_depth,
+            num_workers,
+            items_in_parallel,
             pool,
         }
     }
