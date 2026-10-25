@@ -22,7 +22,6 @@ where
     C: Collator<D::Item>,
 {
     epoch: Arc<Epoch<D, C>>,
-    pool: Arc<rayon::ThreadPool>,
     result_rx: Receiver<WorkerMsg<C::Batch>>,
     /// Results waiting to be returned in epoch order: batch `i` waits in slot
     /// `i % window`. Batches in flight or waiting always lie in
@@ -37,7 +36,7 @@ where
     C: Collator<D::Item>,
     C::Batch: Send + 'static,
 {
-    fn spawn(
+    fn new(
         dataset: &Arc<D>,
         collator: &Arc<C>,
         pool: &Arc<rayon::ThreadPool>,
@@ -59,10 +58,9 @@ where
             num_workers,
             result_tx,
         ));
-        epoch.spawn_tasks(pool);
+        epoch.spawn_tasks();
         Self {
             epoch,
-            pool: Arc::clone(pool),
             result_rx,
             reorder: std::iter::repeat_with(|| None).take(window).collect(),
             next_out: 0,
@@ -77,7 +75,7 @@ where
         loop {
             if let Some(batch) = self.reorder[self.next_out % window].take() {
                 self.next_out += 1;
-                self.epoch.advance(self.next_out, &self.pool);
+                self.epoch.advance(self.next_out);
                 return Some(batch);
             }
             match self.result_rx.recv() {
@@ -144,7 +142,6 @@ where
     /// Concrete types + monomorphized `process_batch` — no virtual dispatch.
     Direct {
         chunks: std::vec::IntoIter<Vec<usize>>,
-        remaining: usize,
         dataset: Arc<D>,
         collator: Arc<C>,
         items_in_parallel: usize,
@@ -182,7 +179,7 @@ where
         chunks: Vec<Vec<usize>>,
     ) -> Self {
         let inner = match pool {
-            Some(pool) if num_workers > 0 => Inner::Parallel(ParallelCore::spawn(
+            Some(pool) if num_workers > 0 => Inner::Parallel(ParallelCore::new(
                 dataset,
                 collator,
                 pool,
@@ -192,7 +189,6 @@ where
                 chunks,
             )),
             _ => Inner::Direct {
-                remaining: chunks.len(),
                 chunks: chunks.into_iter(),
                 dataset: Arc::clone(dataset),
                 collator: Arc::clone(collator),
@@ -202,14 +198,7 @@ where
         };
         Self { inner }
     }
-}
 
-impl<D, C> DataLoaderIter<D, C>
-where
-    D: Dataset,
-    C: Collator<D::Item>,
-    C::Batch: Send + 'static,
-{
     /// The next item if it is ready without waiting: `None` if `next` would
     /// wait for a worker, or do the work itself (direct path). Lets the
     /// Python binding keep the interpreter when a batch is already there.
@@ -234,14 +223,12 @@ where
         match &mut self.inner {
             Inner::Direct {
                 chunks,
-                remaining,
                 dataset,
                 collator,
                 items_in_parallel,
                 pool,
             } => {
                 let indices = chunks.next()?;
-                *remaining -= 1;
                 Some(process_batch(
                     &**dataset,
                     &indices,
@@ -256,7 +243,7 @@ where
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let n = match &self.inner {
-            Inner::Direct { remaining, .. } => *remaining,
+            Inner::Direct { chunks, .. } => chunks.len(),
             Inner::Parallel(core) => core.len(),
         };
         (n, Some(n))

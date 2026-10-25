@@ -163,56 +163,28 @@ where
     }
 
     fn claim(&self) -> Option<usize> {
-        let mut claim = self.next_claim.load(Ordering::SeqCst);
-        loop {
-            if !self.claimable(claim) {
-                return None;
-            }
-            match self.next_claim.compare_exchange_weak(
-                claim,
-                claim + 1,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
-                Ok(_) => return Some(claim),
-                Err(current) => claim = current,
-            }
-        }
+        increment_if(&self.next_claim, |claim| self.claimable(claim))
     }
 
-    fn try_reserve_task(&self) -> bool {
-        // A plain CAS loop rather than `fetch_update`, which newer clippy
-        // rewrites to `try_update` (Rust 1.95+, above the MSRV).
-        let mut running = self.tasks.load(Ordering::SeqCst);
-        loop {
-            if running >= self.max_tasks {
-                return false;
-            }
-            match self.tasks.compare_exchange_weak(
-                running,
-                running + 1,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
-                Ok(_) => return true,
-                Err(current) => running = current,
-            }
-        }
+    /// Reserve a task if a batch is claimable and fewer than `max_tasks` run.
+    fn reserve_task(&self) -> bool {
+        self.claimable(self.next_claim.load(Ordering::SeqCst))
+            && increment_if(&self.tasks, |running| running < self.max_tasks).is_some()
     }
 
-    /// Start batch tasks on `pool` until `max_tasks` run or nothing is
-    /// claimable. Costs a few atomic loads when all tasks are running.
-    pub(super) fn spawn_tasks(self: &Arc<Self>, pool: &rayon::ThreadPool) {
-        while self.claimable(self.next_claim.load(Ordering::SeqCst)) && self.try_reserve_task() {
+    /// Start batch tasks until `max_tasks` run or nothing is claimable.
+    /// Costs a few atomic loads when all tasks are running.
+    pub(super) fn spawn_tasks(self: &Arc<Self>) {
+        while self.reserve_task() {
             let epoch = Arc::clone(self);
-            pool.spawn(move || epoch.run());
+            self.pool.spawn(move || epoch.run());
         }
     }
 
     /// Publish the consumer's position, opening the window for more batches.
-    pub(super) fn advance(self: &Arc<Self>, next_out: usize, pool: &rayon::ThreadPool) {
+    pub(super) fn advance(self: &Arc<Self>, next_out: usize) {
         self.next_out.store(next_out, Ordering::SeqCst);
-        self.spawn_tasks(pool);
+        self.spawn_tasks();
     }
 
     pub(super) fn cancel(&self) {
@@ -244,10 +216,29 @@ where
             // The consumer may have advanced after our last failed claim but
             // before we left; if so, it may also have seen us still running
             // and not started a replacement. Re-check and resume.
-            if !(self.claimable(self.next_claim.load(Ordering::SeqCst)) && self.try_reserve_task())
-            {
+            if !self.reserve_task() {
                 return;
             }
         }
     }
+}
+
+/// Increment `counter` if `allowed` accepts its value, and return that value.
+///
+/// A plain CAS loop rather than `fetch_update`, which newer clippy rewrites
+/// to `try_update` (Rust 1.95+, above the MSRV).
+fn increment_if(counter: &AtomicUsize, allowed: impl Fn(usize) -> bool) -> Option<usize> {
+    let mut current = counter.load(Ordering::SeqCst);
+    while allowed(current) {
+        match counter.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => return Some(current),
+            Err(actual) => current = actual,
+        }
+    }
+    None
 }
