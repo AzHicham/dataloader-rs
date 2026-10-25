@@ -46,8 +46,12 @@ where
         chunks: Vec<Vec<usize>>,
     ) -> Self {
         let (result_tx, result_rx) = unbounded();
-        // Batches in flight: one per worker plus the prefetch depth.
-        let window = num_workers + prefetch_depth;
+        // Batches in flight: one per worker plus the prefetch depth, and no
+        // more than the epoch has, so a huge prefetch_depth allocates nothing.
+        let window = num_workers
+            .saturating_add(prefetch_depth)
+            .min(chunks.len())
+            .max(1);
         let epoch = Arc::new(Epoch::new(
             Arc::clone(dataset),
             Arc::clone(collator),

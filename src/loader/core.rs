@@ -659,6 +659,19 @@ mod tests {
     }
 
     #[test]
+    fn huge_prefetch_depth_neither_allocates_nor_wraps() {
+        for depth in [1 << 40, usize::MAX] {
+            let mut loader = DataLoader::builder(CountingDs { len: 10 })
+                .batch_size(3)
+                .num_workers(1)
+                .prefetch_depth(depth)
+                .build();
+            let batches: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
+            assert_eq!(batches.len(), 4);
+        }
+    }
+
+    #[test]
     fn early_drop_does_not_hang() {
         let mut loader = DataLoader::builder(CountingDs { len: 100 })
             .batch_size(5)

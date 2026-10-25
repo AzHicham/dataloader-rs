@@ -62,6 +62,11 @@ impl PyDataloader {
         if items_in_parallel == 0 {
             return Err(PyValueError::new_err("items_in_parallel must be > 0"));
         }
+        if num_workers.max(1).checked_mul(items_in_parallel).is_none() {
+            return Err(PyValueError::new_err(
+                "num_workers * items_in_parallel is too large",
+            ));
+        }
 
         let sampler = match sampler {
             Some(sampler) => PySampler::python(py, sampler)?,

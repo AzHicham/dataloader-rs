@@ -161,7 +161,10 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         } = self.settings;
         // One pool for batch-level and item-level work: num_workers batches,
         // each with items_in_parallel items in flight.
-        let threads = num_workers.max(1) * items_in_parallel;
+        let threads = num_workers
+            .max(1)
+            .checked_mul(items_in_parallel)
+            .expect("num_workers × items_in_parallel overflows usize");
         let needs_pool = num_workers > 0 || items_in_parallel > 1;
         let pool = needs_pool.then(|| LoaderPool::new(threads, thread_main));
 

@@ -173,3 +173,17 @@ def test_len_propagates_sampler_len_error():
     loader = DataLoader(ListDataset(range(10)), batch_size=2, sampler=_BadLenSampler())
     with pytest.raises(OSError, match="sampler index missing"):
         len(loader)
+
+
+def test_huge_prefetch_depth_works():
+    """The reorder buffer holds at most the epoch's batches, whatever prefetch_depth says."""
+    for depth in (10**12, 2**64 - 1):
+        loader = DataLoader(
+            ListDataset(range(8)), batch_size=2, num_workers=1, prefetch_depth=depth
+        )
+        assert list(loader) == [[0, 1], [2, 3], [4, 5], [6, 7]]
+
+
+def test_rejects_thread_count_overflow():
+    with pytest.raises(ValueError, match="too large"):
+        DataLoader(ListDataset(range(4)), num_workers=2**63, items_in_parallel=4)
