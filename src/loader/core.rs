@@ -29,6 +29,12 @@ pub struct DataLoader<D, S: Sampler, C> {
 /// inside some per-thread setup.
 pub(crate) type ThreadMain = fn(rayon::ThreadBuilder);
 
+/// Stack size of a pool thread: a main thread's usual 8 MiB rather than the
+/// 2 MiB of a spawned Rust thread, so a dataset recurses as deep as it would
+/// on the caller's thread (CPython 3.14+ sizes its recursion limit from the
+/// real stack). Only the pages a thread touches take memory.
+const THREAD_STACK_SIZE: usize = 8 << 20;
+
 /// The loader's rayon pool, rebuilt after a `fork()`.
 ///
 /// A forked child inherits the pool but none of its threads, so batch tasks
@@ -46,6 +52,7 @@ impl LoaderPool {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .thread_name(|i| format!("dataloader-{i}"))
+            .stack_size(THREAD_STACK_SIZE)
             .spawn_handler(move |thread| {
                 let mut builder = std::thread::Builder::new();
                 if let Some(name) = thread.name() {

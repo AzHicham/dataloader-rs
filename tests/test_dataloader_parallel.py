@@ -11,6 +11,7 @@ Tests verify:
   - the interpreter exits cleanly with loaders still alive
 """
 
+import json
 import multiprocessing
 import signal
 import subprocess
@@ -20,6 +21,7 @@ import time
 import pytest
 
 from dataloader_rs import PyDataloader as DataLoader
+from dataloader_rs import PyDataset
 from tests.py_dataloader_test_utils import (
     ListDataset,
     all_items,
@@ -274,3 +276,26 @@ def test_par_ctrl_c_interrupts_a_wait_for_the_next_batch():
         proc.kill()
     assert out.strip() == "interrupted", err
     assert time.monotonic() - start < 2
+
+
+# ── thread stacks ─────────────────────────────────────────────────────────────
+
+
+class _DeepJson(PyDataset):
+    """Parses JSON nested 20 000 levels deep: within a main thread's stack on CPython 3.14+."""
+
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, index):
+        try:
+            json.loads("[" * 20_000 + "]" * 20_000)
+        except RecursionError:
+            return "RecursionError"
+        return "ok"
+
+
+def test_par_workers_recurse_as_deep_as_the_main_thread():
+    """A worker's stack is a main thread's: deep recursion succeeds, or fails, the same way."""
+    expected = _DeepJson()[0]
+    assert list(DataLoader(_DeepJson(), num_workers=1)) == [[expected]]
