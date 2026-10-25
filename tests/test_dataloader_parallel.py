@@ -12,8 +12,10 @@ Tests verify:
 """
 
 import multiprocessing
+import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -228,3 +230,47 @@ def test_par_interpreter_exits_cleanly_with_live_loaders(script):
     assert result.stdout.strip() == "ok"
     assert "Fatal Python error" not in result.stderr
     assert "panicked" not in result.stderr
+
+
+# ── signals ───────────────────────────────────────────────────────────────────
+
+_SLOW_BATCH = """
+from dataloader_rs import PyDataloader, PyDataset
+import time
+
+class Slow(PyDataset):
+    def __len__(self):
+        return 4
+
+    def __getitem__(self, index):
+        time.sleep(30)
+        return index
+
+it = iter(PyDataloader(Slow(), num_workers=1))
+print("waiting", flush=True)
+try:
+    next(it)
+except KeyboardInterrupt:
+    print("interrupted", flush=True)
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals")
+def test_par_ctrl_c_interrupts_a_wait_for_the_next_batch():
+    """SIGINT while next() waits on a slow batch raises KeyboardInterrupt within moments."""
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _SLOW_BATCH],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stdout.readline().strip() == "waiting"
+        time.sleep(0.3)
+        start = time.monotonic()
+        proc.send_signal(signal.SIGINT)
+        out, err = proc.communicate(timeout=10)
+    finally:
+        proc.kill()
+    assert out.strip() == "interrupted", err
+    assert time.monotonic() - start < 2

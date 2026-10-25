@@ -1,5 +1,9 @@
 use std::sync::Arc;
+#[cfg(feature = "python")]
+use std::time::Instant;
 
+#[cfg(feature = "python")]
+use crossbeam_channel::RecvTimeoutError;
 use crossbeam_channel::{Receiver, unbounded};
 
 use crate::{
@@ -89,15 +93,26 @@ where
         }
     }
 
-    /// The next batch if it has already arrived; `None` if `next` would wait.
+    /// The next batch if it arrives by `deadline`, or (`None`) if it has
+    /// already arrived; `None` if not, so that the caller can wait again.
     #[cfg(feature = "python")]
-    fn try_next(&mut self) -> Option<Option<Result<C::Batch>>> {
+    fn next_until(&mut self, deadline: Option<Instant>) -> Option<Option<Result<C::Batch>>> {
         if self.next_out == self.epoch.len() {
             return Some(None);
         }
         let window = self.reorder.len();
         while self.reorder[self.next_out % window].is_none() {
-            self.store(self.result_rx.try_recv().ok()?);
+            let msg = match deadline {
+                None => self.result_rx.try_recv().ok()?,
+                Some(deadline) => match self.result_rx.recv_deadline(deadline) {
+                    Ok(msg) => msg,
+                    Err(RecvTimeoutError::Timeout) => return None,
+                    // The epoch holds a sender, so this does not happen; `next`
+                    // ends the epoch in that case too.
+                    Err(RecvTimeoutError::Disconnected) => return Some(None),
+                },
+            };
+            self.store(msg);
         }
         Some(self.next())
     }
@@ -203,15 +218,21 @@ where
         Self { inner }
     }
 
-    /// The next item if it is ready without waiting: `None` if `next` would
-    /// wait for a worker, or do the work itself (direct path). Lets the
-    /// Python binding keep the interpreter when a batch is already there.
+    /// The next item if it is ready by `deadline`, or (`None`) right away;
+    /// `None` if not. Lets the Python binding keep the interpreter when a
+    /// batch is already there, and wait in slices that signals can end.
+    ///
+    /// The direct path fetches the batch itself: it never has one ready, and
+    /// given a deadline it does the work, which no deadline can cut short.
     #[cfg(feature = "python")]
-    pub(crate) fn try_next(&mut self) -> Option<Option<Result<C::Batch>>> {
-        match &mut self.inner {
-            Inner::Parallel(core) => core.try_next(),
-            Inner::Direct { .. } => None,
+    pub(crate) fn next_until(
+        &mut self,
+        deadline: Option<Instant>,
+    ) -> Option<Option<Result<C::Batch>>> {
+        if let Inner::Parallel(core) = &mut self.inner {
+            return core.next_until(deadline);
         }
+        deadline.map(|_| self.next())
     }
 }
 

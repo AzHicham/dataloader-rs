@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use pyo3::prelude::*;
 use pyo3::{PyTraverseError, PyVisit};
 
@@ -7,6 +9,10 @@ use crate::python::dataset::{Fetcher, PyDataset};
 use crate::python::into_py_err;
 
 type CorePyDataloaderIter = crate::loader::DataLoaderIter<PyDataset, PyCollator>;
+
+/// How long `__next__` waits with the interpreter released before it runs
+/// signal handlers: Ctrl-C ends a wait within this.
+const SIGNAL_CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
 pub(crate) enum PyIterInner {
     /// Sequential (num_workers=0): call Python directly in `__next__` using the
@@ -52,12 +58,20 @@ impl PyDataloaderIter {
 
             PyIterInner::Threaded(inner) => {
                 // A batch that already arrived is taken without releasing the
-                // interpreter; otherwise wait with it released, so workers can
-                // attach. A worker's panic unwinds from here to PyO3, which
+                // interpreter. Otherwise wait with it released, so workers can
+                // attach, in slices: between two, signal handlers run, so
+                // Ctrl-C raises `KeyboardInterrupt` here and the iterator stays
+                // usable. A worker's panic unwinds from here to PyO3, which
                 // raises it; the epoch is then over.
-                let next = match inner.try_next() {
+                let next = match inner.next_until(None) {
                     Some(next) => next,
-                    None => py.detach(|| inner.next()),
+                    None => loop {
+                        let deadline = Instant::now() + SIGNAL_CHECK_INTERVAL;
+                        if let Some(next) = py.detach(|| inner.next_until(Some(deadline))) {
+                            break next;
+                        }
+                        py.check_signals()?;
+                    },
                 };
                 let Some(batch) = next else {
                     return Ok(None);
