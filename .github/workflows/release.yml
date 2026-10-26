@@ -36,21 +36,34 @@ jobs:
         with:
           targets: semantic-release-cargo/semantic-release-cargo@v2.2.30
 
+      # semantic-release 25 and its changelog and git plugins need Node.js
+      # 22.22.2+ or 24.15+.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          # Like the release builds, restore no cache.
+          package-manager-cache: false
+
+      # npx rather than cycjimmy/semantic-release-action, which warns on every
+      # release that the repository has no package.json: its only way to
+      # silence that, skip_npm_plugin, replaces the plugins in .releaserc.
       - name: Semantic Release
-        uses: cycjimmy/semantic-release-action@d9bf53a078bd2f86aaffaec796dbb3d28f1b6f34 # v8.1.3
         env:
           GITHUB_TOKEN: ${{ secrets.SCOPED_GITHUB_TOKEN }}
-        with:
-          semantic_version: 25.0.9
+          # None of these packages needs an install script.
+          NPM_CONFIG_IGNORE_SCRIPTS: "true"
           # Dry-run on dev: analyze commits and report the next version without
           # creating tags, GitHub releases, or pushing anything.
-          dry_run: ${{ github.ref_name == 'dev' }}
-          # The conventionalcommits preset stays on 9.x: 10 needs
-          # conventional-changelog-writer 9, and the release notes generator
-          # of semantic-release 25 still loads writer 8.
-          extra_plugins: |
-            @semantic-release/changelog@7.0.0
-            @semantic-release/git@11.0.1
-            @semantic-release/exec@7.1.0
-            conventional-changelog-conventionalcommits@9.3.1
-            @saithodev/semantic-release-backmerge@4.0.1
+          DRY_RUN: ${{ github.ref_name == 'dev' }}
+        # The conventionalcommits preset stays on 9.x: 10 needs
+        # conventional-changelog-writer 9, and the release notes generator of
+        # semantic-release 25 still loads writer 8.
+        run: >-
+          npx --yes
+          -p semantic-release@25.0.9
+          -p @semantic-release/changelog@7.0.0
+          -p @semantic-release/git@11.0.1
+          -p @semantic-release/exec@7.1.0
+          -p conventional-changelog-conventionalcommits@9.3.1
+          -p @saithodev/semantic-release-backmerge@4.0.1
+          semantic-release --dry-run="$DRY_RUN"
