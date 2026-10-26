@@ -153,14 +153,12 @@ jobs:
 
   # ── Publish to crates.io — real releases only ────────────────────────────
   # The `crates-io` environment holds the deployment until a maintainer
-  # approves it, and only deploys version tags. Like publish-pypi, it waits
-  # for every Python artifact, so a release that fails to build reaches
-  # neither registry.
+  # approves it, and only deploys version tags. The crate does not depend on
+  # the Python artifacts, so it publishes in parallel with the wheel builds.
   publish-crates:
     name: Publish to crates.io
     if: github.event_name == 'release'
     runs-on: ubuntu-26.04
-    needs: [build-wheels, build-sdist]
     environment: crates-io
 
     steps:
