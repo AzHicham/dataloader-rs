@@ -23,7 +23,7 @@ jobs:
       id-token: write       # OIDC provenance
 
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Use a PAT so that the release commit created by semantic-release
           # triggers subsequent workflows (GITHUB_TOKEN commits do not).
@@ -32,12 +32,12 @@ jobs:
       # semantic-release-cargo updates Cargo.toml + Cargo.lock with the new
       # version number as part of the release prepare step.
       - name: Install semantic-release-cargo
-        uses: EricCrosson/install-github-release-binary@v2
+        uses: EricCrosson/install-github-release-binary@679a6508ba13bc1eac11e387f729a8bc421ac07a # v2
         with:
           targets: semantic-release-cargo/semantic-release-cargo@v2.2.30
 
       - name: Semantic Release
-        uses: cycjimmy/semantic-release-action@v8.1.3
+        uses: cycjimmy/semantic-release-action@d9bf53a078bd2f86aaffaec796dbb3d28f1b6f34 # v8.1.3
         env:
           GITHUB_TOKEN: ${{ secrets.SCOPED_GITHUB_TOKEN }}
         with:
