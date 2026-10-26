@@ -7,7 +7,21 @@
   "pre-commit": {
     "enabled": true
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "npm packages that the release workflow runs with npx",
+      "managerFilePatterns": ["/^\\.github/workflows/release\\.yml$/"],
+      "matchStrings": ["-p (?<depName>@?[^@\\s]+)@(?<currentValue>\\S+)"],
+      "datasourceTemplate": "npm"
+    }
+  ],
   "packageRules": [
+    {
+      "description": "Preset 10 needs conventional-changelog-writer 9; the release notes generator of semantic-release 25 still loads writer 8",
+      "matchPackageNames": ["conventional-changelog-conventionalcommits"],
+      "allowedVersions": "<10"
+    },
     {
       "matchUpdateTypes": ["major"],
       "addLabels": ["major"]
