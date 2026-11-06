@@ -43,6 +43,12 @@ jobs:
           - bench_items_in_parallel
           - bench_real_world
           - bench_first_batch
+          - bench_collate_into
+          - bench_image
+        # Cargo features a bench needs (its `required-features`).
+        include:
+          - bench: bench_image
+            features: image
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -63,9 +69,15 @@ jobs:
         # without sample.json; Criterion then prints "Criterion.rs ERROR" in the
         # middle of each bencher line and no result can be parsed. Comparison is
         # done by github-action-benchmark, so local baselines are not needed.
+        #
+        # A bench new to the suite has no previous result on gh-pages:
+        # github-action-benchmark skips it when looking for alerts, and stores
+        # it as the first point.
+        env:
+          FEATURES: ${{ matrix.features }}
         run: |
           rm -rf target/criterion
-          cargo bench --bench ${{ matrix.bench }} \
+          cargo bench --bench ${{ matrix.bench }} ${FEATURES:+--features "$FEATURES"} \
             -- --output-format bencher \
             | tee ${{ matrix.bench }}.txt
 
