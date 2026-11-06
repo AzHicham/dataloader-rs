@@ -104,7 +104,7 @@ struct PoolState<B> {
 
 /// A bounded pool of batch buffers, shared by the collator and the batches.
 ///
-/// [`acquire`](Self::acquire) hands out a free buffer, allocates a new one
+/// Acquiring a buffer hands out a free one, allocates a new one
 /// while fewer than `capacity` exist, and otherwise **blocks** until a batch
 /// is dropped: memory never grows beyond `capacity` buffers. Buffers are
 /// allocated lazily, so a large capacity costs nothing until it is used.
