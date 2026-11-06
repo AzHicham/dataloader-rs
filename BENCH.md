@@ -472,6 +472,27 @@ arithmetic (a 256-entry table per channel), not the decode.
   3.14t and 3.15t, 1.16–1.19× torch's persistent processes; that ratio spreads from about 0.94×
   to 1.23× between runs (section 8). On 3.13 the GIL serialises them.
 
+### 5.5 Images: `ImageCollator` against Pillow + torchvision
+
+`bench/image_pipeline.py`: 64 lossless WebP of 224×224 (116 KiB each) per batch, decoded to RGB,
+then `ToTensor` + `Normalize` into a float32 64×3×224×224 batch; 8 batches per epoch, median of 5
+epochs after a warm-up, on the 8 E-cores (`taskset -c 12-19`). `rs-list` is a `list` of bytes
+(no Python per item), `rs-dataset` a `PyDataset` returning bytes; `torch` is a torch `DataLoader`
+(persistent worker processes) whose `Dataset` runs `Image.open(...).convert("RGB")` and the
+torchvision transforms. Both produce the same values (max |Δ| 0). Items per second:
+
+| num_workers | 3.13 rs-list | 3.13 rs-dataset | 3.13 torch | 3.14t rs-list | 3.14t rs-dataset | 3.14t torch |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 817 | 820 | 430 | 783 | 785 | 434 |
+| 2 | 1,606 | 1,571 | 819 | 1,547 | 1,570 | 848 |
+| 4 | 2,999 | 2,963 | 1,422 | 2,799 | 2,975 | 1,391 |
+| 8 | 4,944 | 5,384 | 1,914 | 4,760 | 4,980 | 1,795 |
+
+The Rust pipeline runs without the GIL, so the GIL build scales like the free-threaded one: 6.0×
+from 0 to 8 workers on 3.13 against 4.5× for torch's processes, and 2.6–2.8× torch's throughput
+at 8 workers on either build. Fetching the bytes through `__getitem__` costs nothing measurable
+here (`rs-dataset` against `rs-list`; the two differ by run-to-run noise).
+
 ## 6. Results: Python regression guards
 
 `bench/test_bench_*.py` on 3.14t, the CI's interpreter, pinned to 4 cores; median per round.
