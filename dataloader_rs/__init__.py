@@ -1,6 +1,17 @@
 import atexit
 
-from .dataloader_rs import PyDataloader, PyDataloaderIter, _keep_pools_alive
+from .dataloader_rs import (
+    Crop,
+    ImageBatch,
+    ImageCollator,
+    Normalize,
+    Pad,
+    PyDataloader,
+    PyDataloaderIter,
+    Resize,
+    ToFloat,
+    _keep_pools_alive,
+)
 from .dataloader_rs import PyDatasetBase as PyDataset
 
 # Keep the loaders' thread pools alive while the interpreter shuts down: a
@@ -12,4 +23,11 @@ __all__ = [
     "PyDataset",
     "PyDataloader",
     "PyDataloaderIter",
+    "ImageCollator",
+    "ImageBatch",
+    "Resize",
+    "Crop",
+    "Pad",
+    "ToFloat",
+    "Normalize",
 ]

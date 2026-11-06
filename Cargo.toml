@@ -19,7 +19,8 @@ crate-type = ["rlib", "cdylib"]
 default = []
 ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
-python = ["dep:pyo3"]
+# The Python package ships the image pipeline.
+python = ["dep:pyo3", "image"]
 image = ["dep:image", "dep:half", "dep:fast_image_resize"]
 
 

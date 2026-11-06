@@ -9,16 +9,188 @@ PyDataloader     Main entry point.  Mirrors the ``torch.utils.data.DataLoader``
                  constructor signature for the parameters it supports.
 PyDataloaderIter Iterator returned by ``PyDataloader.__iter__``.  Supports
                  ``len()`` (number of batches remaining in the current epoch).
+ImageCollator    ``collate_fn`` that decodes, transforms and collates encoded
+                 images in Rust, without the GIL; batches are ``ImageBatch``.
+ImageBatch       A batch in a pooled buffer: ``numpy.asarray(batch)`` and
+                 ``torch.from_dlpack(batch)`` view it without copying.
+Resize, Crop, Pad, ToFloat, Normalize
+                 The operations of an ``ImageCollator``.
 """
 
-from collections.abc import Callable, Iterable
-from typing import Any
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any, Literal
 
 __all__ = [
     "PyDataset",
     "PyDataloader",
     "PyDataloaderIter",
+    "ImageCollator",
+    "ImageBatch",
+    "Resize",
+    "Crop",
+    "Pad",
+    "ToFloat",
+    "Normalize",
 ]
+
+ResizeFilter = Literal["nearest", "box", "bilinear", "hamming", "bicubic", "mitchell", "lanczos3"]
+
+class Resize:
+    """Resize to ``width x height`` (fast_image_resize convolution; antialiased).
+
+    ``filter`` defaults to ``"bilinear"`` (Pillow's ``BILINEAR``, torchvision's
+    default with ``antialias=True``); ``"lanczos"`` is accepted for ``"lanczos3"``.
+    """
+
+    width: int
+    height: int
+    filter: ResizeFilter
+    def __init__(self, width: int, height: int, filter: ResizeFilter = "bilinear") -> None: ...
+
+class Crop:
+    """Keep the ``width x height`` region whose top-left pixel is (``left``, ``top``).
+
+    A region that leaves the image is an error for its batch.
+    """
+
+    left: int
+    top: int
+    width: int
+    height: int
+    def __init__(self, left: int, top: int, width: int, height: int) -> None: ...
+
+class Pad:
+    """Grow the image to ``width x height``, image at the top left, ``fill`` elsewhere.
+
+    An image larger than the target is an error for its batch.
+    """
+
+    width: int
+    height: int
+    fill: int
+    def __init__(self, width: int, height: int, fill: int = 0) -> None: ...
+
+class ToFloat:
+    """Divide by 255: values in ``[0, 1]``, as torchvision's ``ToTensor``."""
+
+    def __init__(self) -> None: ...
+
+class Normalize:
+    """``(x - mean[c]) / std[c]`` per channel, as torchvision's ``Normalize``.
+
+    One value applies to every channel.
+    """
+
+    mean: list[float]
+    std: list[float]
+    def __init__(self, mean: Sequence[float], std: Sequence[float]) -> None: ...
+
+ImageOp = Resize | Crop | Pad | ToFloat | Normalize
+
+class ImageCollator:
+    """Decode, transform and collate encoded images in Rust.
+
+    Pass it as ``collate_fn`` to :class:`PyDataloader`. The dataset is a
+    ``list`` of ``bytes`` (or of ``(bytes, meta)`` pairs), read without any
+    Python per item, or a :class:`PyDataset` whose ``__getitem__`` returns
+    ``bytes`` or ``(bytes, meta)``. PNG, JPEG and WebP are detected from the
+    bytes. Decoding, the operations and collation run on the loader's threads
+    with the GIL released (on GIL builds too); Python only runs to fetch the
+    bytes. Every batch is an :class:`ImageBatch`.
+
+    Parameters
+    ----------
+    ops:
+        Operations in order. Geometric ones (``Resize``, ``Crop``, ``Pad``)
+        come before ``ToFloat`` and ``Normalize``. The sample size must be
+        known: end the geometric operations with a resize, crop or pad, or
+        set *input_size*.
+    channels:
+        ``"rgb"`` (gray replicated, alpha dropped, as Pillow's
+        ``convert("RGB")``) or ``"gray"`` (Pillow's ``convert("L")``).
+    dtype:
+        ``"float32"``, ``"float16"`` or ``"uint8"`` (no value operation).
+    layout:
+        ``"nchw"`` (PyTorch) or ``"nhwc"``.
+    input_size:
+        ``(width, height)`` every image must have; another size fails its batch.
+    max_width, max_height, max_bytes:
+        Bounds checked against the image header before decoding, and against
+        every size of the pipeline.
+
+    Raises
+    ------
+    ValueError
+        If the pipeline is invalid; the message names the operation.
+    TypeError
+        If an element of *ops* is not an operation.
+    """
+
+    def __init__(
+        self,
+        ops: Sequence[ImageOp] = (),
+        *,
+        channels: Literal["rgb", "gray"] = "rgb",
+        dtype: Literal["float32", "float16", "uint8"] = "float32",
+        layout: Literal["nchw", "nhwc"] = "nchw",
+        input_size: tuple[int, int] | None = None,
+        max_width: int = 16384,
+        max_height: int = 16384,
+        max_bytes: int = 268435456,
+    ) -> None: ...
+    @property
+    def sample_shape(self) -> tuple[int, int, int]:
+        """``(C, H, W)`` for ``"nchw"``, ``(H, W, C)`` for ``"nhwc"``."""
+        ...
+
+    @property
+    def dtype(self) -> str:
+        """``"float32"``, ``"float16"`` or ``"uint8"``."""
+        ...
+
+class ImageBatch:
+    """A batch an :class:`ImageCollator` wrote into a buffer of the loader's pool.
+
+    ``numpy.asarray(batch)`` (``__array_interface__``) and
+    ``torch.from_dlpack(batch)`` are views of the buffer: no copy, writable.
+    A view keeps the batch alive; the buffer returns to the pool once the
+    batch and all its views are gone. ``PyDataloader`` raises
+    ``RuntimeError`` rather than wait when *max_held_batches* batches are
+    still alive: copy what you keep (``numpy.array(batch)``).
+    """
+
+    def __len__(self) -> int:
+        """Samples in this batch (fewer than ``batch_size`` for a last, partial one)."""
+        ...
+
+    @property
+    def shape(self) -> tuple[int, int, int, int]:
+        """``(n, C, H, W)`` or ``(n, H, W, C)``."""
+        ...
+
+    @property
+    def dtype(self) -> str: ...
+    @property
+    def meta(self) -> list[Any]:
+        """The ``meta`` of ``(bytes, meta)`` samples, else ``None``, in batch order."""
+        ...
+
+    @property
+    def sizes(self) -> list[tuple[int, int]]:
+        """The decoded ``(width, height)`` of each sample, before any operation."""
+        ...
+
+    @property
+    def __array_interface__(self) -> dict[str, Any]: ...
+    def numpy(self) -> Any:
+        """``numpy.asarray(self)``: a ``numpy.ndarray`` view, no copy (needs NumPy)."""
+        ...
+
+    def __dlpack__(self, **kwargs: Any) -> Any:
+        """DLPack capsule (through NumPy's export) viewing the buffer."""
+        ...
+
+    def __dlpack_device__(self) -> tuple[int, int]: ...
 
 class PyDataset:
     """Base class for map-style datasets.
@@ -94,7 +266,9 @@ class PyDataloader:
     collate_fn:
         A callable ``(list[sample]) -> batch`` that merges individual samples
         into a single batch object.  When ``None`` (default) each batch is a
-        plain ``list`` of samples.
+        plain ``list`` of samples. An :class:`ImageCollator` instead decodes
+        and collates encoded images in Rust, and *dataset* may then also be a
+        ``list`` of ``bytes``; batches are :class:`ImageBatch`.
     drop_last:
         If ``True``, drop the last batch when the dataset size is not divisible
         by *batch_size*. Default: ``False``.
@@ -124,16 +298,17 @@ class PyDataloader:
 
     def __init__(
         self,
-        dataset: PyDataset,
+        dataset: PyDataset | Sequence[bytes | tuple[bytes, Any]],
         batch_size: int = 1,
         prefetch_depth: int = 2,
         shuffle: bool = False,
         sampler: Iterable[int] | None = None,
         num_workers: int = 0,
-        collate_fn: Callable[[list[Any]], Any] | None = None,
+        collate_fn: Callable[[list[Any]], Any] | ImageCollator | None = None,
         drop_last: bool = False,
         seed: int | None = None,
         items_in_parallel: int = 1,
+        max_held_batches: int = 2,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""

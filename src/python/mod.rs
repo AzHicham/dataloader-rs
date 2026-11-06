@@ -3,12 +3,14 @@
 mod collator;
 mod dataloader;
 mod dataset;
+mod image;
 mod iterator;
 mod pool;
 mod sampler;
 
 use dataloader::PyDataloader;
 use dataset::PyDatasetBase;
+use image::{PyCrop, PyImageBatch, PyImageCollator, PyNormalize, PyPad, PyResize, PyToFloat};
 use iterator::PyDataloaderIter;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
@@ -29,6 +31,13 @@ fn dataloader_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDataloader>()?;
     m.add_class::<PyDataloaderIter>()?;
     m.add_class::<PyDatasetBase>()?;
+    m.add_class::<PyImageCollator>()?;
+    m.add_class::<PyImageBatch>()?;
+    m.add_class::<PyResize>()?;
+    m.add_class::<PyCrop>()?;
+    m.add_class::<PyPad>()?;
+    m.add_class::<PyToFloat>()?;
+    m.add_class::<PyNormalize>()?;
     m.add_function(wrap_pyfunction!(pool::keep_pools_alive, m)?)?;
     Ok(())
 }
