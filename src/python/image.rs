@@ -23,6 +23,7 @@ use crate::image::{
     ImageLimits, ImageTransform, Layout, Op, ResizeFilter, SampleInfo,
 };
 use crate::python::dataset::{Fetcher, PyDataset, get_item_py, len_py};
+use crate::python::source::{FetchSource, PySource, SourceItems};
 
 // ── Operations ───────────────────────────────────────────────────────────────
 
@@ -390,12 +391,42 @@ pub(crate) struct MemoryImages {
     metas: Vec<Option<Py<PyAny>>>,
 }
 
+impl MemoryImages {
+    /// `bytes[i]` with `metas[i]`; both have the same length.
+    pub(crate) fn new(bytes: Vec<PyBackedBytes>, metas: Vec<Option<Py<PyAny>>>) -> Self {
+        debug_assert_eq!(bytes.len(), metas.len());
+        Self { bytes, metas }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    pub(crate) fn bytes(&self, index: usize) -> &[u8] {
+        &self.bytes[index]
+    }
+
+    pub(crate) fn meta(&self, index: usize) -> Option<&Py<PyAny>> {
+        self.metas.get(index).and_then(Option::as_ref)
+    }
+
+    pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> StdResult<(), PyTraverseError> {
+        self.metas.iter().try_for_each(|meta| visit.call(meta))
+    }
+}
+
 /// Where an image loader gets its encoded images.
 pub(crate) enum ImageSource {
     /// A `PyDataset` whose items are `bytes` or `(bytes, meta)`.
     Python(PyDataset),
     /// A `list` of `bytes` or `(bytes, meta)`, read once.
     Memory(Arc<MemoryImages>),
+    /// A `Source`: Rust fetches the items itself. Its metadata is reported to the garbage
+    /// collector by `object` only.
+    Source {
+        object: Py<PySource>,
+        items: SourceItems,
+    },
 }
 
 /// `bytes` / `bytearray`, or a `(bytes, meta)` pair.
@@ -418,6 +449,12 @@ fn split_item(item: &Bound<'_, PyAny>) -> PyResult<(PyBackedBytes, Option<Py<PyA
 impl ImageSource {
     /// A `PyDataset`, or a `list` / `tuple` of samples read now.
     pub(crate) fn new(dataset: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if let Ok(source) = dataset.cast::<PySource>() {
+            return Ok(Self::Source {
+                items: source.get().items().clone(),
+                object: source.clone().unbind(),
+            });
+        }
         if let Ok(dataset) = dataset.extract::<PyDataset>() {
             return Ok(Self::Python(dataset));
         }
@@ -438,7 +475,7 @@ impl ImageSource {
     pub(crate) fn python(&self) -> Option<&PyDataset> {
         match self {
             Self::Python(dataset) => Some(dataset),
-            Self::Memory(_) => None,
+            Self::Memory(_) | Self::Source { .. } => None,
         }
     }
 
@@ -446,7 +483,8 @@ impl ImageSource {
     pub(crate) fn traverse(&self, visit: &PyVisit<'_>) -> StdResult<(), PyTraverseError> {
         match self {
             Self::Python(dataset) => visit.call(dataset),
-            Self::Memory(images) => images.metas.iter().try_for_each(|meta| visit.call(meta)),
+            Self::Memory(images) => images.traverse(visit),
+            Self::Source { object, .. } => visit.call(object),
         }
     }
 
@@ -466,19 +504,27 @@ pub(crate) enum PyImageItem {
         images: Arc<MemoryImages>,
         index: usize,
     },
+    /// Fetched by a `Source`, without the interpreter.
+    Fetched {
+        bytes: Vec<u8>,
+        source: Arc<FetchSource>,
+        index: usize,
+    },
 }
 
 /// The metadata of a sample, resolved to a Python object when Python asks for it.
 pub(crate) enum PyMeta {
     Owned(Option<Py<PyAny>>),
     Memory(Arc<MemoryImages>, usize),
+    Fetched(Arc<FetchSource>, usize),
 }
 
 impl PyMeta {
     fn to_object(&self, py: Python<'_>) -> Py<PyAny> {
         let meta = match self {
             Self::Owned(meta) => meta.as_ref(),
-            Self::Memory(images, index) => images.metas[*index].as_ref(),
+            Self::Memory(images, index) => images.meta(*index),
+            Self::Fetched(source, index) => source.meta(*index),
         };
         meta.map_or_else(|| py.None(), |m| m.clone_ref(py))
     }
@@ -490,7 +536,8 @@ impl ImageItem for PyImageItem {
     fn bytes(&self) -> &[u8] {
         match self {
             Self::Owned { bytes, .. } => bytes,
-            Self::Memory { images, index } => &images.bytes[*index],
+            Self::Memory { images, index } => images.bytes(*index),
+            Self::Fetched { bytes, .. } => bytes,
         }
     }
 
@@ -498,6 +545,7 @@ impl ImageItem for PyImageItem {
         match self {
             Self::Owned { meta, .. } => PyMeta::Owned(meta),
             Self::Memory { images, index } => PyMeta::Memory(images, index),
+            Self::Fetched { source, index, .. } => PyMeta::Fetched(source, index),
         }
     }
 }
@@ -512,19 +560,18 @@ impl Dataset for ImageSource {
                 Self::item(item.bind(py))
             })
             .map_err(Into::into),
-            Self::Memory(images) => {
-                if index >= images.bytes.len() {
-                    return Err(PyIndexError::new_err(format!(
-                        "index {index} out of range for {} images",
-                        images.bytes.len()
-                    ))
-                    .into());
+            Self::Source { items, .. } => match items {
+                SourceItems::Memory(images) => Self::memory_item(images, index),
+                SourceItems::Fetch(source) => {
+                    let bytes = source.fetch(index)?;
+                    Ok(PyImageItem::Fetched {
+                        bytes,
+                        source: Arc::clone(source),
+                        index,
+                    })
                 }
-                Ok(PyImageItem::Memory {
-                    images: Arc::clone(images),
-                    index,
-                })
-            }
+            },
+            Self::Memory(images) => Self::memory_item(images, index),
         }
     }
 
@@ -540,7 +587,7 @@ impl Dataset for ImageSource {
                     .collect::<PyResult<Vec<_>>>()
             })
             .map_err(Into::into),
-            Self::Memory(_) => indices.iter().map(|&i| self.get(i)).collect(),
+            Self::Memory(_) | Self::Source { .. } => indices.iter().map(|&i| self.get(i)).collect(),
         }
     }
 
@@ -549,8 +596,28 @@ impl Dataset for ImageSource {
             Self::Python(dataset) => Python::attach(|py| {
                 len_py(dataset, py).unwrap_or_else(|e| panic!("PyDataset.__len__ failed: {e}"))
             }),
-            Self::Memory(images) => images.bytes.len(),
+            Self::Memory(images) => images.len(),
+            Self::Source { items, .. } => match items {
+                SourceItems::Memory(images) => images.len(),
+                SourceItems::Fetch(source) => source.len(),
+            },
         }
+    }
+}
+
+impl ImageSource {
+    fn memory_item(images: &Arc<MemoryImages>, index: usize) -> Result<PyImageItem> {
+        if index >= images.len() {
+            return Err(PyIndexError::new_err(format!(
+                "index {index} out of range for {} images",
+                images.len()
+            ))
+            .into());
+        }
+        Ok(PyImageItem::Memory {
+            images: Arc::clone(images),
+            index,
+        })
     }
 }
 

@@ -15,9 +15,12 @@ ImageBatch       A batch in a pooled buffer: ``numpy.asarray(batch)`` and
                  ``torch.from_dlpack(batch)`` view it without copying.
 Resize, Crop, Pad, ToFloat, Normalize
                  The operations of an ``ImageCollator``.
+Source           A ``PyDataset`` whose items Rust fetches itself: bytes from
+                 memory, files or HTTP, with per-item metadata.
 """
 
-from collections.abc import Callable, Iterable, Sequence
+import os
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Literal
 
 __all__ = [
@@ -31,6 +34,7 @@ __all__ = [
     "Pad",
     "ToFloat",
     "Normalize",
+    "Source",
 ]
 
 ResizeFilter = Literal["nearest", "box", "bilinear", "hamming", "bicubic", "mitchell", "lanczos3"]
@@ -230,6 +234,90 @@ class PyDataset:
     # per index, in order. Setting it to ``None`` disables it, as in PyTorch.
     # It is not declared here so that ``hasattr`` stays ``False`` for datasets
     # that do not implement it.
+
+class Source(PyDataset):
+    """A dataset of encoded items that Rust fetches itself, each with optional metadata.
+
+    Item ``i`` is ``(bytes, meta[i])`` (``meta[i]`` is ``None`` without ``meta``). With
+    ``collate_fn=ImageCollator(...)``, ``PyDataloader`` fetches, decodes, transforms and
+    collates every item on its worker threads without the GIL, and ``ImageBatch.meta`` holds
+    the metadata. As a plain ``PyDataset``, ``source[i]`` fetches item ``i`` with the GIL
+    released.
+
+    Build one with :meth:`from_bytes`, :meth:`from_files`, :meth:`from_urls` or
+    :meth:`from_template`; invalid settings raise ``ValueError``.
+
+    Errors of an item, in ``source[i]`` or in the loader (failing that batch only):
+    ``TimeoutError``, ``FileNotFoundError``, ``PermissionError``, else ``OSError``; messages
+    name the item and its path or URL (without user info, query or fragment).
+
+    HTTP: blocking HTTP/1.1, connections kept alive and reused. ``timeout`` (seconds) bounds
+    one attempt from connecting to the last byte. Connection errors, timeouts, truncated
+    bodies and statuses 408, 429, 500, 502, 503, 504 are retried up to ``max_retries`` times,
+    waiting ``backoff * 2**n`` seconds (at most ``max_backoff``, half of it random, and a
+    ``Retry-After`` honoured up to ``max_backoff``); other statuses fail at once. A body above
+    ``max_bytes`` fails. Header values are never shown. This build fetches ``http://`` URLs
+    only: ``https://`` raises ``ValueError``.
+    """
+
+    @staticmethod
+    def from_bytes(items: Sequence[bytes | bytearray], meta: Sequence[Any] | None = None) -> Source:
+        """Items already in memory, read once (``bytearray`` is copied)."""
+        ...
+
+    @staticmethod
+    def from_files(
+        paths: Sequence[str | os.PathLike[str]],
+        meta: Sequence[Any] | None = None,
+        *,
+        max_bytes: int = 64 << 20,
+    ) -> Source:
+        """One file per item, read whole; a file above ``max_bytes`` fails its item."""
+        ...
+
+    @staticmethod
+    def from_urls(
+        urls: Sequence[str],
+        meta: Sequence[Any] | None = None,
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float = 30.0,
+        connect_timeout: float = 10.0,
+        max_retries: int = 3,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+        max_redirects: int = 5,
+        max_idle_connections: int = 64,
+    ) -> Source:
+        """One HTTP ``GET`` per URL."""
+        ...
+
+    @staticmethod
+    def from_template(
+        template: str,
+        params: Sequence[dict[str, Any]],
+        meta: Sequence[Any] | None = None,
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float = 30.0,
+        connect_timeout: float = 10.0,
+        max_retries: int = 3,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+        max_redirects: int = 5,
+        max_idle_connections: int = 64,
+    ) -> Source:
+        """One HTTP ``GET`` per entry of ``params``: ``template`` with each ``{name}``
+        replaced by ``str(params[i][name])``, percent-encoded (``{{`` / ``}}`` are literal
+        braces). Each entry gives every name of the template once, and no other."""
+        ...
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, index: int) -> tuple[bytes, Any]:
+        """``(bytes, meta)`` of item ``index``, fetched with the GIL released."""
+        ...
 
 class PyDataloaderIter:
     """Iterator over one epoch of a :class:`PyDataloader`.

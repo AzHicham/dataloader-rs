@@ -9,6 +9,7 @@ from .dataloader_rs import (
     PyDataloader,
     PyDataloaderIter,
     Resize,
+    Source,
     ToFloat,
     _keep_pools_alive,
 )
@@ -30,4 +31,5 @@ __all__ = [
     "Pad",
     "ToFloat",
     "Normalize",
+    "Source",
 ]
