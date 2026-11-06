@@ -71,7 +71,7 @@ let source = HttpSource::builder()
   Every URL is parsed when the source is built.
 - **Retries**: on connection errors, timeouts, truncated bodies, and statuses 408, 429, 500,
   502, 503, 504, with exponential backoff and jitter, honouring a `Retry-After` in seconds up to
-  `max_backoff`. Other statuses and malformed responses fail at once.
+  `max_backoff`. Other statuses, malformed responses and TLS failures fail at once.
 - **Size cap**: a `Content-Length` above `max_bytes` fails before the body is read; a body
   without one is read up to `max_bytes + 1` bytes, then fails. Memory is reserved fallibly.
 - **Secrets**: header values are never shown; errors show URLs without user info, query and
@@ -80,9 +80,14 @@ let source = HttpSource::builder()
 ### TLS
 
 `sources` fetches plain `http://` only: its dependencies are pure Rust, with no C. The
-`sources-tls` feature adds `https://` through rustls with webpki root certificates; rustls'
-crypto provider (ring) contains C and assembly. An `https://` URL without the feature is an
-error when the source is built.
+`sources-tls` feature adds `https://` through rustls; rustls' crypto provider (ring) contains C
+and assembly. An `https://` URL without the feature is an error when the source is built.
+
+Server certificates are checked against the Mozilla root certificates bundled in the binary
+(`webpki-roots`), the same on every platform; the system store is not read, and there is no
+option to add a CA or to skip the check. A server whose certificate does not chain to one of
+these roots (a private CA, a self-signed certificate) fails with `invalid peer certificate`,
+without retry.
 
 ## `FileSource`
 

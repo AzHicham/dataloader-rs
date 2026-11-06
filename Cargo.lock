@@ -345,6 +345,7 @@ dependencies = [
  "ndarray 0.17.2",
  "pyo3",
  "rayon",
+ "rustls",
  "tch",
  "ureq 3.5.1",
 ]

@@ -2,6 +2,7 @@
 
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Write as _};
+use std::io;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ureq::Agent;
@@ -16,8 +17,8 @@ const MAX_RETRIES: u32 = 32;
 const TRANSIENT_STATUS: [u16; 6] = [408, 429, 500, 502, 503, 504];
 
 /// When to send a request again after a transient failure: a connection error, a timeout, a
-/// truncated body, or status 408, 429, 500, 502, 503 or 504. Other statuses (404, 403, …) and
-/// malformed responses fail at once.
+/// truncated body, or status 408, 429, 500, 502, 503 or 504. Other statuses (404, 403, …),
+/// malformed responses and TLS failures (such as an untrusted certificate) fail at once.
 ///
 /// The wait before retry `n` (from 0) is `initial_backoff × 2ⁿ`, at most `max_backoff`, of which
 /// the second half is random (jitter). A `Retry-After` of a few seconds on 429 or 503 is
@@ -77,7 +78,8 @@ impl Default for Retry {
 /// while reading. Responses are not decompressed.
 ///
 /// Plain `http://` only, unless the crate is built with the `sources-tls` feature, which adds
-/// `https://` through rustls.
+/// `https://` through rustls. Certificates are checked against the bundled Mozilla roots
+/// (`webpki-roots`), not the system store; a TLS failure is not retried.
 ///
 /// ```no_run
 /// use std::time::Duration;
@@ -133,6 +135,9 @@ pub struct HttpSourceBuilder {
     max_bytes: u64,
     max_redirects: u32,
     max_idle_connections: usize,
+    /// Tests only: trust this PEM certificate instead of the bundled roots.
+    #[cfg(all(test, feature = "sources-tls"))]
+    test_root: Option<&'static [u8]>,
 }
 
 impl Default for HttpSourceBuilder {
@@ -145,6 +150,8 @@ impl Default for HttpSourceBuilder {
             max_bytes: DEFAULT_MAX_BYTES,
             max_redirects: 5,
             max_idle_connections: 64,
+            #[cfg(all(test, feature = "sources-tls"))]
+            test_root: None,
         }
     }
 }
@@ -240,8 +247,12 @@ enum Attempt {
 impl Attempt {
     fn from_ureq(error: ureq::Error) -> Self {
         let timeout = matches!(error, ureq::Error::Timeout(_));
-        let transient =
-            timeout || matches!(error, ureq::Error::Io(_) | ureq::Error::ConnectionFailed);
+        // rustls reports a failed handshake (untrusted or expired certificate, wrong host name,
+        // no common protocol) as an I/O error of kind `InvalidData`: another attempt would fail
+        // the same way.
+        let transient = timeout
+            || matches!(&error, ureq::Error::Io(error) if error.kind() != io::ErrorKind::InvalidData)
+            || matches!(error, ureq::Error::ConnectionFailed);
         Self::Request {
             transient,
             timeout,
@@ -443,8 +454,21 @@ impl HttpSourceBuilder {
             .max_redirects(self.max_redirects)
             .max_idle_connections(self.max_idle_connections)
             .max_idle_connections_per_host(self.max_idle_connections)
-            .user_agent(concat!("dataloader-rs/", env!("CARGO_PKG_VERSION")))
-            .build();
+            .user_agent(concat!("dataloader-rs/", env!("CARGO_PKG_VERSION")));
+        #[cfg(all(test, feature = "sources-tls"))]
+        let config = match self.test_root {
+            Some(pem) => {
+                use ureq::tls::{Certificate, RootCerts, TlsConfig};
+                let root = Certificate::from_pem(pem).expect("test root certificate");
+                config.tls_config(
+                    TlsConfig::builder()
+                        .root_certs(RootCerts::new_with_certs(&[root]))
+                        .build(),
+                )
+            }
+            None => config,
+        };
+        let config = config.build();
         Ok(HttpSource {
             agent: Agent::new_with_config(config),
             urls,
@@ -677,6 +701,107 @@ mod tests {
             assert!(
                 retry.backoff(0, Some(Duration::from_secs(60)), seed) == Duration::from_secs(1)
             );
+        }
+    }
+
+    /// HTTPS against a local rustls server with the certificate of `tests/fixtures/tls`
+    /// (localhost and 127.0.0.1, signed by a test CA that no store trusts).
+    #[cfg(feature = "sources-tls")]
+    mod tls {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use rustls::pki_types::pem::PemObject;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        use rustls::{ServerConfig, ServerConnection, StreamOwned};
+
+        use super::*;
+
+        const CA: &[u8] = include_bytes!("../../tests/fixtures/tls/ca.pem");
+        const CERT: &[u8] = include_bytes!("../../tests/fixtures/tls/localhost.pem");
+        const KEY: &[u8] = include_bytes!("../../tests/fixtures/tls/localhost.key");
+
+        /// Serves `body` to every request; returns its address and the connection count.
+        fn serve(body: &'static [u8]) -> (String, Arc<AtomicUsize>) {
+            let certs = CertificateDer::pem_slice_iter(CERT)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            let key = PrivateKeyDer::from_pem_slice(KEY).unwrap();
+            let config = Arc::new(
+                ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_single_cert(certs, key)
+                    .unwrap(),
+            );
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap().to_string();
+            let connections = Arc::new(AtomicUsize::new(0));
+            let counter = Arc::clone(&connections);
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(stream) = stream else { return };
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    let connection = ServerConnection::new(Arc::clone(&config)).unwrap();
+                    let mut tls = StreamOwned::new(connection, stream);
+                    let mut request = Vec::new();
+                    let mut buf = [0; 1024];
+                    // A client that rejects the certificate aborts the handshake here.
+                    while !request.ends_with(b"\r\n\r\n") {
+                        match tls.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => request.extend_from_slice(&buf[..n]),
+                        }
+                    }
+                    if request.ends_with(b"\r\n\r\n") {
+                        let head = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        );
+                        let _ = tls.write_all(head.as_bytes());
+                        let _ = tls.write_all(body);
+                        tls.conn.send_close_notify();
+                        let _ = tls.flush();
+                    }
+                }
+            });
+            (address, connections)
+        }
+
+        #[test]
+        fn https_fetches_with_a_trusted_root() {
+            let (address, _) = serve(b"over tls");
+            let builder = HttpSourceBuilder {
+                test_root: Some(CA),
+                ..HttpSource::builder()
+            };
+            let source = builder.urls([format!("https://{address}/a")]).unwrap();
+            assert_eq!(source.fetch(0).unwrap(), b"over tls");
+        }
+
+        #[test]
+        fn untrusted_certificate_fails_without_retry() {
+            let (address, connections) = serve(b"never sent");
+            let source = HttpSource::builder()
+                .retry(Retry {
+                    max_retries: 3,
+                    initial_backoff: Duration::from_millis(1),
+                    max_backoff: Duration::from_millis(1),
+                })
+                .urls([format!("https://{address}/a?token=secret")])
+                .unwrap();
+            let error = source.fetch(0).unwrap_err();
+            let message = error.to_string();
+            assert!(
+                message.starts_with(&format!(
+                    "item 0 (https://{address}/a): request failed after 1 attempt(s)"
+                )),
+                "{message}"
+            );
+            assert!(message.contains("certificate"), "{message}");
+            assert!(!message.contains("secret"), "{message}");
+            assert_eq!(connections.load(Ordering::SeqCst), 1);
         }
     }
 }
