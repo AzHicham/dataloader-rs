@@ -33,6 +33,7 @@ cargo test --all-features            # as CI does; torch-rs downloads libtorch
 | `test_dataloader_getitems.py` | batched fetching with `__getitems__` |
 | `test_dataloader_safety.py` | early drop, garbage collection and cancellation under load: no hang, no deadlock |
 | `test_dataloader_integration.py` | end-to-end scenarios: batches without `collate_fn`, `drop_last`, `collate_fn` sequential and parallel, a Python sampler's order |
+| `test_sources.py` | `Source`: `from_bytes`, `from_files`, `from_urls`, `from_template` against a local `http.server`: values and metadata through `ImageCollator` with any thread count, `source[i]`, a plain `PyDataset`, template encoding, headers, retries, giving up, a 404 failing one batch, `TimeoutError`, size caps, file errors, invalid settings, requests overlapping without the GIL |
 | `test_image_pipeline.py` | `ImageCollator`: validation, values against the golden fixtures, metadata, partial batches, any thread count, shuffling, zero-copy NumPy / DLPack views, buffer reuse and lifetime, the `max_held_batches` guard, errors |
 | `py_dataloader_test_utils.py` | shared datasets (`ListDataset`, `ToyDataset`) and helpers |
 
