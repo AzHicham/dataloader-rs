@@ -23,7 +23,7 @@ impl<C> TorchPinnedCollator<C> {
 
 /// The accelerator pinned memory is for: CUDA (any index; the pinned
 /// allocator is per device type), else MPS.
-fn accelerator() -> Option<Device> {
+pub(crate) fn accelerator() -> Option<Device> {
     if Cuda::is_available() {
         Some(Device::Cuda(0))
     } else if tch::utils::has_mps() {

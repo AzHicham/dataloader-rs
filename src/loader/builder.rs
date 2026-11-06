@@ -3,7 +3,10 @@ use std::sync::Arc;
 #[cfg(feature = "torch-rs")]
 use crate::collator::TorchPinnedCollator;
 use crate::{
-    collator::{Collator, VecCollator},
+    collator::{
+        Collator, VecCollator,
+        pooled::{BufferAllocator, PoolSizer, PooledCollator},
+    },
     dataset::Dataset,
     loader::core::{DataLoader, LoaderPool, ThreadMain},
     sampler::{BatchSampler, Sampler, SequentialSampler},
@@ -30,6 +33,11 @@ struct Settings {
     items_in_parallel: usize,
     /// Main function of the pool's threads; `None` runs rayon's loop as is.
     thread_main: Option<ThreadMain>,
+    /// Batches the consumer keeps alive at once, for sizing a buffer pool.
+    max_held_batches: usize,
+    /// The buffer pool of a [`PooledCollator`] set with `collate_into`, sized
+    /// by `build` once every setting is known.
+    buffer_pool: Option<Arc<dyn PoolSizer>>,
 }
 
 impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
@@ -45,6 +53,8 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
                 num_workers: 0,
                 items_in_parallel: 1,
                 thread_main: None,
+                max_held_batches: 1,
+                buffer_pool: None,
             },
         }
     }
@@ -135,13 +145,61 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     }
 
     /// Replace the collator and preserve all other settings.
-    pub fn collator<C2>(self, collator: C2) -> DataLoaderBuilder<D, S, C2> {
+    pub fn collator<C2>(mut self, collator: C2) -> DataLoaderBuilder<D, S, C2> {
+        self.settings.buffer_pool = None;
         DataLoaderBuilder {
             dataset: self.dataset,
             sampler: self.sampler,
             collator,
             settings: self.settings,
         }
+    }
+
+    /// Collate each batch into a reusable buffer from `allocator`, with
+    /// `collator` (a [`CollateInto`](crate::collator::CollateInto)), instead
+    /// of allocating every batch.
+    ///
+    /// Batches are [`PooledBatch`](crate::collator::PooledBatch)es: dropping
+    /// one returns its buffer to the loader's pool. The pool allocates
+    /// buffers on demand, up to `num_workers + prefetch_depth` (`1` with
+    /// `num_workers = 0`) plus [`max_held_batches`](Self::max_held_batches),
+    /// and never more: when every buffer is taken, workers wait for the
+    /// consumer to drop a batch. Keeping more than `max_held_batches` batches
+    /// alive on the thread that iterates (e.g. `collect()`) therefore
+    /// deadlocks; drop them, or hand them to another thread that does.
+    ///
+    /// The allocator decides where the memory lives: [`HeapAllocator`] for
+    /// plain `Vec`s, `TorchPinnedAllocator` for pinned tensors, or a closure
+    /// returning memory from another library (e.g. pinned host memory from
+    /// ONNX Runtime or CUDA).
+    ///
+    /// [`HeapAllocator`]: crate::collator::HeapAllocator
+    pub fn collate_into<C2, A>(
+        mut self,
+        collator: C2,
+        allocator: A,
+    ) -> DataLoaderBuilder<D, S, PooledCollator<C2, A>>
+    where
+        A: BufferAllocator,
+    {
+        let collator = PooledCollator::new(collator, allocator, 1);
+        self.settings.buffer_pool = Some(collator.sizer());
+        DataLoaderBuilder {
+            dataset: self.dataset,
+            sampler: self.sampler,
+            collator,
+            settings: self.settings,
+        }
+    }
+
+    /// Batches the consumer keeps alive at once, the one it is processing
+    /// included, when batches come from [`collate_into`](Self::collate_into).
+    /// Default: `1`, for a loop that drops each batch before asking for the
+    /// next; `2` to process one batch while the previous one is still in use
+    /// (e.g. an asynchronous copy to the GPU). Sizes the buffer pool only.
+    pub fn max_held_batches(mut self, n: usize) -> Self {
+        self.settings.max_held_batches = n;
+        self
     }
 
     /// Finalize configuration and construct a [`DataLoader`].
@@ -158,7 +216,18 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             num_workers,
             items_in_parallel,
             thread_main,
+            max_held_batches,
+            buffer_pool,
         } = self.settings;
+        if let Some(pool) = buffer_pool {
+            // Batches in flight or waiting (see `ParallelCore`), plus those
+            // the consumer holds.
+            let in_flight = match num_workers {
+                0 => 1,
+                n => n.saturating_add(prefetch_depth),
+            };
+            pool.set_capacity(in_flight.saturating_add(max_held_batches));
+        }
         // One pool for batch-level and item-level work: num_workers batches,
         // each with items_in_parallel items in flight.
         let threads = num_workers

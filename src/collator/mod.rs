@@ -3,11 +3,18 @@
 use crate::error::Result;
 
 mod default_collator;
+pub mod pooled;
 #[cfg(feature = "torch-rs")]
 mod torch;
 mod vec_collator;
 
 pub use default_collator::{DefaultCollate, DefaultCollator};
+#[cfg(feature = "torch-rs")]
+pub use pooled::TorchPinnedAllocator;
+pub use pooled::{
+    BufferAllocator, BufferPool, CollateInto, ConcatCollator, HeapAllocator, PooledBatch,
+    PooledCollator,
+};
 #[cfg(feature = "torch-rs")]
 pub use torch::TorchPinnedCollator;
 pub use vec_collator::VecCollator;

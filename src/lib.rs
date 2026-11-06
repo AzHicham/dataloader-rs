@@ -38,7 +38,7 @@
 //! |---|---|
 //! | [`dataset`] | the [`Dataset`] contract |
 //! | [`sampler`] | index order: sequential, random, distributed, batching |
-//! | [`collator`] | batch assembly: `Vec`, PyTorch-like `DefaultCollator`, pinned tensors |
+//! | [`collator`] | batch assembly: `Vec`, PyTorch-like `DefaultCollator`, pinned tensors, reusable (pinned) batch buffers |
 //! | [`loader`] | [`DataLoader`], its builder and iterator, the worker threads |
 //! | [`error`] | [`Error`] and [`Result`] |
 //!
@@ -64,7 +64,7 @@ pub mod sampler;
 
 // ── Top-level re-exports ──────────────────────────────────────────────────────
 
-pub use collator::{Collator, VecCollator};
+pub use collator::{CollateInto, Collator, PooledBatch, VecCollator};
 pub use dataset::{Dataset, IterableDataset};
 pub use error::{Error, Result};
 pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter};
