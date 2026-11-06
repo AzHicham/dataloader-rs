@@ -11,6 +11,9 @@ Python — with no PyTorch dependency.
   to fetch the items of a batch concurrently.
 - **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
 - **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
+- **Images decoded in Rust**: `collate_fn=ImageCollator([...])` decodes PNG/JPEG/WebP, resizes,
+  crops, pads and normalizes into reused batch buffers without the GIL, handed to NumPy and
+  PyTorch without a copy ([Images](#images-decoded-in-rust-without-the-gil)).
 - **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
 - **Free-threaded Python**: on CPython 3.14t and 3.15t, worker threads run Python code in
   parallel. Wheels for the GIL builds (3.13 to 3.15) too: there, threads help work that releases
@@ -38,6 +41,7 @@ Requires Python ≥ 3.13.
 - [Samplers](#samplers)
 - [Workers, threads and the GIL](#workers-threads-and-the-gil)
 - [I/O-bound datasets](#io-bound-datasets)
+- [Images: decoded in Rust, without the GIL](#images-decoded-in-rust-without-the-gil)
 - [Errors](#errors)
 - [Coming from `torch.utils.data.DataLoader`](#coming-from-torchutilsdatadataloader)
 - [Performance](#performance)
@@ -246,6 +250,62 @@ loader = PyDataloader(
 
 Waiting on I/O releases the GIL, so this works on regular CPython too. `__getitems__` is not used
 when `items_in_parallel > 1`: each item is its own call.
+
+## Images: decoded in Rust, without the GIL
+
+With `collate_fn=ImageCollator(...)`, the loader decodes encoded images (PNG, JPEG, WebP), applies
+the operations and writes each sample into its row of a reused batch buffer, all in Rust, on its
+worker threads, with the GIL released. Python only runs to fetch the bytes, or not at all when
+the dataset is a `list` of `bytes`. A GIL build of Python (3.13) therefore scales with
+`num_workers` like a free-threaded one, which it cannot do with Pillow and torchvision in
+`__getitem__`.
+
+```python
+import torch
+from dataloader_rs import ImageCollator, Normalize, PyDataloader, Resize, Crop, ToFloat
+
+collate = ImageCollator(
+    [
+        Resize(256, 256),
+        Crop(16, 16, 224, 224),
+        ToFloat(),
+        Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ],
+    dtype="float32",  # or "float16", "uint8" (without ToFloat / Normalize)
+    layout="nchw",  # or "nhwc"
+)
+images = [(path.read_bytes(), label) for path, label in files]  # or a PyDataset returning bytes
+loader = PyDataloader(images, batch_size=64, shuffle=True, num_workers=8, collate_fn=collate)
+for batch in loader:
+    x = torch.from_dlpack(batch)  # (64, 3, 224, 224) float32, no copy
+    y = torch.tensor(batch.meta)  # the labels, in batch order
+```
+
+- **Samples**: a `list` (or `tuple`) of `bytes` or `(bytes, meta)` pairs, read once when the loader
+  is built; or a `PyDataset` whose `__getitem__` (or `__getitems__`) returns the same. `meta` is
+  any object, returned in `batch.meta`; `batch.sizes` holds each decoded `(width, height)`.
+- **Operations**, in order: `Resize(width, height, filter="bilinear")` (also `nearest`, `box`,
+  `hamming`, `bicubic`, `mitchell`, `lanczos3`; antialiased like Pillow), `Crop(left, top,
+  width, height)`, `Pad(width, height, fill=0)` (image at the top left), then `ToFloat()` (`/255`)
+  and `Normalize(mean, std)`. `channels="gray"` decodes to one channel; `input_size=(w, h)`
+  requires that size. An invalid pipeline raises `ValueError` when the `ImageCollator` is built.
+- **Batches** are `ImageBatch` objects: `numpy.asarray(batch)` / `batch.numpy()` and
+  `torch.from_dlpack(batch)` view the buffer without copying, writable; `len(batch)` is the number
+  of samples (the last batch may be partial), `batch.shape` and `batch.dtype` describe it.
+- **Buffers are reused**: a batch and its views keep their buffer; once all are gone it goes back
+  to the loader's pool (`num_workers + prefetch_depth + max_held_batches` buffers). Asking for a
+  batch while `max_held_batches` (default `2`) batches are alive raises `RuntimeError` instead of
+  waiting forever: copy what you keep (`numpy.array(batch)`, `tensor.clone()`), or raise
+  `max_held_batches`.
+- **Errors**: an image that cannot be decoded, is above the limits (`max_width`, `max_height`,
+  `max_bytes`; default 16384 × 16384 and 256 MiB) or does not fit an operation fails its batch with
+  `RuntimeError` naming the sample (`image 3 of the batch: cannot decode image: ...`); the next
+  batch loads normally. Exceptions of `__getitem__` keep their type.
+- **Parity**: PNG and lossless WebP decode bit-identical to Pillow; `ToFloat` + `Normalize`
+  bit-identical to torchvision's `ToTensor` + `Normalize`; JPEG within 3 levels of Pillow; resizing
+  is `fast_image_resize`, within 1 level of Pillow's `BILINEAR` (other filters:
+  [src/image/README.md](../src/image/README.md)).
+- **Pinned memory**: batches live in ordinary host memory; `tensor.pin_memory()` copies.
 
 ## Errors
 

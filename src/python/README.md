@@ -12,6 +12,7 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 | `sampler.rs` | `PySampler`: sequential, random, or a Python iterable, and the exception it raised |
 | `collator.rs` | `PyCollator`: `collate_fn`, or a plain `list` |
 | `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread |
+| `image.rs` | `ImageCollator` and its operations, `ImageSource` (a `PyDataset` or a `list` of bytes), `ImageBatch` (`__array_interface__`, `__dlpack__`) |
 
 ## How a Python epoch runs
 
@@ -35,6 +36,26 @@ iter(loader)
   creating and destroying one, which costs about 100 µs on free-threaded builds.
 - **`items_in_parallel > 1`**: the epoch uses the core iterator even with `num_workers = 0`; the
   batch's lanes fetch its items with one `Dataset::get` (one attach, one `__getitem__`) each.
+
+## Image epochs
+
+`collate_fn=ImageCollator(...)` makes `PyDataloader` an image loader: the core collates with a
+`PooledCollator<DynImageCollator, ImageBufferAllocator>`, and `__next__` returns `ImageBatch`es.
+
+- **Only the fetch holds the interpreter.** `ImageSource::get_batch` attaches once per batch to
+  call `__getitem__` / `__getitems__` and keep each `bytes` as a `PyBackedBytes` (no copy); a
+  `list` dataset is read once into `PyBackedBytes` and needs no attach at all. Decoding, the
+  operations and collation run after, detached; without workers, `__next__` runs the batch
+  itself inside `py.detach`.
+- **Zero-copy without `unsafe`.** `ImageBatch` owns the `PooledBatch` and publishes the buffer's
+  address through `__array_interface__`; NumPy keeps the `ImageBatch` as the array's base, and
+  `__dlpack__` is NumPy's export of that array, so every view keeps the batch, and with it the
+  buffer, alive. Rust never reads or writes the values while the batch lives; the buffer goes
+  back to the pool when the `ImageBatch` is freed. The buffer protocol (`__getbuffer__`) and a
+  DLPack capsule of our own would need `unsafe`, which the crate forbids.
+- **No wait on the consumer.** Live `ImageBatch`es are counted; `__next__` raises `RuntimeError`
+  when `max_held_batches` of them are alive, since every buffer of the pool may then be held by
+  Python and the next batch would wait forever.
 
 ## Rules this code keeps
 
