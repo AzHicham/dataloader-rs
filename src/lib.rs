@@ -41,10 +41,12 @@
 //! | [`collator`] | batch assembly: `Vec`, PyTorch-like `DefaultCollator`, pinned tensors, reusable (pinned) batch buffers |
 //! | [`loader`] | [`DataLoader`], its builder and iterator, the worker threads |
 //! | `image` | decode, resize, crop, pad, normalize images into pooled batch buffers (feature `image`) |
+//! | `sources` | bytes per item from memory, files or HTTP, with per-item metadata, as a [`Dataset`] (feature `sources`) |
 //! | [`error`] | [`Error`] and [`Result`] |
 //!
 //! Features: `ndarray` and `torch-rs` add collation of `ndarray::Array` and `tch::Tensor`;
-//! `image` adds the pure-Rust image pipeline of the `image` module; `python` builds the PyO3 module behind the `dataloader-rs` Python package.
+//! `image` adds the pure-Rust image pipeline of the `image` module; `sources` adds the data
+//! sources of the `sources` module (plain HTTP), and `sources-tls` HTTPS through rustls; `python` builds the PyO3 module behind the `dataloader-rs` Python package.
 //!
 //! Design, threads and failure handling:
 //! [ARCHITECTURE.md](https://github.com/AzHicham/dataloader-rs/blob/dev/ARCHITECTURE.md).
@@ -64,6 +66,8 @@ pub mod loader;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod sampler;
+#[cfg(feature = "sources")]
+pub mod sources;
 
 // ── Top-level re-exports ──────────────────────────────────────────────────────
 

@@ -22,6 +22,11 @@ torch-rs = ["dep:tch"]
 # The Python package ships the image pipeline.
 python = ["dep:pyo3", "image"]
 image = ["dep:image", "dep:half", "dep:fast_image_resize"]
+# Data sources: memory, files, plain-HTTP (ureq, pure Rust, no TLS).
+sources = ["dep:ureq"]
+# https:// for HttpSource, through rustls with its default crypto provider
+# (ring), which contains C and assembly.
+sources-tls = ["sources", "ureq/rustls"]
 
 
 [profile.release]
@@ -86,6 +91,13 @@ optional         = true
 version          = "6"
 default-features = false
 features         = ["std"]
+optional         = true
+
+# Blocking HTTP/1.1 client with a connection pool. No default features: no
+# TLS (see `sources-tls`), no gzip (responses are not decompressed).
+[dependencies.ureq]
+version          = "3"
+default-features = false
 optional         = true
 
 # ── Dev / benchmark dependencies ──────────────────────────────────────────────
