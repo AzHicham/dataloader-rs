@@ -16,6 +16,10 @@ guards. Method, results and caveats: [BENCH.md](../BENCH.md).
 - **Image pipeline against PyTorch** (`image_pipeline.py`): decode + `ToTensor` + `Normalize` of
   64 lossless WebP 224×224 per batch, `ImageCollator` against Pillow + torchvision in a torch
   `DataLoader`, over `num_workers`; needs Pillow and torchvision, run on demand.
+- **Images over HTTP against PyTorch** (`sources_http.py`): the same batches fetched by URL from a
+  local server process, `Source.from_urls` + `ImageCollator` against requests + Pillow +
+  torchvision in a torch `DataLoader`, over `num_workers`; needs requests, Pillow and
+  torchvision, run on demand.
 
 ## Regression guards (pytest-benchmark)
 

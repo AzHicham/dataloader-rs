@@ -507,6 +507,26 @@ from 0 to 8 workers on 3.13 against 4.5× for torch's processes, and 2.6–2.8×
 at 8 workers on either build. Fetching the bytes through `__getitem__` costs nothing measurable
 here (`rs-dataset` against `rs-list`; the two differ by run-to-run noise).
 
+### 5.6 Images over HTTP: `Source.from_urls` against requests + Pillow + torchvision
+
+`bench/sources_http.py`: the batches of section 5.5, fetched by URL (`/<i>`, 512 per epoch) from
+a local HTTP/1.1 server process (threaded, keep-alive, images in memory; free-threaded 3.14t
+pinned to cores 0-7), the loader on the E-cores (`taskset -c 12-19`). `rs-urls` is
+`Source.from_urls(urls)` with `ImageCollator` (request, decode and collation in Rust without the
+GIL, `items_in_parallel=1`); `torch` is a torch `DataLoader` (persistent worker processes) whose
+`Dataset` does `requests.Session().get(url)` (one session per process) then Pillow and the
+torchvision transforms. Same values (max |Δ| 0). Items per second, median of 5 epochs:
+
+| num_workers | 3.13 rs-urls | 3.13 torch | 3.14t rs-urls | 3.14t torch |
+|---:|---:|---:|---:|---:|
+| 0 | 743 | 310 | 742 | 326 |
+| 2 | 1,442 | 588 | 1,456 | 601 |
+| 4 | 2,704 | 1,031 | 2,694 | 988 |
+| 8 | 4,664 | 1,449 | 4,596 | 1,327 |
+
+3.2–3.5× torch's throughput at 8 workers, on either build. Against the in-memory `rs-list` of
+section 5.5, fetching over HTTP costs 6–9 %.
+
 ## 6. Results: Python regression guards
 
 `bench/test_bench_*.py` on 3.14t, the CI's interpreter, pinned to 4 cores; median per round.
