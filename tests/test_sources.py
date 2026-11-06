@@ -4,6 +4,7 @@ The HTTP tests run a local http.server in a thread. Encoded images and expected
 values are the golden fixtures of the Rust tests (tests/fixtures/image).
 """
 
+import ssl
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -18,6 +19,8 @@ from dataloader_rs import ImageCollator, PyDataset, Source
 from dataloader_rs import PyDataloader as DataLoader
 
 FIXTURES = Path(__file__).parent / "fixtures" / "image"
+# localhost / 127.0.0.1, signed by a test CA that no trust store holds.
+TLS = Path(__file__).parent / "fixtures" / "tls"
 RGB_PNG = (FIXTURES / "rgb.png").read_bytes()
 # The 64x48 scene as HWC uint8, as Pillow decodes it.
 RGB_U8 = np.frombuffer((FIXTURES / "rgb.u8").read_bytes(), dtype=np.uint8).reshape(48, 64, 3)
@@ -162,8 +165,6 @@ def test_file_errors_fail_their_batch(tmp_path):
 def test_invalid_settings():
     with pytest.raises(ValueError, match="2 items but the metadata list has 1"):
         Source.from_bytes([b"a", b"b"], meta=[1])
-    with pytest.raises(ValueError, match="sources-tls"):
-        Source.from_urls(["https://example.com/a.png"])
     with pytest.raises(ValueError, match="URL 1"):
         Source.from_urls(["http://h/a", "not a url"])
     with pytest.raises(ValueError, match="header name"):
@@ -279,3 +280,42 @@ def test_requests_overlap_without_the_gil():
         elapsed = time.monotonic() - start
     assert values.shape[0] == 8
     assert elapsed < 1.0, elapsed
+
+
+# ── HTTPS ────────────────────────────────────────────────────────────────────
+
+
+def test_https_url_is_accepted():
+    source = Source.from_urls(["https://example.com/a.png", "http://example.com/b.png"])
+    assert len(source) == 2
+
+
+def test_https_untrusted_certificate_fails_without_retry():
+    """A self-signed / private-CA server fails its item with OSError at the first attempt.
+    The positive case needs a trusted root: it is a Rust test (sources::http::tests::tls)."""
+    connections = []
+
+    class TlsServer(Server):
+        def get_request(self):
+            connections.append(1)
+            return super().get_request()
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(TLS / "localhost.pem", TLS / "localhost.key")
+    server = TlsServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"https://127.0.0.1:{server.server_address[1]}/a.png"
+        source = Source.from_urls([url + "?token=secret"], max_retries=3, **QUICK)
+        with pytest.raises(OSError, match="invalid peer certificate") as info:
+            source[0]
+        message = str(info.value)
+        assert type(info.value) is OSError
+        assert message.startswith(f"item 0 ({url}): request failed after 1 attempt(s)")
+        assert "secret" not in message
+        assert len(connections) == 1
+    finally:
+        server.shutdown()
+        server.server_close()

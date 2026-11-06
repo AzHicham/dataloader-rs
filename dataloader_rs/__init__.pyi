@@ -256,8 +256,11 @@ class Source(PyDataset):
     bodies and statuses 408, 429, 500, 502, 503, 504 are retried up to ``max_retries`` times,
     waiting ``backoff * 2**n`` seconds (at most ``max_backoff``, half of it random, and a
     ``Retry-After`` honoured up to ``max_backoff``); other statuses fail at once. A body above
-    ``max_bytes`` fails. Header values are never shown. This build fetches ``http://`` URLs
-    only: ``https://`` raises ``ValueError``.
+    ``max_bytes`` fails. Header values are never shown.
+
+    HTTPS: rustls, with certificates checked against the Mozilla root certificates bundled in
+    the extension, not the system store. A certificate that does not chain to them (private
+    CA, self-signed) raises ``OSError`` (``invalid peer certificate``), without retry.
     """
 
     @staticmethod

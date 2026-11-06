@@ -341,8 +341,12 @@ for batch in loader:
   flight per worker. Retries wait `backoff * 2**n` seconds (at most `max_backoff`, half of it
   random); a `Retry-After` is honoured up to `max_backoff`. 4xx statuses other than 408 and 429
   fail at once. A response above `max_bytes` (default 64 MiB) fails its item.
-- **`https://` is not supported yet** by the published wheels: the Rust feature that adds it
-  (`sources-tls`, rustls) is not enabled in them, and an `https://` URL raises `ValueError`.
+- **`https://`** goes through rustls, built into the wheel. Server certificates are checked
+  against the Mozilla root certificates bundled in the wheel (`webpki-roots`), the same on every
+  platform; the system store is not read and there is no option to add a CA or skip the check.
+  A server whose certificate does not chain to one of these roots (a private CA, a self-signed
+  certificate) fails its item with `OSError: ... invalid peer certificate: UnknownIssuer`, without
+  retry.
 - **Errors** fail their batch only, like any `__getitem__` exception: `TimeoutError`,
   `FileNotFoundError`, `PermissionError`, or `OSError`, naming the item and its path or URL (shown
   without its query, which may hold a credential). Header values are never shown. Invalid

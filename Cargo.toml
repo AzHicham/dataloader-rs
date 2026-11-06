@@ -19,8 +19,8 @@ crate-type = ["rlib", "cdylib"]
 default = []
 ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
-# The Python package ships the image pipeline and the data sources.
-python = ["dep:pyo3", "image", "sources"]
+# The Python package ships the image pipeline and the data sources, with https.
+python = ["dep:pyo3", "image", "sources-tls"]
 image = ["dep:image", "dep:half", "dep:fast_image_resize"]
 # Data sources: memory, files, plain-HTTP (ureq, pure Rust, no TLS).
 sources = ["dep:ureq"]
