@@ -153,3 +153,8 @@ harness = false
 name              = "bench_image"
 harness           = false
 required-features = ["image"]
+
+[[bench]]
+name              = "bench_sources"
+harness           = false
+required-features = ["sources", "image"]
