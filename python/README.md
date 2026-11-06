@@ -42,6 +42,7 @@ Requires Python ≥ 3.13.
 - [Workers, threads and the GIL](#workers-threads-and-the-gil)
 - [I/O-bound datasets](#io-bound-datasets)
 - [Images: decoded in Rust, without the GIL](#images-decoded-in-rust-without-the-gil)
+- [Sources: files and URLs fetched in Rust](#sources-files-and-urls-fetched-in-rust)
 - [Errors](#errors)
 - [Coming from `torch.utils.data.DataLoader`](#coming-from-torchutilsdatadataloader)
 - [Performance](#performance)
@@ -306,6 +307,48 @@ for batch in loader:
   is `fast_image_resize`, within 1 level of Pillow's `BILINEAR` (other filters:
   [src/image/README.md](../src/image/README.md)).
 - **Pinned memory**: batches live in ordinary host memory; `tensor.pin_memory()` copies.
+
+## Sources: files and URLs fetched in Rust
+
+A `Source` is a dataset whose items Rust fetches itself: item `i` is `(bytes, meta[i])`. With
+`collate_fn=ImageCollator(...)`, each item is fetched, decoded, transformed and collated on the
+worker threads with the GIL released: no Python runs per item, even on a GIL build.
+
+```python
+from dataloader_rs import ImageCollator, PyDataloader, Source
+
+source = Source.from_urls(
+    [f"http://images.internal/{key}.jpeg" for key in keys],
+    meta=labels,  # any objects, returned in batch.meta
+    headers={"Authorization": f"Bearer {token}"},
+    timeout=10.0,  # seconds per attempt, connect to last byte
+    max_retries=3,  # connection errors, timeouts, 408/429/5xx
+)
+loader = PyDataloader(source, batch_size=64, num_workers=4, items_in_parallel=8, collate_fn=collate)
+for batch in loader:
+    x = torch.from_dlpack(batch)
+    y = torch.tensor(batch.meta)
+```
+
+| Constructor | Items |
+|---|---|
+| `Source.from_bytes(items, meta=None)` | `bytes` in memory, read once |
+| `Source.from_files(paths, meta=None, *, max_bytes=64 MiB)` | one file per item, read whole |
+| `Source.from_urls(urls, meta=None, *, headers, timeout, ...)` | one HTTP `GET` per URL |
+| `Source.from_template(template, params, meta=None, ...)` | one `GET` per dict of `params`: `"http://h/{split}/{id}.jpeg"` with `{"split": "train", "id": 7}`, values percent-encoded |
+
+- **HTTP**: connections are kept alive and reused. `items_in_parallel` sets the requests in
+  flight per worker. Retries wait `backoff * 2**n` seconds (at most `max_backoff`, half of it
+  random); a `Retry-After` is honoured up to `max_backoff`. 4xx statuses other than 408 and 429
+  fail at once. A response above `max_bytes` (default 64 MiB) fails its item.
+- **`https://` is not supported yet** by the published wheels: the Rust feature that adds it
+  (`sources-tls`, rustls) is not enabled in them, and an `https://` URL raises `ValueError`.
+- **Errors** fail their batch only, like any `__getitem__` exception: `TimeoutError`,
+  `FileNotFoundError`, `PermissionError`, or `OSError`, naming the item and its path or URL (shown
+  without its query, which may hold a credential). Header values are never shown. Invalid
+  settings raise `ValueError` when the `Source` is built.
+- Without `ImageCollator`, a `Source` is a plain `PyDataset`: `source[i]` returns `(bytes, meta)`,
+  fetched with the GIL released.
 
 ## Errors
 
