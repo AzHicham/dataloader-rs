@@ -15,6 +15,7 @@ the network is the point. Results and their reading:
 | `bench_first_batch` | latency to the first batch | `HeavyCpuDs(32)` | (workers, items) (0, 1), (1, 1), (0, 2), (0, 4), (1, 4) | one batch of 32 |
 | `bench_sampler` | sampler cost | `InMemoryDs(N)` | N 1k, 10k, 100k; sequential vs random | `batch_size` 128, no workers |
 | `bench_collate_into` | allocating each batch against `collate_into` a pooled buffer | rows of 3×224×224 shared through `Arc` | f32 / 16-bit; a lone `collate`, an epoch with 0 and 2 workers | `batch_size` 64 (38.5 MB in f32) |
+| `bench_image` (feature `image`) | the `image` pipeline into pooled buffers against a naive per-sample one | 8 lossless WebP images, cycled | 224×224 as is, 512×512 resized to 224×224; one `collate`, an epoch with 4 workers | `batch_size` 64, f32 NCHW, ImageNet normalize |
 | `bench_real_world` | real per-item work | 4 096 files of 16 KB; 2 ms blocking latency | `num_workers` 0, 1, 2, 4; 4, 16, 64 requests in flight | `batch_size` 32; glibc's malloc thresholds pinned |
 
 `common.rs` holds the shared datasets, collators and consumer work:

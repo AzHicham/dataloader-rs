@@ -317,6 +317,23 @@ thresholds pinned by the suite (section 8):
 Requests in flight are `num_workers × items_in_parallel`, and throughput follows them: 264 ms
 for an ideal 256 ms at 4 in flight, 20.8 ms for an ideal 16 ms at 64.
 
+### 4.8 Image pipeline: `bench_image`
+
+64 lossless WebP images per batch, decoded and written as an f32 NCHW 64×3×224×224 batch with
+`ToFloat` + ImageNet `Normalize`; `naive` decodes with `image::load_from_memory`, allocates a
+resizer, an image and a CHW `Vec<f32>` per sample and a new batch `Vec`; `pooled` is
+`ImageCollator` into a pooled `HeapAllocator` buffer. Pinned to the E-cores (`taskset -c 12-19`):
+
+| case | naive | pooled | speed-up |
+|---|---:|---:|---:|
+| one batch, 224×224 | 96.9 ms (660 images/s) | 59.2 ms (1,081 images/s) | 1.64× |
+| one batch, 512×512 resized to 224×224 (bilinear) | 346.2 ms (185 images/s) | 312.4 ms (205 images/s) | 1.11× |
+| epoch of 8 batches, 224×224, 4 workers | 224.3 ms (2,283 images/s) | 127.3 ms (4,022 images/s) | 1.76× |
+
+Decoding dominates once images are larger than the batch row (≈ 4.5 ms per 512×512 lossless
+WebP): the pooled pipeline saves the per-sample allocations, the RGB copy and the per-value
+arithmetic (a 256-entry table per channel), not the decode.
+
 ## 5. Results: Python against PyTorch
 
 `bench/compare_torch.py`, 4 workers, `batch_size` 32. `w` is `num_workers`, `items` is
