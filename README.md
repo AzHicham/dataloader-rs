@@ -141,7 +141,7 @@ the GIL — is [python/README.md](python/README.md).
 |---|---|---|---|
 | Dataset | `Dataset`: `get(index)`, `len()`, optional `get_batch(indices)` | — (yours) | [src/README.md](src/README.md) |
 | Sampler | `Sampler`: the index order of one epoch | `SequentialSampler`, `RandomSampler`, `DistributedSampler` | [src/sampler](src/sampler/README.md) |
-| Collator | `Collator<Item>`: merge a batch's samples | `VecCollator` (default), `DefaultCollator`, `TorchPinnedCollator` | [src/collator](src/collator/README.md) |
+| Collator | `Collator<Item>`: merge a batch's samples; `CollateInto<Item>`: write them into a reused buffer | `VecCollator` (default), `DefaultCollator`, `TorchPinnedCollator`, `ConcatCollator` | [src/collator](src/collator/README.md) |
 | Loader | `DataLoader` / `DataLoaderBuilder` / `DataLoaderIter` | — | [src/loader](src/loader/README.md) |
 
 One epoch: the sampler produces indices, `BatchSampler` cuts them into batches of `batch_size`,
@@ -163,6 +163,8 @@ Every setting is a `DataLoaderBuilder` method; the Python argument of the same n
 | `items_in_parallel(k)` | `1` | items of one batch fetched in parallel (`1`: one `get_batch` call per batch) |
 | `prefetch_depth(n)` | `2` | how far batches may run ahead: at most `num_workers + n` in flight or waiting |
 | `pin_memory(bool)` | — | pin `tch::Tensor` batches in host memory (feature `torch-rs`) |
+| `collate_into(c, alloc)` | — | collate each batch into a reused (optionally pinned) buffer from a bounded pool ([guide](src/collator/README.md#reusable-batch-buffers)) |
+| `max_held_batches(n)` | `1` | batches the consumer keeps alive at once; sizes that pool |
 
 At most `max(num_workers, 1) × items_in_parallel` fetches run at once, on that many threads.
 
@@ -178,7 +180,7 @@ microseconds through Python); for blocking I/O, `items_in_parallel` so that
 | Feature | Default | Enables |
 |---|---|---|
 | `ndarray` | off | `DefaultCollator` for `ndarray::Array` (stacked on a new axis 0) |
-| `torch-rs` | off | `DefaultCollator` for `tch::Tensor` (stacked), `TorchPinnedCollator`, `pin_memory` |
+| `torch-rs` | off | `DefaultCollator` for `tch::Tensor` (stacked), `TorchPinnedCollator`, `pin_memory`, `TorchPinnedAllocator` |
 | `python` | off | the PyO3 module behind the `dataloader-rs` Python package |
 
 ## Performance

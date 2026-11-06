@@ -11,6 +11,7 @@ package. Unit tests live next to the code (`#[cfg(test)]` modules in `src/`).
 | `integration_collate_default.rs` | `DefaultCollator` on nested structures through a loader | |
 | `integration_collate_ndarray.rs` | `DefaultCollator` stacking `ndarray::Array` | `ndarray` |
 | `integration_collate_torch.rs` | `DefaultCollator` stacking `tch::Tensor`, `pin_memory` | `torch-rs` |
+| `integration_collate_into.rs` | `collate_into`: buffers reused (stable pointers), pool bounded under a slow consumer, buffers returned on drop, errors, panics, early break, partial last batch, epochs, workers | |
 
 ```bash
 cargo test                           # unit + integration + doc tests

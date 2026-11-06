@@ -6,12 +6,12 @@
 | `dataset.rs` | the `Dataset` trait (map-style) and `IterableDataset` | below |
 | `error.rs` | `Error` (`Box<dyn Error + Send + Sync>`) and `Result<T>` | below |
 | `sampler/` | `Sampler`, `SequentialSampler`, `RandomSampler`, `DistributedSampler`, `BatchSampler` | [sampler/README.md](sampler/README.md) |
-| `collator/` | `Collator`, `VecCollator`, `DefaultCollator` / `DefaultCollate`, `TorchPinnedCollator` | [collator/README.md](collator/README.md) |
+| `collator/` | `Collator`, `VecCollator`, `DefaultCollator` / `DefaultCollate`, `TorchPinnedCollator`; `pooled/`: `CollateInto`, `PooledCollator`, `BufferPool`, allocators | [collator/README.md](collator/README.md) |
 | `loader/` | `DataLoader`, `DataLoaderBuilder`, `DataLoaderIter`, the worker threads | [loader/README.md](loader/README.md) |
 | `python/` | the PyO3 module behind the Python package (feature `python`) | [python/README.md](python/README.md) |
 
 Top-level re-exports: `Dataset`, `IterableDataset`, `Sampler`, `SequentialSampler`,
-`RandomSampler`, `DistributedSampler`, `BatchSampler`, `Collator`, `VecCollator`, `DataLoader`,
+`RandomSampler`, `DistributedSampler`, `BatchSampler`, `Collator`, `CollateInto`, `PooledBatch`, `VecCollator`, `DataLoader`,
 `DataLoaderBuilder`, `DataLoaderIter`, `Error`, `Result`.
 
 ## The `Dataset` contract

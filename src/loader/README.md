@@ -58,6 +58,8 @@ and `.collator(…)` replace them and keep every other setting.
 | `num_workers` | `0` | batches processed in parallel; `0` processes batches inside `next()` |
 | `items_in_parallel` | `1` | items of one batch fetched in parallel (must be > 0); `1` = one `get_batch` call per batch |
 | `prefetch_depth` | `2` | how far batches may run ahead: at most `num_workers + prefetch_depth` in flight or waiting (must be > 0) |
+| `collate_into(c, a)` | — | collate into reusable buffers from allocator `a` ([collator guide](../collator/README.md#reusable-batch-buffers)) |
+| `max_held_batches` | `1` | batches the consumer keeps alive at once; sizes the `collate_into` buffer pool |
 
 The loader's pool has `max(num_workers, 1) × items_in_parallel` threads (none with both at their
 defaults), so that many fetches run at once at most.

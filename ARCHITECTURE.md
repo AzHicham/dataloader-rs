@@ -155,7 +155,20 @@ Dropping an iterator mid-epoch (a `break`, an error, `drop`) marks the epoch can
 tasks stop claiming. A task in the middle of a batch finishes it in the background and its
 result is discarded; `drop` itself **does not wait**.
 
-### 4.4 `fork()`
+### 4.4 Pooled batch buffers
+
+With `collate_into`, the collator takes a buffer from a pool shared by the loader's collator and
+its batches, and the batch returns it on drop: dropping an iterator early, an error, a panic in
+`collate_into` and a batch discarded after cancellation all give the buffer back. The pool's
+capacity is the window (`num_workers + prefetch_depth`, or `1` on the direct path) plus
+`max_held_batches`, the batches the consumer keeps; no more buffers are ever allocated. Since
+claimed batches never leave the window, workers only wait for a buffer when the consumer keeps
+more batches than that; a consumer that keeps them on the iterating thread deadlocks, one that
+hands them to another thread is backpressure. Tasks of a cancelled epoch still finish their batch
+and return its buffer, so a new epoch may wait briefly for them, never forever. A leaked iterator
+(`mem::forget`) keeps its batches' buffers.
+
+### 4.5 `fork()`
 
 A process created with `fork()` (e.g. Python `multiprocessing` with the `fork` start method)
 inherits the pool but none of its threads. The pool records the PID that built it; `iter()` in
@@ -240,3 +253,4 @@ to the garbage collector (`__traverse__`), so reference cycles through a loader 
 | Claim window | at most `num_workers + prefetch_depth` batches in flight or buffered, even behind one slow batch | a slow batch stalls the window instead of letting later batches run far ahead |
 | Errors per batch | one bad sample does not end a Rust epoch | callers must handle `Result` per batch |
 | Panics forwarded | same behaviour with and without workers; no silent truncation | a panic is re-raised as soon as it arrives |
+| Pooled buffers as a collator wrapper (`PooledCollator`) | reuse and pinned memory without touching the scheduling: ordering, the window, errors and panics are unchanged | a consumer keeping more than `max_held_batches` batches on its own thread deadlocks |
