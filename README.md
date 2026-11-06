@@ -181,6 +181,7 @@ microseconds through Python); for blocking I/O, `items_in_parallel` so that
 |---|---|---|
 | `ndarray` | off | `DefaultCollator` for `ndarray::Array` (stacked on a new axis 0) |
 | `torch-rs` | off | `DefaultCollator` for `tch::Tensor` (stacked), `TorchPinnedCollator`, `pin_memory`, `TorchPinnedAllocator` |
+| `image` | off | `image::ImageCollator`: decode PNG/JPEG/WebP, resize, crop, pad, normalize into pooled `u8`/`f16`/`f32` NCHW or NHWC batches; pure Rust ([guide](src/image/README.md)) |
 | `python` | off | the PyO3 module behind the `dataloader-rs` Python package |
 
 ## Performance

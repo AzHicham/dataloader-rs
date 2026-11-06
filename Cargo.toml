@@ -20,6 +20,7 @@ default = []
 ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
 python = ["dep:pyo3"]
+image = ["dep:image", "dep:half", "dep:fast_image_resize"]
 
 
 [profile.release]
@@ -64,6 +65,26 @@ optional         = true
 version          = "0.30"
 default-features = false
 features         = ["macros"]
+optional         = true
+
+# Pure-Rust decoders only: png, jpeg (zune-jpeg), webp (image-webp); no
+# rayon, no C library.
+[dependencies.image]
+version          = "0.25"
+default-features = false
+features         = ["png", "jpeg", "webp"]
+optional         = true
+
+[dependencies.half]
+version          = "2"
+default-features = false
+optional         = true
+
+# Pure-Rust SIMD resizing; its unsafe stays inside the crate.
+[dependencies.fast_image_resize]
+version          = "6"
+default-features = false
+features         = ["std"]
 optional         = true
 
 # ── Dev / benchmark dependencies ──────────────────────────────────────────────
