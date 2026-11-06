@@ -135,3 +135,8 @@ harness = false
 [[bench]]
 name    = "bench_collate_into"
 harness = false
+
+[[bench]]
+name              = "bench_image"
+harness           = false
+required-features = ["image"]
