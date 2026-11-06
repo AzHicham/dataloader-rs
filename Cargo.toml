@@ -110,3 +110,7 @@ harness = false
 [[bench]]
 name    = "bench_first_batch"
 harness = false
+
+[[bench]]
+name    = "bench_collate_into"
+harness = false
