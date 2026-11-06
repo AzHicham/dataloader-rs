@@ -12,6 +12,7 @@ package. Unit tests live next to the code (`#[cfg(test)]` modules in `src/`).
 | `integration_collate_ndarray.rs` | `DefaultCollator` stacking `ndarray::Array` | `ndarray` |
 | `integration_collate_torch.rs` | `DefaultCollator` stacking `tch::Tensor`, `pin_memory` | `torch-rs` |
 | `integration_collate_into.rs` | `collate_into`: buffers reused (stable pointers), pool bounded under a slow consumer, buffers returned on drop, errors, panics, early break, partial last batch, epochs, workers | |
+| `integration_sources.rs` | `MemorySource`, `FileSource` (size cap, missing file, directory, `/dev/zero`), `HttpSource` against a local server (`support/http_server.rs`): URLs and templates, encoding, headers, connection reuse, retries and backoff, `Retry-After`, timeouts, size caps, truncated / endless / garbage responses, redirects, invalid settings, a failed item failing its batch only, an `ImageCollator` fed over HTTP with metadata | `sources` (`image`) |
 | `integration_image.rs` | the `image` pipeline against Pillow and torchvision golden fixtures (`fixtures/image/make_fixtures.py`), hostile inputs, a loader with workers reusing pooled buffers, run-time dtypes, a bad sample failing its batch only | `image` |
 
 ```bash
