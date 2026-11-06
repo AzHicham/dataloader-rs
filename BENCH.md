@@ -334,6 +334,20 @@ Decoding dominates once images are larger than the batch row (≈ 4.5 ms per 512
 WebP): the pooled pipeline saves the per-sample allocations, the RGB copy and the per-value
 arithmetic (a 256-entry table per channel), not the decode.
 
+### 4.9 Images over HTTP: `bench_sources`
+
+An epoch of 512 lossless WebP images of 224×224 (8 distinct), decoded and normalized into f32
+NCHW batches of 64 with 4 workers, from a `MemorySource` or an `HttpSource` on a local server in
+the bench process (keep-alive). Pinned to the E-cores (`taskset -c 12-19`):
+
+| source | `items_in_parallel` 1 | `items_in_parallel` 4 |
+|---|---:|---:|
+| `MemorySource` | 120.2 ms (4,260 images/s) | 138.4 ms (± 27 ms) |
+| `HttpSource` | 139.8 ms (3,660 images/s) | 138.4 ms (3,700 images/s) |
+
+With one request in flight per worker, HTTP adds about 40 µs per image (14 %); with four, it is
+hidden behind decoding.
+
 ## 5. Results: Python against PyTorch
 
 `bench/compare_torch.py`, 4 workers, `batch_size` 32. `w` is `num_workers`, `items` is
