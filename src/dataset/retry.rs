@@ -19,6 +19,7 @@ const MAX_RETRIES: u32 = 32;
 ///   is honoured, up to `max_backoff`.
 /// - [`FileDataset`](super::FileDataset): an I/O error of kind `TimedOut`, `Interrupted` or
 ///   `WouldBlock`, or an attempt over the dataset's `timeout`. Default: no retry.
+/// - `ObjectStoreDataset`: the store retries, with these settings (see its docs).
 ///
 /// The wait before retry `n` (from 0) is `initial_backoff × 2ⁿ`, at most `max_backoff`, of
 /// which the second half is random (jitter).

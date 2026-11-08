@@ -11,8 +11,8 @@ pub(super) const MAX_INT_BYTES: usize = 20;
 /// The values of one template placeholder, one per item.
 ///
 /// Integers are written in decimal. Strings are written as the dataset's location needs:
-/// percent-encoded in a URL, as they are in a file path, where a value cannot hold `/`, `\`
-/// or NUL and cannot be `.` or `..`.
+/// percent-encoded in a URL, as they are in a file path or object key, where a value cannot
+/// hold `/` (nor `\` or NUL in a path) and cannot be `.` or `..`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Column {
     /// Signed integers.

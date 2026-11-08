@@ -1,4 +1,4 @@
-//! [`Locations`]: where item `i` of a built-in dataset lives (a URL, a path): a list, a
+//! [`Locations`]: where item `i` of a built-in dataset lives (a URL, a path, a key): a list, a
 //! template, or a function of the index.
 
 use std::borrow::Cow;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 use super::template::Template;
 use crate::{dataset::FetchError, error::Result};
 
-/// The function of a dataset made with `url_fn` or `path_fn`.
+/// The function of a dataset made with `url_fn`, `path_fn` or `key_fn`.
 pub(crate) type LocationFn = Arc<dyn Fn(usize) -> String + Send + Sync>;
 
 /// The locations of the items of a dataset, of type `L` once parsed.

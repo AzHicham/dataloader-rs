@@ -2,7 +2,7 @@
 
 use std::fmt::{self, Debug};
 use std::result::Result as StdResult;
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
@@ -10,7 +10,6 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue, RETRY_AFTER, USER_AGEN
 use reqwest::redirect::Policy;
 use reqwest::tls::Certificate;
 use reqwest::{Client, Error as ReqwestError, Response, StatusCode, Url};
-use rustls::crypto::ring;
 
 use crate::{
     dataset::{
@@ -18,6 +17,7 @@ use crate::{
         location::Locations,
         retry::Transient,
         template::{Escape, Template},
+        tls::{install_ring_provider, mozilla_roots},
     },
     error::Result,
 };
@@ -261,10 +261,10 @@ impl HttpDatasetBuilder {
         #[cfg(test)]
         let builder = match self.test_root {
             Some(pem) => builder.tls_certs_only([Certificate::from_pem(pem)?]),
-            None => builder.tls_certs_only(mozilla_roots()?),
+            None => builder.tls_certs_only(mozilla_roots(Certificate::from_der)?),
         };
         #[cfg(not(test))]
-        let builder = builder.tls_certs_only(mozilla_roots()?);
+        let builder = builder.tls_certs_only(mozilla_roots(Certificate::from_der)?);
         Ok(HttpDataset {
             client: builder.build()?,
             urls,
@@ -278,23 +278,6 @@ impl HttpDatasetBuilder {
         self.test_root = Some(pem);
         self
     }
-}
-
-/// Make *ring* the process's rustls provider, unless one is installed already.
-pub(crate) fn install_ring_provider() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        // Err: another provider was installed first, which rustls then uses.
-        let _ = ring::default_provider().install_default();
-    });
-}
-
-/// The bundled Mozilla root certificates.
-fn mozilla_roots() -> Result<Vec<Certificate>> {
-    webpki_root_certs::TLS_SERVER_ROOT_CERTS
-        .iter()
-        .map(|der| Ok(Certificate::from_der(der)?))
-        .collect()
 }
 
 fn parse_url(url: &str) -> Result<Url> {

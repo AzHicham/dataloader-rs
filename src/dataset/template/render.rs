@@ -138,7 +138,8 @@ impl Template {
     }
 
     /// The location of item `index`, which must be below [`len`](Self::len). Fails if values
-    /// next to each other or to the template's text make a `.` or `..` path component.
+    /// next to each other or to the template's text make a `.` or `..` path component (or an
+    /// empty key part).
     pub(crate) fn render(&self, index: usize) -> Result<String> {
         let mut location = String::with_capacity(self.capacity);
         for segment in &self.segments {
@@ -326,6 +327,23 @@ mod tests {
         // The template's own text is trusted.
         let t = Template::new("../data/{index}", vec![], Some(1), Escape::Path).unwrap();
         assert_eq!(t.render(0).unwrap(), "../data/0");
+    }
+
+    #[test]
+    fn keys_are_written_raw_as_valid_parts() {
+        let names = Column::from(vec!["s 1.svs", "a\\b"]);
+        let t = Template::new("tiles/{s}/{index}", vec![("s", names)], None, Escape::Key);
+        let t = t.unwrap();
+        assert_eq!(t.render(0).unwrap(), "tiles/s 1.svs/0");
+        assert_eq!(t.render(1).unwrap(), "tiles/a\\b/1");
+        for value in ["", ".", "..", "a/b", "a\nb"] {
+            let column = Column::from(vec![value]);
+            let error = Template::new("tiles/{s}", vec![("s", column)], None, Escape::Key);
+            assert!(error.is_err(), "{value:?}");
+        }
+        // A key part is never empty: values cannot make an empty or a dot part.
+        let dot = Column::from(vec!["."]);
+        assert!(Template::new("tiles/.{s}", vec![("s", dot)], None, Escape::Key).is_err());
     }
 
     #[test]
