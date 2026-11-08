@@ -15,14 +15,14 @@ pub(super) type WorkerMsg<B> = (usize, std::thread::Result<Result<B>>);
 
 /// Fetch the items of one batch, then collate them.
 ///
-/// With `items_in_parallel == 1` the batch is one `Dataset::get_batch` call;
+/// With `item_concurrency == 1` the batch is one `Dataset::get_batch` call;
 /// otherwise each item is one `Dataset::get` call, made by lanes on `pool`
 /// (see [`fetch_in_lanes`]).
 pub(super) fn process_batch<D, C>(
     dataset: &D,
     indices: &[usize],
     collator: &C,
-    items_in_parallel: usize,
+    item_concurrency: usize,
     pool: Option<&rayon::ThreadPool>,
 ) -> Result<C::Batch>
 where
@@ -31,9 +31,9 @@ where
 {
     let items = match (pool, indices) {
         // A single item needs no lane, but is still fetched with `get`.
-        (Some(_), &[index]) if items_in_parallel > 1 => vec![dataset.get(index)?],
-        (Some(pool), _) if items_in_parallel > 1 => {
-            fetch_in_lanes(dataset, indices, items_in_parallel, pool)?
+        (Some(_), &[index]) if item_concurrency > 1 => vec![dataset.get(index)?],
+        (Some(pool), _) if item_concurrency > 1 => {
+            fetch_in_lanes(dataset, indices, item_concurrency, pool)?
         }
         _ => dataset.get_batch(indices)?,
     };
@@ -104,7 +104,7 @@ where
     dataset: Arc<D>,
     collator: Arc<C>,
     /// Items of one batch fetched in parallel, on `pool`.
-    items_in_parallel: usize,
+    item_concurrency: usize,
     pool: Arc<rayon::ThreadPool>,
     chunks: Vec<Vec<usize>>,
     next_claim: AtomicUsize,
@@ -128,7 +128,7 @@ where
     pub(super) fn new(
         dataset: Arc<D>,
         collator: Arc<C>,
-        items_in_parallel: usize,
+        item_concurrency: usize,
         pool: Arc<rayon::ThreadPool>,
         chunks: Vec<Vec<usize>>,
         window: usize,
@@ -138,7 +138,7 @@ where
         Self {
             dataset,
             collator,
-            items_in_parallel,
+            item_concurrency,
             pool,
             chunks,
             next_claim: AtomicUsize::new(0),
@@ -213,7 +213,7 @@ where
                         &*self.dataset,
                         &self.chunks[batch_idx],
                         &*self.collator,
-                        self.items_in_parallel,
+                        self.item_concurrency,
                         Some(&self.pool),
                     )
                 }));

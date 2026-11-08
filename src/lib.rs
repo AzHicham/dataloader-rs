@@ -2,7 +2,7 @@
 //!
 //! A [`DataLoader`] owns a [`Dataset`], a [`Sampler`] and a [`Collator`]; each
 //! [`iter`](DataLoader::iter) runs one epoch and yields `Result<Batch>` in epoch order, loading
-//! `num_workers` batches in parallel on the loader's thread pool, with `items_in_parallel` items of
+//! `num_workers` batches in parallel on the loader's thread pool, with `item_concurrency` items of
 //! each batch fetched in parallel.
 //!
 //! ```rust

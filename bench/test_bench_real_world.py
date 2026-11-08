@@ -58,12 +58,12 @@ def test_remote_threads(benchmark):
     benchmark.pedantic(lambda: _drain(loader), warmup_rounds=1, rounds=3)
 
 
-def test_remote_items_in_parallel(benchmark):
+def test_remote_item_concurrency(benchmark):
     loader = PyDataloader(
         OursRemote(128),
         batch_size=BATCH_SIZE,
         num_workers=4,
         prefetch_depth=4,
-        items_in_parallel=8,
+        item_concurrency=8,
     )
     benchmark.pedantic(lambda: _drain(loader), warmup_rounds=1, rounds=3)

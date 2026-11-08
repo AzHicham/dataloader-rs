@@ -202,14 +202,14 @@ def _iterate_inherited(it, queue):
 
 @pytest.mark.skipif(sys.platform != "linux", reason="fork start method is Linux-only here")
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
-@pytest.mark.parametrize(("num_workers", "items_in_parallel"), [(2, 1), (0, 2)])
-def test_par_iterator_from_before_fork_raises_in_child(num_workers, items_in_parallel):
+@pytest.mark.parametrize(("num_workers", "item_concurrency"), [(2, 1), (0, 2)])
+def test_par_iterator_from_before_fork_raises_in_child(num_workers, item_concurrency):
     """An epoch started in the parent cannot run in a forked child: it raises instead of hanging."""
     loader = DataLoader(
         ListDataset(range(64)),
         batch_size=4,
         num_workers=num_workers,
-        items_in_parallel=items_in_parallel,
+        item_concurrency=item_concurrency,
     )
     it = iter(loader)
     next(it)
@@ -246,7 +246,7 @@ _EXIT_SCRIPTS = {
     # Pools whose threads hold a thread state, one epoch left unfinished.
     "used_loaders": _DS
     + """
-loaders = [PyDataloader(Ds(), batch_size=4, num_workers=2, items_in_parallel=k) for k in (1, 3)]
+loaders = [PyDataloader(Ds(), batch_size=4, num_workers=2, item_concurrency=k) for k in (1, 3)]
 for loader in loaders:
     assert sum(len(batch) for batch in loader) == 64
 it = iter(loaders[0])

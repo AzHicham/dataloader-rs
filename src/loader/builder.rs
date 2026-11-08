@@ -27,7 +27,7 @@ struct Settings {
     /// Batches processed in parallel.
     num_workers: usize,
     /// Items of one batch fetched in parallel.
-    items_in_parallel: usize,
+    item_concurrency: usize,
     /// Main function of the pool's threads; `None` runs rayon's loop as is.
     thread_main: Option<ThreadMain>,
 }
@@ -43,7 +43,7 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
                 drop_last: false,
                 prefetch_depth: 2,
                 num_workers: 0,
-                items_in_parallel: 1,
+                item_concurrency: 1,
                 thread_main: None,
             },
         }
@@ -90,12 +90,18 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     /// batch are in flight. Useful for I/O-bound datasets (network, object
     /// storage) and for few, large CPU-bound batches.
     ///
-    /// The loader's pool has `max(num_workers, 1) × items_in_parallel`
+    /// The loader's pool has `max(num_workers, 1) × item_concurrency`
     /// threads; sizing it for the machine is the caller's choice.
-    pub fn items_in_parallel(mut self, n: usize) -> Self {
-        assert!(n > 0, "items_in_parallel must be > 0");
-        self.settings.items_in_parallel = n;
+    pub fn item_concurrency(mut self, n: usize) -> Self {
+        assert!(n > 0, "item_concurrency must be > 0");
+        self.settings.item_concurrency = n;
         self
+    }
+
+    /// Former name of [`item_concurrency`](Self::item_concurrency).
+    #[deprecated(since = "0.3.0", note = "renamed to `item_concurrency`")]
+    pub fn items_in_parallel(self, n: usize) -> Self {
+        self.item_concurrency(n)
     }
 
     /// Run each pool thread through `main`, which must call
@@ -156,16 +162,16 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             drop_last,
             prefetch_depth,
             num_workers,
-            items_in_parallel,
+            item_concurrency,
             thread_main,
         } = self.settings;
         // One pool for batch-level and item-level work: num_workers batches,
-        // each with items_in_parallel items in flight.
+        // each with item_concurrency items in flight.
         let threads = num_workers
             .max(1)
-            .checked_mul(items_in_parallel)
-            .expect("num_workers × items_in_parallel overflows usize");
-        let needs_pool = num_workers > 0 || items_in_parallel > 1;
+            .checked_mul(item_concurrency)
+            .expect("num_workers × item_concurrency overflows usize");
+        let needs_pool = num_workers > 0 || item_concurrency > 1;
         let pool = needs_pool.then(|| LoaderPool::new(threads, thread_main));
 
         DataLoader {
@@ -174,7 +180,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
             collator: Arc::new(self.collator),
             prefetch_depth,
             num_workers,
-            items_in_parallel,
+            item_concurrency,
             pool,
         }
     }

@@ -126,13 +126,13 @@ fn bench_remote(c: &mut Criterion) {
     group.throughput(Throughput::Elements(N as u64));
     group.sample_size(10);
     // Blocking I/O: one thread per request in flight, here 4 batches in
-    // parallel x items_in_parallel items each.
+    // parallel x item_concurrency items each.
     const WORKERS: usize = 4;
     for in_flight in [4usize, 16, 64] {
         let mut loader = DataLoader::builder(Remote(N))
             .batch_size(BATCH_SIZE)
             .num_workers(WORKERS)
-            .items_in_parallel(in_flight / WORKERS)
+            .item_concurrency(in_flight / WORKERS)
             .prefetch_depth(4)
             .build();
         group.bench_with_input(

@@ -7,7 +7,7 @@ overhead, 3.2–3.9× on network-bound datasets and 2.5–3.5× on array samples
 Python — with no PyTorch dependency.
 
 - **PyTorch's arguments**: `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`,
-  `drop_last`, plus `seed` for reproducible shuffling, `prefetch_depth`, and `items_in_parallel`
+  `drop_last`, plus `seed` for reproducible shuffling, `prefetch_depth`, and `item_concurrency`
   to fetch the items of a batch concurrently.
 - **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
 - **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
@@ -133,7 +133,7 @@ dataset read-only, or protect shared state with a lock.
 | `prefetch_depth` | `2` | how far ahead workers may load: at most `num_workers + prefetch_depth` batches in progress or waiting (with `num_workers > 0`, > 0) |
 | `collate_fn` | `None` | `list[sample] -> batch`; without it a batch is a `list` |
 | `drop_last` | `False` | drop a final batch smaller than `batch_size` |
-| `items_in_parallel` | `1` | items of one batch fetched in parallel, one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)) |
+| `item_concurrency` | `1` | items of one batch fetched in parallel, one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)); formerly `items_in_parallel=`, still accepted with a `DeprecationWarning` |
 
 `len(loader)` is the number of batches per epoch; `len(iterator)` the number left in the current
 one.
@@ -177,7 +177,7 @@ loader = PyDataloader(dataset, batch_size=8, sampler=Weighted(weights))
 ## Workers, threads and the GIL
 
 `num_workers > 0` loads that many batches in parallel on a thread pool of
-`num_workers × items_in_parallel` threads, created once and reused by every epoch; they load
+`num_workers × item_concurrency` threads, created once and reused by every epoch; they load
 batches ahead while your loop runs and the loader returns them in order.
 
 - **Regular CPython**: the threads share the GIL. Work that releases it — file reads, NumPy,
@@ -219,7 +219,7 @@ batches ahead while your loop runs and the loader returns them in order.
 - **Breaking out of a loop** returns immediately; batches already being loaded finish in the
   background and are discarded.
 - **Ctrl-C** interrupts `next()` within 100 ms while it waits for workers, and the iterator stays
-  usable. A batch fetched on your own thread (`items_in_parallel > 1` without workers) runs to the
+  usable. A batch fetched on your own thread (`item_concurrency > 1` without workers) runs to the
   end first.
 - **Any thread** can create, iterate and drop a loader, one thread at a time per object: a second
   thread calling `next()` on an iterator that another is advancing gets `RuntimeError`.
@@ -232,20 +232,20 @@ batches ahead while your loop runs and the loader returns them in order.
 
 By default a worker fetches the items of its batch one after another, so a dataset that waits
 on the network (an object store, an HTTP API, a database) keeps only `num_workers` requests in
-flight. With `items_in_parallel=k`, up to `k` items of each batch are fetched concurrently, one
-`__getitem__` call each, so `num_workers × items_in_parallel` requests are in flight:
+flight. With `item_concurrency=k`, up to `k` items of each batch are fetched concurrently, one
+`__getitem__` call each, so `num_workers × item_concurrency` requests are in flight:
 
 ```python
 loader = PyDataloader(
     S3Images(keys),
     batch_size=32,
     num_workers=4,  # 4 batches in parallel
-    items_in_parallel=16,  # 16 items of each batch at once: 64 requests in flight
+    item_concurrency=16,  # 16 items of each batch at once: 64 requests in flight
 )
 ```
 
 Waiting on I/O releases the GIL, so this works on regular CPython too. `__getitems__` is not used
-when `items_in_parallel > 1`: each item is its own call.
+when `item_concurrency > 1`: each item is its own call.
 
 ## Errors
 
@@ -275,7 +275,7 @@ when `items_in_parallel > 1`: each item is its own call.
 Against `torch.utils.data.DataLoader` with the same dataset code, on 4 cores of an Intel Core
 i9-13900H, with the allocator settings of [Workers, threads and the GIL](#workers-threads-and-the-gil)
 for both: 4.9–6.6× faster on the loader's own overhead, 3.2–3.9× on network-bound datasets
-(`items_in_parallel`), first batches in milliseconds against 11–334 ms for torch's fresh worker
+(`item_concurrency`), first batches in milliseconds against 11–334 ms for torch's fresh worker
 processes, and 2.5–3.5× on array samples (file reads, NumPy augmentation) with free-threaded
 3.14t / 3.15t, 1.0–1.5× on 3.13. Pure-Python CPU work with per-thread tables is about 1.2×
 faster on 3.14t and 3.15t; on shared objects or under the GIL, torch's processes are 2.4–2.9×
