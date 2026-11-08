@@ -8,10 +8,13 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 | `mod.rs` | the `#[pymodule]` (`gil_used = false`: loads on free-threaded CPython), `into_py_err` |
 | `dataset.rs` | `PyDatasetBase` (the `PyDataset` base class), `Dataset` for `Py<PyDatasetBase>`, `Fetcher` (`__getitems__` or `__getitem__`) |
 | `dataloader.rs` | `PyDataloader`: arguments, validation, `__iter__`, `__len__` |
-| `iterator.rs` | `PyDataloaderIter`: the direct and threaded epochs, `__next__` |
+| `iterator.rs` | `PyDataloaderIter`: the direct, threaded and async epochs, `__next__` |
+| `transform.rs` | `PyTransform`: `transform=f`, called as `f(index, item)`, the loader's `Transform` for Python items and for a Rust dataset's `Bytes` |
 | `sampler.rs` | `PySampler`: sequential, random, or a Python iterable, and the exception it raised |
 | `collator.rs` | `PyCollator`: `collate_fn`, or a plain `list` |
-| `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread |
+| `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread; `attach_global_pool` does the same for rayon's global pool |
+| `async_dataset.rs` | `PyAsyncDatasetBase` (the `PyAsyncDataset` base class), `PyAsyncItems`: coroutines on an asyncio loop thread, submitted from the global pool |
+| `rust_dataset.rs` | `RustDataset` and its `HttpDataset` / `FileDataset` / `ObjectStoreDataset` subclasses |
 
 ## How a Python epoch runs
 
@@ -19,12 +22,13 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 iter(loader)
   ├─ len(dataset)                     raises if __len__ raises
   ├─ sampler → batches of indices     a Python sampler is iterated here, under the interpreter
-  ├─ num_workers == 0, item_concurrency == 1 → Direct    __next__ fetches + collates itself
-  └─ otherwise → Threaded              the Rust core; one attach per batch, or per item
+  ├─ num_workers == 0, item_concurrency == 1 → Direct    __next__ fetches, transforms, collates
+  ├─ otherwise → Threaded              the Rust core; one attach per batch, or per item
+  └─ PyAsyncDataset or Rust dataset → Async   the async core (futures on tokio), always
 ```
 
 - **Direct**: the `Fetcher` (a bound `__getitems__`, or a bound `__getitem__`) is resolved once
-  per epoch; `__next__` calls it, then `collate_fn`.
+  per epoch; `__next__` calls it, then `transform` per item and `collate_fn`.
 - **Threaded**: the core's worker threads call `Dataset::get_batch` on `Py<PyDatasetBase>`, which
   attaches to the interpreter once for the whole batch and resolves the `Fetcher` there.
   `__next__` returns a batch that already arrived directly, and releases the interpreter
@@ -35,6 +39,9 @@ iter(loader)
   creating and destroying one, which costs about 100 µs on free-threaded builds.
 - **`item_concurrency > 1`**: the epoch uses the core iterator even with `num_workers = 0`; the
   batch's lanes fetch its items with one `Dataset::get` (one attach, one `__getitem__`) each.
+- **Async**: `PyDataloader` builds `DataLoader::builder_async` around `PyAsyncItems` or a Rust
+  dataset, with `PyTransform` (which also makes a Rust dataset's items `bytes`); `__next__` waits on it like on the threaded core
+  (`wait_next`). See [ARCHITECTURE.md, 6.2](../../ARCHITECTURE.md#62-async-and-rust-datasets).
 
 ## Rules this code keeps
 
@@ -49,7 +56,7 @@ iter(loader)
 - **The loader outlives its iterators.** `PyDataloaderIter` holds a strong reference to its
   `PyDataloader`.
 - **The garbage collector sees every Python reference, once.** `__traverse__` reports the
-  dataset, the Python sampler and `collate_fn` from the loader, and `_owner` plus the direct path's
+  dataset, the Python sampler, `transform` and `collate_fn` from the loader, and `_owner` plus the direct path's
   own references from an iterator, so cycles through them are freed. Running epochs share the
   loader's objects through `Arc`s and hold no references of their own; reporting one twice would
   let the collector free a live object.

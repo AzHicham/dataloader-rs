@@ -20,8 +20,8 @@ Contents:
 1. [Summary](#1-summary)
 2. [Setup and calibration](#2-setup-and-calibration)
 3. [Method: what is measured and why](#3-method-what-is-measured-and-why)
-4. [Results: Rust](#4-results-rust)
-5. [Results: Python against PyTorch](#5-results-python-against-pytorch)
+4. [Results: Rust](#4-results-rust) (async datasets: 4.8)
+5. [Results: Python against PyTorch](#5-results-python-against-pytorch) (async datasets: 5.5)
 6. [Results: Python regression guards](#6-results-python-regression-guards)
 7. [Reading the results: choosing settings](#7-reading-the-results-choosing-settings)
 8. [Caveats and known bottlenecks](#8-caveats-and-known-bottlenecks)
@@ -317,6 +317,27 @@ thresholds pinned by the suite (section 8):
 Requests in flight are `num_workers × item_concurrency`, and throughput follows them: 264 ms
 for an ideal 256 ms at 4 in flight, 20.8 ms for an ideal 16 ms at 64.
 
+### 4.8 Futures against threads: `bench_async`
+
+512 GETs of 64 KiB from a local keep-alive server answering after 10 ms, `batch_size` 64 (8
+batches), pinned to 12 performance cores (8 November 2026, branch `feat/async-dataset`, features
+`http`). `futures`: `builder_async` + `HttpDataset`; `threads`: the sync loader with the same
+client, one blocking request per thread. Criterion estimates (`--output-format bencher`, flat
+sampling, 10 epochs) of three runs:
+
+| (workers, items) in flight | futures | threads |
+|---|---:|---:|
+| (1, 64) = 64 | 103.9 / 102.6 / 102.5 ms | 101.3 / 101.5 / 101.3 ms |
+| (2, 32) = 64 | 97.6 / 97.2 / 97.3 ms | 108.8 / 108.0 / 109.1 ms |
+| (4, 16) = 64 | 95.7 / 95.7 / 95.4 ms | 117.5 / 117.6 / 118.0 ms |
+| (8, 1) = 8 | 725.9 / 724.8 / 724.6 ms | 726.0 / 725.8 / 724.6 ms |
+
+The ideal at 64 in flight is 512 / 64 × 10 ms = 80 ms; each batch waits for its slowest
+request, which adds about 2 ms per batch. In Rust, 64 threads blocking on requests cost about as
+much as 64 futures: futures are 1 % slower to 19 % faster, and steadier (the threads' spread is
+up to ±14 ms at (4, 16), the futures' under ±1.4 ms). Their gain is in Python (section 5.5). The
+suite is sized for CI (about 35 s); an earlier run of 1 024 GETs gave the same picture.
+
 ## 5. Results: Python against PyTorch
 
 `bench/compare_torch.py`, 4 workers, `batch_size` 32. `w` is `num_workers`, `items` is
@@ -454,6 +475,40 @@ for an ideal 256 ms at 4 in flight, 20.8 ms for an ideal 16 ms at 64.
 - **`python_cpu_local`**: per-thread tables remove that contention: 4 workers give 3.3–3.4× on
   3.14t and 3.15t, 1.16–1.19× torch's persistent processes; that ratio spreads from about 0.94×
   to 1.23× between runs (section 8). On 3.13 the GIL serialises them.
+
+### 5.5 Async datasets: tiles over HTTP
+
+`bench/compare_async.py`, 8 November 2026, branch `feat/async-dataset`: 2 048 GETs of 64 KiB from
+a mock tile server answering after 10 ms (`aiohttp.web` 3.14.5, keep-alive, 4 processes sharing
+the port on the 8 efficiency cores), `batch_size` 64 like the msintuit-ec feature pass, loaders on
+the 12 performance cores. The sync clients (torch, `PyDataset`) use a `requests.Session` per
+process or thread, like the product; the `PyAsyncDataset` one `aiohttp.ClientSession` on the
+loader's event loop, closed in `aclose()`; aiohttp's C extensions load on 3.14t with the GIL off.
+Every measurement builds a fresh loader (one per slide in the product) and reads one epoch;
+3.14t with `maturin develop --release`, 3.13 with a release wheel; medians of 7 rounds in a
+rotated order, (min–max):
+
+| loader (requests in flight) | 3.14t epoch s | 3.13 epoch s | first batch s | CPU s 3.14t / 3.13 |
+|---|---:|---:|---:|---:|
+| torch, 8 workers, `requests` (8) | 2.982 (2.953–3.002) | 2.988 (2.939–3.026) | 0.79–0.80 | 1.98 / 1.56 |
+| torch, 16 workers, `requests` (16) | 1.661 (1.643–1.676) | 1.642 (1.632–1.661) | 0.88–0.89 | 2.88 / 2.12 |
+| `PyDataset`, 4 × 16 threads, `requests` (64) | 0.478 (0.445–0.504) | 1.044 (1.038–1.109) | 0.06 / 0.15 | 1.66 / 1.39 |
+| `PyAsyncDataset`, 2 × 32, `aiohttp` (64) | 0.450 (0.424–0.457) | 0.445 (0.429–0.482) | 0.04 | 0.32 / 0.29 |
+| `HttpDataset`, 2 × 32 (64) | 0.384 (0.381–0.391) | 0.382 (0.377–0.387) | 0.03 | 0.27 / 0.25 |
+| `HttpDataset`, 8 × 1 (8) | 2.764 (2.756–2.770) | 2.759 (2.738–2.774) | 0.69 | 0.21 / 0.22 |
+
+- Requests in flight decide the epoch: torch's are its worker processes, so 8 workers take 3.0 s
+  for an ideal 2.56 s; `dataloader_rs` at the same 8 is barely faster (2.76 s). At 64 in flight,
+  `HttpDataset` is 4.3× faster than torch with 16 workers and 7.8× with 8, for an ideal 0.32 s;
+  `PyAsyncDataset` with aiohttp 3.7× and 6.6×.
+- Threads on a GIL build (3.13) take turns running `requests`, which does much more Python per
+  request than `http.client`: 1.04 s against 0.48 s on 3.14t. `HttpDataset` and
+  `PyAsyncDataset` do not depend on the build.
+- CPU per item: `PyAsyncDataset` with aiohttp about 150 µs (0.32 s for 2 048 items, `HttpDataset`
+  0.27 s), 64 threads with `requests` about 800 µs, torch's processes 1–1.4 ms.
+- First batch: torch starts its worker processes for every fresh loader (0.79–0.89 s);
+  `dataloader_rs` builds its threads and runtime in milliseconds (0.03–0.06 s, one batch of
+  requests; 0.15 s for `requests` threads under the GIL).
 
 ## 6. Results: Python regression guards
 

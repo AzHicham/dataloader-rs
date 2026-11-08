@@ -11,9 +11,12 @@ Python — with no PyTorch dependency.
   to fetch the items of a batch concurrently.
 - **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
 - **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
+- **Async datasets**: `async def __getitem__` on a `PyAsyncDataset`, or the built-in
+  `HttpDataset`, `FileDataset` and `ObjectStoreDataset`, which fetch in Rust without the GIL:
+  64 requests in flight from two worker threads.
 - **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
 - **Free-threaded Python**: on CPython 3.14t and 3.15t, worker threads run Python code in
-  parallel. Wheels for the GIL builds (3.13 to 3.15) too: there, threads help work that releases
+  parallel. Wheels for the GIL builds (3.11 to 3.15) too: there, threads help work that releases
   the GIL (see below).
 
 > **When PyTorch is faster.** The workers are threads in one process, not processes. On regular
@@ -26,7 +29,7 @@ Python — with no PyTorch dependency.
 > count, and PyTorch is 2.5–2.9× faster: give each thread its own copy (`threading.local`, see
 > [Workers, threads and the GIL](#workers-threads-and-the-gil)).
 
-Requires Python ≥ 3.13.
+Requires Python ≥ 3.11.
 
 ## Contents
 
@@ -35,9 +38,11 @@ Requires Python ≥ 3.13.
 - [Datasets](#datasets)
 - [PyDataloader arguments](#pydataloader-arguments)
 - [Batches and `collate_fn`](#batches-and-collate_fn)
+- [Transforms](#transforms)
 - [Samplers](#samplers)
 - [Workers, threads and the GIL](#workers-threads-and-the-gil)
 - [I/O-bound datasets](#io-bound-datasets)
+- [Async datasets](#async-datasets)
 - [Errors](#errors)
 - [Coming from `torch.utils.data.DataLoader`](#coming-from-torchutilsdatadataloader)
 - [Performance](#performance)
@@ -50,7 +55,7 @@ pip install dataloader-rs
 
 | Wheels | Platforms |
 |---|---|
-| CPython 3.13, 3.14, 3.15 and free-threaded 3.14t, 3.15t | Linux x86_64 (x86-64-v3 CPU: AVX2, Intel 2013+ / AMD 2017+) and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
+| CPython 3.11 to 3.15 and free-threaded 3.14t, 3.15t | Linux x86_64 (x86-64-v3 CPU: AVX2, Intel 2013+ / AMD 2017+) and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
 
 Other interpreters and platforms build from the source distribution, which needs a Rust
 toolchain; from a checkout: `pip install maturin && maturin develop --release --features python`.
@@ -92,6 +97,11 @@ for epoch in range(10):
 
 ## Datasets
 
+A dataset is a source: it only fetches items, synchronously (`PyDataset`) or asynchronously
+(`PyAsyncDataset` and the Rust datasets, see [Async datasets](#async-datasets)). What is done to
+each item afterwards (decoding, augmentation) is the loader's `transform` (see
+[Transforms](#transforms)).
+
 Subclass `PyDataset` and implement `__len__` and `__getitem__(index)`. Call `super().__init__()`
 if you define `__init__`.
 
@@ -124,16 +134,18 @@ dataset read-only, or protect shared state with a lock.
 
 | Argument | Default | Meaning |
 |---|---|---|
-| `dataset` | — | a `PyDataset` |
+| `dataset` | — | a `PyDataset`, a `PyAsyncDataset`, or a Rust dataset (`HttpDataset`, `FileDataset`, `ObjectStoreDataset`; see [Async datasets](#async-datasets)) |
 | `batch_size` | `1` | samples per batch (> 0) |
 | `shuffle` | `False` | a new random order every epoch; exclusive with `sampler` |
 | `seed` | `None` | seed for `shuffle=True` (requires it): same seed, same sequence of epoch orders |
 | `sampler` | `None` | any iterable of `int` indices, iterated at the start of each epoch |
 | `num_workers` | `0` | batches loaded in parallel; `0` loads each batch in the calling thread |
 | `prefetch_depth` | `2` | how far ahead workers may load: at most `num_workers + prefetch_depth` batches in progress or waiting (with `num_workers > 0`, > 0) |
+| `transform` | `None` | `(index, sample) -> sample`, applied to every item before `collate_fn` (see [Transforms](#transforms)) |
 | `collate_fn` | `None` | `list[sample] -> batch`; without it a batch is a `list` |
 | `drop_last` | `False` | drop a final batch smaller than `batch_size` |
 | `item_concurrency` | `1` | items of one batch fetched in parallel, one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)); formerly `items_in_parallel=`, still accepted with a `DeprecationWarning` |
+| `runtime_threads` | `None` | async and Rust datasets only: worker threads of the loader's tokio runtime, 1 to 1024; `None` = one per CPU available to the process. `ValueError` with a `PyDataset` |
 
 `len(loader)` is the number of batches per epoch; `len(iterator)` the number left in the current
 one.
@@ -143,6 +155,65 @@ one.
 Without `collate_fn` a batch is the `list` of its samples. `collate_fn` receives that list and
 returns anything: `np.stack`, `torch.stack`, a dict of arrays. It runs on the worker thread that
 loaded the batch (or the calling thread with `num_workers=0`), so heavy collation is parallel too.
+
+## Transforms
+
+`transform=f` calls `f(index, sample)` for every item once the dataset has fetched it, before
+`collate_fn`: `index` is the item's dataset index, as the sampler drew it (shuffled or not), the
+same order as Rust's `Transform::apply(index, item)`. It runs on the loader's threads, holding
+the interpreter only for the call: right after `__getitem__` on the thread that fetched the item
+(the calling thread for a `PyDataset` with `num_workers=0` and `item_concurrency=1`), or on the
+loader's pool as each item of an async or Rust dataset arrives. With `item_concurrency > 1` the
+items of a batch are transformed in parallel. An exception it raises fails its batch and keeps
+its type.
+
+A one-argument callable, such as a torchvision `Compose`, is wrapped:
+
+```python
+from torchvision import transforms
+
+compose = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
+loader = PyDataloader(dataset, batch_size=32, transform=lambda i, x: compose(x))
+```
+
+The index finds what belongs to each item without carrying it through the dataset. Tiles of a
+slide, fetched in Rust, decoded on the loader's threads, batched with their coordinates:
+
+```python
+import io
+
+import numpy as np
+from PIL import Image
+from dataloader_rs import HttpDataset, PyDataloader
+
+coords = np.array(tile_coords)  # (n, 2): x, y of each tile at level 0
+tiles = HttpDataset.from_template(
+    "https://imgsrv.example/slides/slide-1/tile?x={x}&y={y}&w=224&h=224&f=png",
+    {"x": coords[:, 0], "y": coords[:, 1]},
+    headers={"Authorization": f"Bearer {token}"},
+)
+
+
+def decode(png: bytes) -> np.ndarray:
+    return np.asarray(Image.open(io.BytesIO(png)).convert("RGB"))
+
+
+def stack(items):
+    images, tile_coords = zip(*items)
+    return np.stack(images), np.stack(tile_coords)
+
+
+loader = PyDataloader(
+    tiles,
+    batch_size=64,
+    num_workers=2,
+    item_concurrency=32,
+    transform=lambda i, png: (decode(png), coords[i]),
+    collate_fn=stack,
+)
+for images, tile_coords in loader:  # (64, 224, 224, 3) and (64, 2)
+    save(model(images), tile_coords)
+```
 
 ## Samplers
 
@@ -247,11 +318,168 @@ loader = PyDataloader(
 Waiting on I/O releases the GIL, so this works on regular CPython too. `__getitems__` is not used
 when `item_concurrency > 1`: each item is its own call.
 
+Each request in flight here holds a thread. For many requests, an [async dataset](#async-datasets)
+holds a future instead.
+
+## Async datasets
+
+Two kinds of datasets are fetched by futures on the loader's async runtime instead of threads.
+For both, `num_workers` is the number of batches in flight (at least one), `item_concurrency`
+the number of items of each batch in flight, so `num_workers × item_concurrency` requests run at
+once, from a few threads. The other arguments, the order of batches and the errors are the same
+as for `PyDataset`.
+
+| Setting | Sizes | Rule |
+|---|---|---|
+| `num_workers × item_concurrency` | requests in flight | latency × wanted items/s; far more than cores |
+| `runtime_threads` | CPU for network receive, TLS, body copy (tokio) | default (CPUs available) is enough; lower it to leave cores to training |
+| the loader's pool (`num_workers × item_concurrency` threads, at most the CPUs available, with a `transform` or a Rust dataset; else `num_workers`) | `transform` and `collate_fn` | the CPU-bound part |
+
+**`PyAsyncDataset`**: subclass it and write `async def __getitem__` (and optionally
+`async def __getitems__(indices)`, used when `item_concurrency=1`). The loader runs the
+coroutines on an asyncio event loop of its own, on a background thread; dropping an iterator
+cancels the coroutines in flight. Objects tied to an event loop (a client session, open
+connections) must be created inside the coroutines, on the loader's loop, and released by an
+optional `async def aclose(self)`: when the loader is dropped, it awaits `aclose()` once on its
+loop, then stops the loop. An exception from `aclose()`, or an `aclose()` still running after
+5 seconds, is logged (logger `dataloader_rs`) and the loop stops anyway.
+
+```python
+import aiohttp
+from dataloader_rs import PyAsyncDataset, PyDataloader
+
+
+class Tiles(PyAsyncDataset):
+    def __init__(self, urls: list[str]) -> None:
+        super().__init__()
+        self.urls = urls
+        self.session = None
+
+    def __len__(self) -> int:
+        return len(self.urls)
+
+    async def __getitem__(self, index: int) -> bytes:
+        if self.session is None:  # created on the loader's event loop
+            self.session = aiohttp.ClientSession()
+        async with self.session.get(self.urls[index]) as response:
+            return await response.read()
+
+    async def aclose(self) -> None:  # awaited on the loader's loop when it is dropped
+        if self.session is not None:
+            await self.session.close()
+
+
+loader = PyDataloader(Tiles(urls), batch_size=64, num_workers=2, item_concurrency=32)
+```
+
+**Rust datasets**: items are `bytes`, fetched in Rust without holding the interpreter; the
+loader's `transform` turns them into what you need.
+
+| Dataset | Item `i` | Options |
+|---|---|---|
+| `HttpDataset(urls)` | body of a GET of `urls[i]`; one client, keep-alive | `headers`, `timeout` (s, per attempt, body included; 30), `connect_timeout` (10), `retries` (3), `backoff`, `max_backoff`, `max_bytes` |
+| `HttpDataset.from_template(template, columns, *, length)` | body of a GET of the URL made from `template` with the values of item `i` | the options of `HttpDataset(urls)` |
+| `FileDataset(paths)` | content of `paths[i]` | `timeout` (s, per attempt; `None`), `retries` (0), `backoff`, `max_backoff`, `max_bytes` |
+| `FileDataset.from_template(template, columns, *, length)` | content of the path made from `template` with the values of item `i` | the options of `FileDataset(paths)` |
+| `ObjectStoreDataset(url, keys)` | object `keys[i]` under the store and prefix of `url` (`s3://`, `gs://`, `az://`, `https://`) | `options` (`object_store` keys such as `aws_region`; credentials also from `AWS_*`, `GOOGLE_*`, `AZURE_*`), `timeout` (s, per request; `None`: 30), `retries` (3), `backoff`, `max_backoff`, `max_bytes` |
+| `ObjectStoreDataset.from_template(url, template, columns, *, length)` | object whose key, under the prefix of `url`, is made from `template` with the values of item `i` | the options of `ObjectStoreDataset(url, keys)` |
+
+Every `from_template` makes the locations in Rust, item by item: no string per item is kept.
+`length` is required without `columns`. The retry options are the same everywhere: up to
+`retries` more attempts after a transient failure, waiting `backoff × 2ⁿ` seconds with jitter,
+at most `max_backoff` (0.1 and 5 by default).
+
+```python
+import io
+
+import numpy as np
+from PIL import Image
+from dataloader_rs import HttpDataset, PyDataloader
+
+tiles = HttpDataset(
+    [f"https://tiles.example/slide/{x}_{y}.png" for x, y in coords],
+    headers={"Authorization": f"Bearer {token}"},
+    retries=5,  # 408, 429, 5xx and connection errors, with exponential backoff
+)
+loader = PyDataloader(
+    tiles,
+    batch_size=64,
+    num_workers=2,
+    item_concurrency=32,
+    transform=lambda i, png: np.asarray(Image.open(io.BytesIO(png))),
+    collate_fn=np.stack,
+)
+```
+
+For many URLs that differ only by a few values (34 000 tiles of a slide, say), give a template
+and the values instead of a list of URLs. The template is parsed once; each URL is made in Rust
+when its item is fetched:
+
+```python
+cols, rows = np.meshgrid(np.arange(200), np.arange(170))  # 34 000 (col, row) coordinates
+tiles = HttpDataset.from_template(
+    "https://imgsrv.example/slides/{slide}/tile?x={x}&y={y}&w=224&h=224&l=12&f=png&q=100",
+    {"slide": ["slide 1.svs"] * cols.size, "x": cols.ravel() * 224, "y": rows.ravel() * 224},
+    headers={"Authorization": f"Bearer {token}"},
+)
+```
+
+`{name}` is the value of column `name` for the item, `{index}` the item index, `{{` and `}}`
+literal braces. A column is a sequence or a numpy array (any integer dtype) of ints, written in
+decimal, or of strs, percent-encoded as a URL component (`"slide 1.svs"` → `slide%201.svs`; `.`
+and `..` are refused). All columns have the same length, the number of items; with `{index}`
+only, pass `length=`. A placeholder without a column, a column the template does not use (a
+typo, likely), unbalanced braces, or an invalid first URL raise `ValueError`; a column that is
+not ints or strs raises `TypeError`.
+
+Files and objects take templates the same way. In a path or a key a str is written as it is,
+but a value cannot hold `/` (nor `\` or NUL in a path) or be `.` or `..`, so it cannot leave
+the template's directory (`ValueError`); a key part cannot be empty either:
+
+```python
+from dataloader_rs import FileDataset, ObjectStoreDataset
+
+slides = ["a.svs", "a.svs", "b.svs"]
+# /mnt/tiles/a.svs/0.png, /mnt/tiles/a.svs/1.png, /mnt/tiles/b.svs/2.png
+files = FileDataset.from_template(
+    "/mnt/tiles/{slide}/{index}.png",
+    {"slide": slides},
+    timeout=10.0,  # a hung network file system fails the attempt...
+    retries=2,  # ...which is tried again
+)
+# s3://bucket/tiles/a.svs/0.png, ...: the template is relative to the prefix of the URL
+objects = ObjectStoreDataset.from_template(
+    "s3://bucket/tiles",
+    "{slide}/{index}.png",
+    {"slide": slides},
+    options={"aws_region": "eu-west-3"},
+)
+```
+
+What is retried depends on the dataset. `HttpDataset`: connection errors, timeouts and the
+statuses 408, 429, 500, 502, 503 and 504, honouring a `Retry-After` up to `max_backoff`; other
+statuses fail at once. `FileDataset`: attempts over `timeout` and the I/O errors `TimedOut`,
+`Interrupted` and `WouldBlock`; none by default. `ObjectStoreDataset`: the `object_store` crate
+retries by itself (5xx, 429, 408, connection errors, timeouts, within 3 minutes of the first
+attempt) with these settings; set its timeout with `timeout=`, not in `options`. Every item is
+capped at `max_bytes` (64 MiB by default), checked before and while reading. TLS uses the
+bundled Mozilla root certificates, not the system store.
+
+The loader checks a dataset when it is built: `async def` methods on a `PyDataset`, plain ones on
+a `PyAsyncDataset` (`aclose` included), a class with both bases, or a missing `__len__` raise
+`TypeError`. A plain
+`__getitem__` that returns a coroutine (an `async def` helper called without `await`) raises
+`TypeError` on the first item.
+
 ## Errors
 
-- An exception raised by `__getitem__`, `__getitems__` or `collate_fn` reaches you with its own
-  type and message, and the next `next()` continues with the following batch, with or without
-  workers, as in PyTorch.
+- An exception raised by `__getitem__`, `__getitems__` (sync or async), `transform` or
+  `collate_fn` reaches you with its own type and message, and the next `next()` continues with
+  the following batch, with or without workers, as in PyTorch.
+- The Rust datasets raise `OSError` for a failed request or read (with the status for HTTP),
+  `TimeoutError` when the last attempt ran out of time, `ValueError` for an item over
+  `max_bytes`, `IndexError` for an index out of range. Messages show URLs without their query
+  or credentials.
 - A `__len__` or a sampler that raises, or a sampler that yields something other than a
   non-negative `int`, makes `iter(loader)` raise — an epoch never silently comes out empty or
   short.
@@ -267,6 +495,8 @@ when `item_concurrency > 1`: each item is its own call.
 | `generator=` for a reproducible shuffle | `seed=` |
 | `prefetch_factor` (per worker) | `prefetch_depth` (total, beyond the `num_workers` batches in progress) |
 | worker processes, `persistent_workers`, `worker_init_fn`, `multiprocessing_context` | threads: nothing to start, copy or initialise per worker |
+| a `Dataset` doing blocking I/O in worker processes | `PyAsyncDataset`, or `HttpDataset` / `FileDataset` / `ObjectStoreDataset` |
+| transforms applied inside `__getitem__` | `transform=f`, applied by the loader to any dataset as `f(index, item)` |
 | `pin_memory`, `timeout`, `batch_sampler`, `IterableDataset` | not supported |
 | default collation into tensors | a `list`; pass `collate_fn` (e.g. `np.stack`, `torch.stack`) |
 
@@ -279,7 +509,10 @@ for both: 4.9–6.6× faster on the loader's own overhead, 3.2–3.9× on networ
 processes, and 2.5–3.5× on array samples (file reads, NumPy augmentation) with free-threaded
 3.14t / 3.15t, 1.0–1.5× on 3.13. Pure-Python CPU work with per-thread tables is about 1.2×
 faster on 3.14t and 3.15t; on shared objects or under the GIL, torch's processes are 2.4–2.9×
-faster. Every number, the method and the caveats:
+faster. Fetching 2 048 tiles of 64 KiB over HTTP (10 ms each, batches of 64), a fresh loader per
+epoch: torch with 8 / 16 worker processes (`requests`) takes 3.0 / 1.6 s, `HttpDataset` with 64
+requests in flight 0.38 s (`PyAsyncDataset` with aiohttp 0.45 s, `requests` threads 0.48 s on
+3.14t and 1.04 s under the GIL), first batch 0.03 s against 0.8 s, on 3.13 and 3.14t alike. Every number, the method and the caveats:
 [BENCH.md](https://github.com/AzHicham/dataloader-rs/blob/dev/BENCH.md).
 
 Source, issues and the Rust crate: [github.com/AzHicham/dataloader-rs](https://github.com/AzHicham/dataloader-rs).

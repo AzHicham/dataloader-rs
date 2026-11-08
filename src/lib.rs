@@ -1,9 +1,10 @@
 //! PyTorch's `DataLoader` model — dataset, sampler, collator, loader — as a typed Rust library.
 //!
-//! A [`DataLoader`] owns a [`Dataset`], a [`Sampler`] and a [`Collator`]; each
-//! [`iter`](DataLoader::iter) runs one epoch and yields `Result<Batch>` in epoch order, loading
-//! `num_workers` batches in parallel on the loader's thread pool, with `item_concurrency` items of
-//! each batch fetched in parallel.
+//! A [`DataLoader`] owns a [`Dataset`], a [`Sampler`], a [`Transform`] and a [`Collator`]: the
+//! dataset only fetches items, the transform (none by default) turns each one into what the
+//! collator batches. Each [`iter`](DataLoader::iter) runs one epoch and yields `Result<Batch>` in
+//! epoch order, loading `num_workers` batches in parallel on the loader's thread pool, with
+//! `item_concurrency` items of each batch fetched in parallel.
 //!
 //! ```rust
 //! use dataloader_rs::{DataLoader, Dataset, RandomSampler, error::Result};
@@ -44,7 +45,10 @@
 //! | [`error`] | [`Error`] and [`Result`] |
 //!
 //! Features: `ndarray` and `torch-rs` add collation of `ndarray::Array` and `tch::Tensor`;
-//! `python` builds the PyO3 module behind the `dataloader-rs` Python package.
+//! `async` adds `AsyncDataset` and `DataLoader::builder_async` (items fetched by futures on
+//! tokio), with `FileDataset`; `http` adds `HttpDataset` and `object-store` adds
+//! `ObjectStoreDataset` (in `dataset`); `python` builds the PyO3 module behind the
+//! `dataloader-rs` Python package and enables the three.
 //!
 //! Design, threads and failure handling:
 //! [ARCHITECTURE.md](https://github.com/AzHicham/dataloader-rs/blob/dev/ARCHITECTURE.md).
