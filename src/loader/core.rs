@@ -6,12 +6,18 @@ use crate::{
     error::Result,
     loader::{builder::DataLoaderBuilder, iter::DataLoaderIter},
     sampler::{BatchSampler, Sampler, SequentialSampler},
+    transform::{Identity, Transform},
 };
 
 /// High-performance DataLoader with a PyTorch-like interface.
-pub struct DataLoader<D, S: Sampler, C> {
+///
+/// The dataset fetches items; the loader applies its [`Transform`] to each one
+/// (`T`, [`Identity`] unless set with
+/// [`transform`](DataLoaderBuilder::transform)), then collates them with `C`.
+pub struct DataLoader<D, S: Sampler, C, T = Identity> {
     pub(super) dataset: Arc<D>,
     pub(super) batch_sampler: BatchSampler<S>,
+    pub(super) transform: Arc<T>,
     pub(super) collator: Arc<C>,
     pub(super) prefetch_depth: usize,
     /// Batches processed in parallel. `0` means the direct path: batches are
@@ -104,17 +110,18 @@ impl<D: Dataset> DataLoader<D, SequentialSampler, VecCollator> {
     }
 }
 
-impl<D, S, C> DataLoader<D, S, C>
+impl<D, S, C, T> DataLoader<D, S, C, T>
 where
     D: Dataset,
     S: Sampler,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
 {
     /// Start one epoch of iteration.
     ///
     /// Advances the sampler (hence `&mut self`); the returned iterator does
     /// not borrow the loader.
-    pub fn iter(&mut self) -> DataLoaderIter<D, C>
+    pub fn iter(&mut self) -> DataLoaderIter<D, C, T>
     where
         C::Batch: Send + 'static,
     {
@@ -124,12 +131,13 @@ where
 
     /// Start one epoch over `chunks`, the batches of indices of
     /// [`epoch_chunks`](Self::epoch_chunks).
-    pub(crate) fn iter_chunks(&mut self, chunks: Vec<Vec<usize>>) -> DataLoaderIter<D, C>
+    pub(crate) fn iter_chunks(&mut self, chunks: Vec<Vec<usize>>) -> DataLoaderIter<D, C, T>
     where
         C::Batch: Send + 'static,
     {
         DataLoaderIter::new(
             &self.dataset,
+            &self.transform,
             &self.collator,
             self.pool.as_mut().map(LoaderPool::get),
             self.item_concurrency,
@@ -142,6 +150,11 @@ where
     /// Reference to the underlying dataset.
     pub fn dataset(&self) -> &D {
         &self.dataset
+    }
+
+    /// Reference to the transform.
+    pub fn transform(&self) -> &T {
+        &self.transform
     }
 
     /// Reference to the collator.
@@ -204,15 +217,16 @@ where
     }
 }
 
-impl<D, S, C> IntoIterator for &mut DataLoader<D, S, C>
+impl<D, S, C, T> IntoIterator for &mut DataLoader<D, S, C, T>
 where
     D: Dataset,
     S: Sampler,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
     C::Batch: Send + 'static,
 {
     type Item = Result<C::Batch>;
-    type IntoIter = DataLoaderIter<D, C>;
+    type IntoIter = DataLoaderIter<D, C, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()

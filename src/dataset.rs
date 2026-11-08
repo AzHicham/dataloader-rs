@@ -36,6 +36,8 @@ pub trait Dataset: Send + Sync + 'static {
     /// The default implementation calls [`get`](Self::get) sequentially.
     /// Override this to amortize per-batch setup costs (e.g. acquiring a
     /// Python GIL token once for all items in a batch rather than per item).
+    /// It must return one item per index, in order: the loader fails the
+    /// batch otherwise.
     fn get_batch(&self, indices: &[usize]) -> Result<Vec<Self::Item>> {
         indices.iter().map(|&i| self.get(i)).collect()
     }

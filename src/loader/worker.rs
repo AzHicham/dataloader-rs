@@ -6,20 +6,27 @@ use std::sync::{
 
 use crossbeam_channel::Sender;
 
-use crate::{collator::Collator, dataset::Dataset, error::Result};
+use crate::{
+    collator::Collator,
+    dataset::Dataset,
+    error::Result,
+    transform::{Transform, apply_all},
+};
 
 /// Message sent from a batch task to the consumer: the batch position plus
 /// either the batch result or, if the dataset/collator panicked, the panic
 /// payload.
 pub(super) type WorkerMsg<B> = (usize, std::thread::Result<Result<B>>);
 
-/// Fetch the items of one batch, then collate them.
+/// Fetch and transform the items of one batch, then collate them.
 ///
 /// With `item_concurrency == 1` the batch is one `Dataset::get_batch` call;
 /// otherwise each item is one `Dataset::get` call, made by lanes on `pool`
-/// (see [`fetch_in_lanes`]).
-pub(super) fn process_batch<D, C>(
+/// (see [`fetch_in_lanes`]). Each item is transformed right after it is
+/// fetched, on the same thread.
+pub(super) fn process_batch<D, T, C>(
     dataset: &D,
+    transform: &T,
     indices: &[usize],
     collator: &C,
     item_concurrency: usize,
@@ -27,35 +34,46 @@ pub(super) fn process_batch<D, C>(
 ) -> Result<C::Batch>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
 {
     let items = match (pool, indices) {
         // A single item needs no lane, but is still fetched with `get`.
-        (Some(_), &[index]) if item_concurrency > 1 => vec![dataset.get(index)?],
+        (Some(_), &[index]) if item_concurrency > 1 => vec![load(dataset, transform, index)?],
         (Some(pool), _) if item_concurrency > 1 => {
-            fetch_in_lanes(dataset, indices, item_concurrency, pool)?
+            fetch_in_lanes(dataset, transform, indices, item_concurrency, pool)?
         }
-        _ => dataset.get_batch(indices)?,
+        _ => apply_all(transform, indices, dataset.get_batch(indices)?)?,
     };
     collator.collate(items)
 }
 
-/// Fetch `indices` with at most `lanes` concurrent `Dataset::get` calls.
+/// Fetch the item at `index` and transform it.
+fn load<D: Dataset, T: Transform<D::Item>>(
+    dataset: &D,
+    transform: &T,
+    index: usize,
+) -> Result<T::Output> {
+    transform.apply(index, dataset.get(index)?)
+}
+
+/// Fetch and transform `indices` with at most `lanes` concurrent items.
 ///
 /// Each lane takes the batch's next item until none is left, so a fast lane
 /// takes more items and uneven items still balance, while the batch never has
 /// more than `lanes` items in flight. After an error, lanes stop taking items
 /// and the first error by position is returned. A panic in a lane is resumed
 /// here once every lane has finished.
-fn fetch_in_lanes<D: Dataset>(
+fn fetch_in_lanes<D: Dataset, T: Transform<D::Item>>(
     dataset: &D,
+    transform: &T,
     indices: &[usize],
     lanes: usize,
     pool: &rayon::ThreadPool,
-) -> Result<Vec<D::Item>> {
+) -> Result<Vec<T::Output>> {
     let next = AtomicUsize::new(0);
     let failed = AtomicBool::new(false);
-    let slots: Vec<Mutex<Option<Result<D::Item>>>> =
+    let slots: Vec<Mutex<Option<Result<T::Output>>>> =
         indices.iter().map(|_| Mutex::new(None)).collect();
     pool.scope(|scope| {
         for _ in 0..lanes.min(indices.len()) {
@@ -65,7 +83,7 @@ fn fetch_in_lanes<D: Dataset>(
                     let Some(&index) = indices.get(position) else {
                         break;
                     };
-                    let item = dataset.get(index);
+                    let item = load(dataset, transform, index);
                     if item.is_err() {
                         failed.store(true, Ordering::Relaxed);
                     }
@@ -96,12 +114,14 @@ fn fetch_in_lanes<D: Dataset>(
 /// or waiting in the consumer's reorder buffer, however slow one batch is.
 /// A task that finds nothing to claim exits instead of blocking a pool
 /// thread; the consumer starts tasks again when it advances.
-pub(super) struct Epoch<D, C>
+pub(super) struct Epoch<D, T, C>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
 {
     dataset: Arc<D>,
+    transform: Arc<T>,
     collator: Arc<C>,
     /// Items of one batch fetched in parallel, on `pool`.
     item_concurrency: usize,
@@ -118,15 +138,17 @@ where
     result_tx: Sender<WorkerMsg<C::Batch>>,
 }
 
-impl<D, C> Epoch<D, C>
+impl<D, T, C> Epoch<D, T, C>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
     C::Batch: Send + 'static,
 {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         dataset: Arc<D>,
+        transform: Arc<T>,
         collator: Arc<C>,
         item_concurrency: usize,
         pool: Arc<rayon::ThreadPool>,
@@ -137,6 +159,7 @@ where
     ) -> Self {
         Self {
             dataset,
+            transform,
             collator,
             item_concurrency,
             pool,
@@ -211,6 +234,7 @@ where
                 let result = catch_unwind(AssertUnwindSafe(|| {
                     process_batch(
                         &*self.dataset,
+                        &*self.transform,
                         &self.chunks[batch_idx],
                         &*self.collator,
                         self.item_concurrency,

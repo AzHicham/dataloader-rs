@@ -13,7 +13,7 @@
 //!   - Edge cases
 
 use dataloader_rs::{
-    DataLoader, Dataset,
+    DataLoader, Dataset, Transform,
     collator::Collator,
     error::Result,
     sampler::{DistributedSampler, RandomSampler, SequentialSampler},
@@ -1076,6 +1076,118 @@ fn get_batch_override_is_called() {
         9,
         "get must be called once per item inside get_batch"
     );
+}
+
+// ── Transform ─────────────────────────────────────────────────────────────────
+
+/// The loader settings each transform test runs with: direct, item lanes,
+/// workers, workers with lanes.
+const MODES: [(usize, usize); 4] = [(0, 1), (0, 3), (3, 1), (3, 3)];
+
+#[test]
+fn the_transform_receives_each_items_index() {
+    for (num_workers, item_concurrency) in MODES {
+        let mut loader = DataLoader::builder(RangeDs(40))
+            .batch_size(6)
+            .num_workers(num_workers)
+            .item_concurrency(item_concurrency)
+            .sampler(RandomSampler::new(3))
+            .transform(|index: usize, item: usize| -> Result<(usize, usize)> { Ok((index, item)) })
+            .build();
+        let pairs: Vec<(usize, usize)> = loader.iter().flat_map(|b| b.unwrap()).collect();
+        assert!(pairs.iter().all(|(index, item)| index == item));
+        let mut indices: Vec<usize> = pairs.iter().map(|&(index, _)| index).collect();
+        assert_ne!(indices, (0..40).collect::<Vec<_>>(), "shuffled");
+        indices.sort_unstable();
+        assert_eq!(indices, (0..40).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn transforms_chain_and_feed_the_collator() {
+    let double = |_: usize, item: usize| -> Result<usize> { Ok(item * 2) };
+    let label = |index: usize, item: usize| -> Result<String> { Ok(format!("{index}:{item}")) };
+    let mut loader = DataLoader::builder(RangeDs(4))
+        .batch_size(2)
+        .collator(JoinCollator)
+        .transform(double.then(label))
+        .build();
+    let batches: Vec<String> = loader.iter().map(|b| b.unwrap()).collect();
+    assert_eq!(batches, ["0:0,1:2", "2:4,3:6"]);
+}
+
+/// Joins string items with commas.
+struct JoinCollator;
+
+impl Collator<String> for JoinCollator {
+    type Batch = String;
+    fn collate(&self, items: Vec<String>) -> Result<String> {
+        Ok(items.join(","))
+    }
+}
+
+#[test]
+fn a_failed_transform_fails_its_batch_only() {
+    for (num_workers, item_concurrency) in MODES {
+        let mut loader = DataLoader::builder(RangeDs(12))
+            .batch_size(4)
+            .num_workers(num_workers)
+            .item_concurrency(item_concurrency)
+            .transform(|index: usize, item: usize| -> Result<String> {
+                match index {
+                    5 => Err("no five".into()),
+                    _ => Ok(format!("#{item}")),
+                }
+            })
+            .build();
+        let batches: Vec<_> = loader.iter().collect();
+        assert_eq!(batches[0].as_ref().unwrap()[3], "#3");
+        assert_eq!(batches[1].as_ref().unwrap_err().to_string(), "no five");
+        assert!(batches[2].is_ok());
+    }
+}
+
+#[test]
+fn a_panic_in_the_transform_is_re_raised() {
+    for (num_workers, item_concurrency) in MODES {
+        let mut loader = DataLoader::builder(RangeDs(8))
+            .batch_size(4)
+            .num_workers(num_workers)
+            .item_concurrency(item_concurrency)
+            .transform(|index: usize, item: usize| -> Result<usize> {
+                assert_ne!(index, 6, "boom in transform");
+                Ok(item)
+            })
+            .build();
+        let panic =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| loader.iter().count()))
+                .unwrap_err();
+        let message = panic.downcast_ref::<String>().unwrap();
+        assert!(message.contains("boom in transform"), "{message}");
+    }
+}
+
+/// `get_batch` drops the last item.
+struct ShortBatchDs;
+
+impl Dataset for ShortBatchDs {
+    type Item = usize;
+    fn get(&self, index: usize) -> Result<usize> {
+        Ok(index)
+    }
+    fn get_batch(&self, indices: &[usize]) -> Result<Vec<usize>> {
+        Ok(indices[1..].to_vec())
+    }
+    fn len(&self) -> usize {
+        4
+    }
+}
+
+#[test]
+fn a_short_get_batch_fails_the_batch() {
+    let mut loader = DataLoader::builder(ShortBatchDs).batch_size(2).build();
+    let err = loader.iter().next().unwrap().unwrap_err();
+    assert_eq!(err.to_string(), "get_batch returned 1 items for 2 indices");
 }
 
 #[test]
