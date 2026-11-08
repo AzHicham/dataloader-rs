@@ -22,7 +22,7 @@ Marked `bench`, so a plain `pytest` deselects them.
 | `test_bench_batch_size.py` | loader overhead per batch | `batch_size` 1, 64, 4096; no workers and 4; with `__getitems__` | `InMemoryDs(4096)`, `InMemoryBatchedDs` |
 | `test_bench_workers.py` | scaling with workers | `num_workers` 0, 1, 2, 4 | `CpuBoundDs(256)`, `batch_size` 32 |
 | `test_bench_prefetch.py` | does loading overlap a training step? | sequential; `prefetch_depth` 1, 2, 4 with 2 workers | `CpuBoundDs(128)`, `batch_size` 8, a 4 ms step per batch |
-| `test_bench_first_batch.py` | latency to the first batch | (`num_workers`, `items_in_parallel`) (0, 1), (1, 1), (0, 4), (1, 4) | one batch of 32 `CpuBoundDs` items |
+| `test_bench_first_batch.py` | latency to the first batch | (`num_workers`, `item_concurrency`) (0, 1), (1, 1), (0, 4), (1, 4) | one batch of 32 `CpuBoundDs` items |
 | `test_bench_sampler.py` | sampler cost | sequential vs `shuffle=True` | `InMemoryDs(10000)`, `batch_size` 64 |
 | `test_bench_real_world.py` | real per-item work | local files and image augmentation (0 and 4 workers); blocking network (4 workers, with and without 8 items in parallel) | `real_world.py` workloads |
 
@@ -39,7 +39,7 @@ pytest's header says whether the allocator is pinned.
 ## Comparison with PyTorch
 
 `compare_torch.py` runs six workloads, each through both loaders: no workers, 4 workers, torch's
-workers fresh and persistent, and for `remote` 64 requests in flight (`items_in_parallel` for
+workers fresh and persistent, and for `remote` 64 requests in flight (`item_concurrency` for
 `dataloader_rs`, 64 processes for torch). For every configuration it reports the median
 throughput over whole epochs, iterator creation included, and the median latency to the first
 batch.

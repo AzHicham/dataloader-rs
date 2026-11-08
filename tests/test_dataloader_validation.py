@@ -186,4 +186,4 @@ def test_huge_prefetch_depth_works():
 
 def test_rejects_thread_count_overflow():
     with pytest.raises(ValueError, match="too large"):
-        DataLoader(ListDataset(range(4)), num_workers=2**63, items_in_parallel=4)
+        DataLoader(ListDataset(range(4)), num_workers=2**63, item_concurrency=4)

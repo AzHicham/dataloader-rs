@@ -5,7 +5,7 @@
 //!   dataset    = HeavyCpuDs(128)  — CPU-bound items (≈ 110 µs each)
 //!   batch_size = 64               — 2 batches of ≈ 7 ms: few batches, large ones
 //!
-//! SWEPT (num_workers × items_in_parallel = threads):
+//! SWEPT (num_workers × item_concurrency = threads):
 //!   w1_items1 (1)  w1_items2 (2)  w1_items4 (4)  w2_items2 (4)  w4_items1 (4)
 //!
 //! Question: with few large batches, does spreading a batch's items over the
@@ -22,8 +22,8 @@ use dataloader_rs::DataLoader;
 const N: usize = 128;
 const BS: usize = 64;
 
-fn bench_items_in_parallel(c: &mut Criterion) {
-    let mut group = c.benchmark_group("items_in_parallel");
+fn bench_item_concurrency(c: &mut Criterion) {
+    let mut group = c.benchmark_group("item_concurrency");
     group.throughput(Throughput::Elements(N as u64));
     group.sample_size(20);
 
@@ -32,7 +32,7 @@ fn bench_items_in_parallel(c: &mut Criterion) {
             let mut loader = DataLoader::builder(HeavyCpuDs(N))
                 .batch_size(BS)
                 .num_workers(workers)
-                .items_in_parallel(items)
+                .item_concurrency(items)
                 .collator(CatCollator)
                 .build();
             b.iter(|| {
@@ -45,5 +45,5 @@ fn bench_items_in_parallel(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_items_in_parallel);
+criterion_group!(benches, bench_item_concurrency);
 criterion_main!(benches);

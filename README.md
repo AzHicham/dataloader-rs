@@ -19,7 +19,7 @@ with a Python binding that runs the same pipeline on threads instead of worker p
   free-threaded Python, and starts an epoch in milliseconds
   ([BENCH.md](BENCH.md)).
 - **Two explicit levels of parallelism**: `num_workers` batches in parallel and
-  `items_in_parallel` items of each batch — on one thread pool built with the loader and reused
+  `item_concurrency` items of each batch — on one thread pool built with the loader and reused
   by every epoch.
 - **Bounded, ordered prefetch**: at most `num_workers + prefetch_depth` batches are in flight or
   waiting, even behind one slow batch; they come out in epoch order.
@@ -160,16 +160,16 @@ Every setting is a `DataLoaderBuilder` method; the Python argument of the same n
 | `sampler(s)` | `SequentialSampler` | index order of each epoch |
 | `collator(c)` | `VecCollator` | how a batch's samples are merged |
 | `num_workers(n)` | `0` | batches processed in parallel; `0` processes batches inside `next()` |
-| `items_in_parallel(k)` | `1` | items of one batch fetched in parallel (`1`: one `get_batch` call per batch) |
+| `item_concurrency(k)` | `1` | items of one batch fetched in parallel (`1`: one `get_batch` call per batch); formerly `items_in_parallel`, still accepted (deprecated) |
 | `prefetch_depth(n)` | `2` | how far batches may run ahead: at most `num_workers + n` in flight or waiting |
 | `pin_memory(bool)` | — | pin `tch::Tensor` batches in host memory (feature `torch-rs`) |
 
-At most `max(num_workers, 1) × items_in_parallel` fetches run at once, on that many threads.
+At most `max(num_workers, 1) × item_concurrency` fetches run at once, on that many threads.
 
 Rules of thumb: `num_workers = 0` is the fastest path for cheap samples (no thread hand-off);
 use workers once a batch costs well more than its hand-off, about 0.5 µs in Rust (a few
-microseconds through Python); for blocking I/O, `items_in_parallel` so that
-`num_workers × items_in_parallel` requests are in flight, far more than cores; the default
+microseconds through Python); for blocking I/O, `item_concurrency` so that
+`num_workers × item_concurrency` requests are in flight, far more than cores; the default
 `prefetch_depth` 2 is enough when loading keeps up, beyond that it only holds memory
 ([BENCH.md](BENCH.md#4-results-rust)).
 
@@ -190,7 +190,7 @@ Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/
 | Python workload, against `torch.utils.data.DataLoader` (best configuration of each) | Result |
 |---|---|
 | Loader overhead (in-memory samples) | **4.9–6.6× faster** |
-| Network-bound samples (10 ms each), `items_in_parallel` | **3.2–3.9× faster**; first batch 21 ms against 320+ ms |
+| Network-bound samples (10 ms each), `item_concurrency` | **3.2–3.9× faster**; first batch 21 ms against 320+ ms |
 | First batch of an epoch | **milliseconds**, against 11–334 ms for torch's fresh worker processes |
 | Array samples: read + normalise a file, augment an image (4 workers) | **2.5–3.5× faster** on 3.14t / 3.15t, 1.0–1.5× on 3.13; with the allocator settings of [BENCH.md, section 8](BENCH.md#8-caveats-and-known-bottlenecks) |
 | Pure-Python CPU work, per-thread tables, free-threaded 3.14t / 3.15t | **≈ 1.2× faster** |

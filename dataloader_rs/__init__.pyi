@@ -107,12 +107,14 @@ class PyDataloader:
         the same sequence of epoch orders; each epoch still differs from the
         previous one. Requires ``shuffle=True``. Default: ``None`` (seeded
         from OS entropy, not reproducible).
-    items_in_parallel:
+    item_concurrency:
         Number of items of one batch fetched in parallel, each with its own
         ``__getitem__`` call (``__getitems__`` is then not used). For I/O-bound
         datasets (network, object storage) whose items would otherwise be
         fetched one after another. At most ``max(num_workers, 1) *
-        items_in_parallel`` items are in flight. Default: ``1``.
+        item_concurrency`` items are in flight. Default: ``1``.
+    items_in_parallel:
+        Deprecated name of *item_concurrency*; emits ``DeprecationWarning``.
 
     Example
     -------
@@ -133,7 +135,8 @@ class PyDataloader:
         collate_fn: Callable[[list[Any]], Any] | None = None,
         drop_last: bool = False,
         seed: int | None = None,
-        items_in_parallel: int = 1,
+        item_concurrency: int = 1,
+        items_in_parallel: int | None = None,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""

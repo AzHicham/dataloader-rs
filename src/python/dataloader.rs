@@ -1,6 +1,6 @@
 use crate::loader as core_loader;
 use crate::sampler::RandomSampler;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyDeprecationWarning, PyValueError};
 use pyo3::prelude::*;
 use pyo3::{PyTraverseError, PyVisit};
 
@@ -30,7 +30,8 @@ impl PyDataloader {
         collate_fn=None,
         drop_last=false,
         seed=None,
-        items_in_parallel=1
+        item_concurrency=1,
+        items_in_parallel=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -44,8 +45,18 @@ impl PyDataloader {
         collate_fn: Option<Py<PyAny>>,
         drop_last: bool,
         seed: Option<u64>,
-        items_in_parallel: usize,
+        mut item_concurrency: usize,
+        items_in_parallel: Option<usize>,
     ) -> PyResult<Self> {
+        if let Some(n) = items_in_parallel {
+            PyErr::warn(
+                py,
+                &py.get_type::<PyDeprecationWarning>(),
+                c"items_in_parallel is deprecated, use item_concurrency",
+                1,
+            )?;
+            item_concurrency = n;
+        }
         if batch_size == 0 {
             return Err(PyValueError::new_err("batch_size must be > 0"));
         }
@@ -60,12 +71,12 @@ impl PyDataloader {
         if seed.is_some() && !shuffle {
             return Err(PyValueError::new_err("seed only applies when shuffle=True"));
         }
-        if items_in_parallel == 0 {
-            return Err(PyValueError::new_err("items_in_parallel must be > 0"));
+        if item_concurrency == 0 {
+            return Err(PyValueError::new_err("item_concurrency must be > 0"));
         }
-        if num_workers.max(1).checked_mul(items_in_parallel).is_none() {
+        if num_workers.max(1).checked_mul(item_concurrency).is_none() {
             return Err(PyValueError::new_err(
-                "num_workers * items_in_parallel is too large",
+                "num_workers * item_concurrency is too large",
             ));
         }
 
@@ -77,14 +88,14 @@ impl PyDataloader {
             None => PySampler::sequential(),
         };
 
-        // With items_in_parallel > 1, lanes on the pool call `__getitem__` for
+        // With item_concurrency > 1, lanes on the pool call `__getitem__` for
         // the items of a batch concurrently, each attaching to the interpreter.
         let inner = core_loader::DataLoader::builder(dataset)
             .batch_size(batch_size)
             .prefetch_depth(prefetch_depth)
             .drop_last(drop_last)
             .num_workers(num_workers)
-            .items_in_parallel(items_in_parallel)
+            .item_concurrency(item_concurrency)
             .thread_main(run_attached)
             .sampler(sampler)
             .collator(PyCollator::new(collate_fn))
@@ -109,7 +120,7 @@ impl PyDataloader {
 
         let inner = if core.has_pool() {
             // Core iterator: batch tasks on the loader's pool (one Python::attach
-            // per batch via get_batch), or with items_in_parallel > 1 one attach
+            // per batch via get_batch), or with item_concurrency > 1 one attach
             // per item in the batch's lanes. `__next__` waits with the interpreter
             // released, which item lanes need even with num_workers=0.
             let epoch = core.iter_chunks(chunks);

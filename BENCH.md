@@ -56,7 +56,7 @@ per second; above 1, `dataloader_rs` is faster.
   workers the whole loop runs in Rust; torch's runs in Python. With 4 workers, `dataloader_rs`
   hands over 5.6–12 M items/s against 1.0–1.4 M for torch's persistent workers.
 - **Network-bound items** (`remote`, 10 ms per item): **3.2–3.9× faster**. With
-  `items_in_parallel=16`, 4 workers keep 64 requests in flight. torch parallelises whole batches,
+  `item_concurrency=16`, 4 workers keep 64 requests in flight. torch parallelises whole batches,
   one process each: this 16-batch epoch keeps at most 16 of its 64 processes busy, and its first
   batch always waits for `batch_size` × 10 ms.
 - **Array samples** (`local_files`, `image_augment`): **2.5–3.5× faster** on 3.14t and 3.15t,
@@ -125,7 +125,7 @@ taskset -c 0,2,4,6 python -X gil=0 bench/compare_torch.py
 |---|---|---|---|
 | What does the loader itself cost? | throughput on items that cost nothing | `bench_batch_size` | `test_bench_batch_size.py`; `in_memory` |
 | Do more workers help on CPU-bound items? | throughput, `num_workers` 0–4 | `bench_num_workers` | `test_bench_workers.py` |
-| Item-level or batch-level parallelism? | throughput at equal thread counts | `bench_items_in_parallel` | — |
+| Item-level or batch-level parallelism? | throughput at equal thread counts | `bench_item_concurrency` | — |
 | Does loading overlap the training step? | epoch time with a step per batch | `bench_prefetch_depth` | `test_bench_prefetch.py` |
 | How long until the first batch? | `iter()` to the first batch | `bench_first_batch` | `test_bench_first_batch.py`; `compare_torch.py` |
 | What does the sampler cost? | index generation | `bench_sampler` | `test_bench_sampler.py` |
@@ -222,7 +222,7 @@ parallel is 4 workers with `prefetch_depth = 16`. Time per epoch:
 the hand-off. Most of the gap to 4× is the laptop's clock: items take ≈ 111 µs each when 4 cores
 are busy, ≈ 95 µs when one is (compare the first and third rows of 4.3).
 
-### 4.3 Item-level parallelism: `bench_items_in_parallel`
+### 4.3 Item-level parallelism: `bench_item_concurrency`
 
 128 `HeavyCpuDs` items in 2 batches of 64: few batches, large ones.
 
@@ -267,7 +267,7 @@ ready.
 | workers 0, items 4 | 832.8 µs | 38,422 | 3.66× |
 | workers 1, items 4 | 882.9 µs | 36,245 | 3.45× |
 
-A worker adds ≈ 0.07 ms of hand-off. `items_in_parallel = 4` cuts the wait 3.7×: the first batch is
+A worker adds ≈ 0.07 ms of hand-off. `item_concurrency = 4` cuts the wait 3.7×: the first batch is
 fetched by 4 threads instead of one.
 
 ### 4.6 Sampler: `bench_sampler`
@@ -314,13 +314,13 @@ thresholds pinned by the suite (section 8):
 | 16 requests in flight (4 workers × 4 items) | 78.64 ms | 6,511 | 3.36× |
 | 64 requests in flight (4 workers × 16 items) | 20.99 ms | 24,395 | 12.60× |
 
-Requests in flight are `num_workers × items_in_parallel`, and throughput follows them: 264 ms
+Requests in flight are `num_workers × item_concurrency`, and throughput follows them: 264 ms
 for an ideal 256 ms at 4 in flight, 20.8 ms for an ideal 16 ms at 64.
 
 ## 5. Results: Python against PyTorch
 
 `bench/compare_torch.py`, 4 workers, `batch_size` 32. `w` is `num_workers`, `items` is
-`items_in_parallel`; the last column divides by the best torch configuration of the workload.
+`item_concurrency`; the last column divides by the best torch configuration of the workload.
 
 ### 5.1 CPython 3.14t (free-threaded, the default)
 
@@ -444,7 +444,7 @@ for an ideal 256 ms at 4 in flight, 20.8 ms for an ideal 16 ms at 64.
   small NumPy calls: 4 workers are slower than none on `local_files` (40 k against 54 k) and
   1.4× faster on `image_augment`. torch's best configuration is no workers or persistent ones
   (51–57 k and 22–23 k): moving a batch between processes costs more than these small samples.
-- **`remote`**: requests in flight decide throughput, and only `items_in_parallel` raises them
+- **`remote`**: requests in flight decide throughput, and only `item_concurrency` raises them
   without more processes: 4 workers × 16 items reach 5.0–6.1 k items/s, for an ideal 6.4 k.
   torch's first batch is always `batch_size` × 10 ms = 320 ms, because one process fetches a whole
   batch.
@@ -486,7 +486,7 @@ These cases run on every pull request; their history is on the
 | `test_bench_real_world.py` | `test_image_augment[0]` | 20.89 ms |
 | `test_bench_real_world.py` | `test_image_augment[4]` | 10.33 ms |
 | `test_bench_real_world.py` | `test_remote_threads` | 325.30 ms |
-| `test_bench_real_world.py` | `test_remote_items_in_parallel` | 40.68 ms |
+| `test_bench_real_world.py` | `test_remote_item_concurrency` | 40.68 ms |
 | `test_bench_sampler.py` | `test_sampler_sequential` | 0.28 ms |
 | `test_bench_sampler.py` | `test_sampler_shuffle` | 0.29 ms |
 | `test_bench_workers.py` | `test_num_workers[0]` | 118.20 ms |
@@ -506,8 +506,8 @@ single-item batches, 0.3 µs each (about 45 µs before
 - **`num_workers`**: 0 when a batch costs about as much as handing it over: well under a
   microsecond in Rust, a few microseconds through Python. Otherwise up to the number of cores for
   CPU-bound items; beyond that threads only compete for the cores.
-- **`items_in_parallel`**: for datasets that wait (object stores, HTTP, databases): requests in
-  flight are `num_workers × items_in_parallel`, and the pool has that many threads. Also for the
+- **`item_concurrency`**: for datasets that wait (object stores, HTTP, databases): requests in
+  flight are `num_workers × item_concurrency`, and the pool has that many threads. Also for the
   first batch, and for epochs with fewer batches than workers.
 - **`prefetch_depth`**: the default 2 is enough when loading keeps up with the step; a deeper
   prefetch only absorbs uneven batch times, at the cost of memory.

@@ -19,7 +19,7 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 iter(loader)
   ├─ len(dataset)                     raises if __len__ raises
   ├─ sampler → batches of indices     a Python sampler is iterated here, under the interpreter
-  ├─ num_workers == 0, items_in_parallel == 1 → Direct    __next__ fetches + collates itself
+  ├─ num_workers == 0, item_concurrency == 1 → Direct    __next__ fetches + collates itself
   └─ otherwise → Threaded              the Rust core; one attach per batch, or per item
 ```
 
@@ -33,7 +33,7 @@ iter(loader)
 - **Pool threads keep a thread state** (`pool.rs`): each attaches once when it starts and runs
   rayon's loop detached, so attaching from a task re-activates its thread state instead of
   creating and destroying one, which costs about 100 µs on free-threaded builds.
-- **`items_in_parallel > 1`**: the epoch uses the core iterator even with `num_workers = 0`; the
+- **`item_concurrency > 1`**: the epoch uses the core iterator even with `num_workers = 0`; the
   batch's lanes fetch its items with one `Dataset::get` (one attach, one `__getitem__`) each.
 
 ## Rules this code keeps

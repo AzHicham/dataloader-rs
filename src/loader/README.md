@@ -56,10 +56,10 @@ and `.collator(…)` replace them and keep every other setting.
 | `batch_size` | `1` | samples per batch (must be > 0) |
 | `drop_last` | `false` | drop a final batch smaller than `batch_size` |
 | `num_workers` | `0` | batches processed in parallel; `0` processes batches inside `next()` |
-| `items_in_parallel` | `1` | items of one batch fetched in parallel (must be > 0); `1` = one `get_batch` call per batch |
+| `item_concurrency` | `1` | items of one batch fetched in parallel (must be > 0); `1` = one `get_batch` call per batch |
 | `prefetch_depth` | `2` | how far batches may run ahead: at most `num_workers + prefetch_depth` in flight or waiting (must be > 0) |
 
-The loader's pool has `max(num_workers, 1) × items_in_parallel` threads (none with both at their
+The loader's pool has `max(num_workers, 1) × item_concurrency` threads (none with both at their
 defaults), so that many fetches run at once at most.
 | `pin_memory` | — | pin `tch::Tensor` batches (feature `torch-rs`) |
 
@@ -71,7 +71,7 @@ defaults), so that many fetches run at once at most.
   reused by every epoch); they claim batches in epoch order inside a window of
   `num_workers + prefetch_depth`, and the iterator returns them in order.
 
-With `items_in_parallel = k > 1`, either path fetches each batch with `k` lanes on the pool,
+With `item_concurrency = k > 1`, either path fetches each batch with `k` lanes on the pool,
 each calling `Dataset::get` for the batch's next item: at most `k` items of a batch in flight.
 
 The threads, the backpressure and the reorder buffer are described in
@@ -93,8 +93,8 @@ The threads, the backpressure and the reorder buffer are described in
 |---|---|
 | samples cost microseconds (in memory, tiny decode) | `num_workers(0)`: the hand-off between threads would cost more than the work |
 | each sample costs about a millisecond or more (I/O, decode, augment) | `num_workers` up to the number of cores; the default `prefetch_depth` 2, more only if batch times vary a lot |
-| few, large batches of CPU-bound items | `items_in_parallel` > 1, so one batch is spread over several cores |
-| blocking I/O (network, remote storage) | requests in flight = `num_workers × items_in_parallel`: `num_workers(4).items_in_parallel(16)` keeps 64 in flight |
+| few, large batches of CPU-bound items | `item_concurrency` > 1, so one batch is spread over several cores |
+| blocking I/O (network, remote storage) | requests in flight = `num_workers × item_concurrency`: `num_workers(4).item_concurrency(16)` keeps 64 in flight |
 | many nearly free batches (`batch_size` ≤ 8, in-memory items) | `num_workers(0)`, or a larger `batch_size`: scheduling a batch costs about half a microsecond |
 
 Measurements behind these rules: [BENCH.md](../../BENCH.md#4-results-rust).

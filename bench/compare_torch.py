@@ -144,7 +144,7 @@ def configs(name: str, n: int, root, workers: int, torch_loader):
     yield "dataloader_rs", f"w={w}", ours(num_workers=w)
     if name == "remote":
         k = max(1, REMOTE_IN_FLIGHT // w)
-        yield "dataloader_rs", f"w={w} items={k}", ours(num_workers=w, items_in_parallel=k)
+        yield "dataloader_rs", f"w={w} items={k}", ours(num_workers=w, item_concurrency=k)
     if torch_loader is None:
         return
 

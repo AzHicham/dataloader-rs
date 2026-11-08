@@ -108,8 +108,8 @@ fn main() {
     }
     println!("  OK");
 
-    // Test 5: items_in_parallel + early drop
-    println!("Test 5: items_in_parallel drop safety...");
+    // Test 5: item_concurrency + early drop
+    println!("Test 5: item_concurrency drop safety...");
     for _ in 0..50 {
         let mut loader = DataLoader::builder(SlowDs {
             len: 100,
@@ -117,7 +117,7 @@ fn main() {
         })
         .batch_size(16)
         .num_workers(2)
-        .items_in_parallel(4)
+        .item_concurrency(4)
         .prefetch_depth(4)
         .build();
         let mut iter = loader.iter();

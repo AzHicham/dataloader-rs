@@ -57,7 +57,7 @@ Two settings decide the parallelism, and nothing else does:
 | Setting | Meaning | Default |
 |---|---|---|
 | `num_workers(n)` | batches processed in parallel; `0` processes batches in `next()` | `0` |
-| `items_in_parallel(k)` | items of one batch fetched in parallel | `1` |
+| `item_concurrency(k)` | items of one batch fetched in parallel | `1` |
 | `prefetch_depth(d)` | how far ahead of the consumer batches may run: at most `n + d` in flight or buffered | `2` |
 
 When either parallel setting is above its default, `build()` creates **one rayon pool per
@@ -119,9 +119,9 @@ slots, batch `i` in slot `i % window`. Every batch in flight or waiting lies in
 and an occasional task spawn per batch. That is negligible once a batch does real work, but
 dominates for nearly free batches (`batch_size` ≤ 8 of in-memory items, [BENCH.md](BENCH.md)).
 
-### 3.5 Item-level parallelism (`items_in_parallel`)
+### 3.5 Item-level parallelism (`item_concurrency`)
 
-With `items_in_parallel = 1`, a batch is one `Dataset::get_batch` call on the thread that
+With `item_concurrency = 1`, a batch is one `Dataset::get_batch` call on the thread that
 processes it. With `k > 1`, the batch is fetched by `k` **lanes** on the pool: each lane takes the
 batch's next item and calls `Dataset::get`, until none is left. A batch therefore never has more
 than `k` items in flight, and a fast lane takes more items, so uneven items still balance. After
@@ -196,7 +196,7 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
   interpreter (`py.detach`) only when it has to wait for the next batch, so workers can run, and
   waits in slices of 100 ms with signal handlers in between, so Ctrl-C interrupts the wait; a
   batch that already arrived is returned without releasing it.
-- **`items_in_parallel > 1`**: a batch's lanes call `__getitem__` concurrently, each attaching to
+- **`item_concurrency > 1`**: a batch's lanes call `__getitem__` concurrently, each attaching to
   the interpreter for its own call (`__getitems__` is not used); such epochs always use the core
   iterator, even with `num_workers = 0`, because the consumer must wait with the interpreter
   released.

@@ -18,9 +18,9 @@ pub struct DataLoader<D, S: Sampler, C> {
     /// processed in `Iterator::next`.
     pub(super) num_workers: usize,
     /// Items of one batch fetched in parallel; `1` uses `Dataset::get_batch`.
-    pub(super) items_in_parallel: usize,
+    pub(super) item_concurrency: usize,
     /// The rayon pool running batch tasks and item lanes, with
-    /// `max(num_workers, 1) * items_in_parallel` threads. `None` when both
+    /// `max(num_workers, 1) * item_concurrency` threads. `None` when both
     /// settings are at their defaults.
     pub(super) pool: Option<LoaderPool>,
 }
@@ -132,7 +132,7 @@ where
             &self.dataset,
             &self.collator,
             self.pool.as_mut().map(LoaderPool::get),
-            self.items_in_parallel,
+            self.item_concurrency,
             self.num_workers,
             self.prefetch_depth,
             chunks,
@@ -150,7 +150,7 @@ where
     }
 
     /// Whether batches run on the loader's pool (`num_workers > 0` or
-    /// `items_in_parallel > 1`) rather than in `next` on the caller's thread.
+    /// `item_concurrency > 1`) rather than in `next` on the caller's thread.
     #[cfg(feature = "python")]
     pub(crate) fn has_pool(&self) -> bool {
         self.pool.is_some()
@@ -625,30 +625,30 @@ mod tests {
     }
 
     #[test]
-    fn items_in_parallel_produces_correct_results() {
+    fn item_concurrency_produces_correct_results() {
         let n = 20;
         let mut loader = DataLoader::builder(CountingDs { len: n })
             .batch_size(4)
-            .items_in_parallel(2)
+            .item_concurrency(2)
             .build();
         let seen: HashSet<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
         assert_eq!(seen.len(), n);
     }
 
     #[test]
-    fn items_in_parallel_with_num_workers() {
+    fn item_concurrency_with_num_workers() {
         let n = 24;
         let mut loader = DataLoader::builder(CountingDs { len: n })
             .batch_size(4)
             .num_workers(2)
-            .items_in_parallel(2)
+            .item_concurrency(2)
             .build();
         let seen: HashSet<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
         assert_eq!(seen.len(), n);
     }
 
     #[test]
-    fn items_in_parallel_fetches_a_single_item_with_get() {
+    fn item_concurrency_fetches_a_single_item_with_get() {
         struct GetOnly;
         impl Dataset for GetOnly {
             type Item = usize;
@@ -656,7 +656,7 @@ mod tests {
                 Ok(index)
             }
             fn get_batch(&self, _: &[usize]) -> Result<Vec<usize>> {
-                Err("get_batch must not be used with items_in_parallel > 1".into())
+                Err("get_batch must not be used with item_concurrency > 1".into())
             }
             fn len(&self) -> usize {
                 7
@@ -665,7 +665,7 @@ mod tests {
 
         let mut loader = DataLoader::builder(GetOnly)
             .batch_size(3)
-            .items_in_parallel(2)
+            .item_concurrency(2)
             .build();
         let batches: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
         assert_eq!(batches, vec![vec![0, 1, 2], vec![3, 4, 5], vec![6]]);
@@ -758,11 +758,11 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "dataset panicked at 5")]
-    fn items_in_parallel_panic_propagates_to_consumer() {
+    fn item_concurrency_panic_propagates_to_consumer() {
         let mut loader = DataLoader::builder(PanicDs)
             .batch_size(4)
             .num_workers(2)
-            .items_in_parallel(2)
+            .item_concurrency(2)
             .build();
         for batch in loader.iter() {
             let _ = batch;
@@ -861,7 +861,7 @@ mod tests {
         let mut loader = DataLoader::builder(ThreadNameDs(Default::default()))
             .batch_size(8)
             .num_workers(2)
-            .items_in_parallel(3)
+            .item_concurrency(3)
             .build();
         loader.iter().for_each(|b| drop(b.unwrap()));
 
@@ -878,7 +878,7 @@ mod tests {
     }
 
     #[test]
-    fn pool_size_is_workers_times_items_in_parallel() {
+    fn pool_size_is_workers_times_item_concurrency() {
         let ds = || CountingDs { len: 8 };
         assert_eq!(pool_threads(&DataLoader::builder(ds()).build()), None);
         assert_eq!(
@@ -886,14 +886,14 @@ mod tests {
             Some(3)
         );
         assert_eq!(
-            pool_threads(&DataLoader::builder(ds()).items_in_parallel(4).build()),
+            pool_threads(&DataLoader::builder(ds()).item_concurrency(4).build()),
             Some(4)
         );
         assert_eq!(
             pool_threads(
                 &DataLoader::builder(ds())
                     .num_workers(2)
-                    .items_in_parallel(5)
+                    .item_concurrency(5)
                     .build()
             ),
             Some(10)
@@ -921,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn items_in_parallel_bounds_item_concurrency() {
+    fn item_concurrency_bounds_item_concurrency() {
         let ds = || ConcurrencyDs {
             running: AtomicUsize::new(0),
             peak: AtomicUsize::new(0),
@@ -929,7 +929,7 @@ mod tests {
         // One batch at a time (direct path): exactly 3 items in flight.
         let mut loader = DataLoader::builder(ds())
             .batch_size(12)
-            .items_in_parallel(3)
+            .item_concurrency(3)
             .build();
         let items: Vec<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
         assert_eq!(items, (0..24).collect::<Vec<_>>());
@@ -939,7 +939,7 @@ mod tests {
         let mut loader = DataLoader::builder(ds())
             .batch_size(12)
             .num_workers(2)
-            .items_in_parallel(2)
+            .item_concurrency(2)
             .build();
         let items: Vec<usize> = loader.iter().flat_map(|b| b.unwrap()).collect();
         assert_eq!(items, (0..24).collect::<Vec<_>>());

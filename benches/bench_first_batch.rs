@@ -8,7 +8,7 @@
 //!   dataset    = HeavyCpuDs(32)  — CPU-bound items (≈ 110 µs each)
 //!   batch_size = 32              — one batch, ≈ 3.5 ms of item work
 //!
-//! SWEPT (num_workers × items_in_parallel), ≤ 4 threads:
+//! SWEPT (num_workers × item_concurrency), ≤ 4 threads:
 //!   w0_items1  w1_items1  w0_items2  w0_items4  w1_items4
 //!
 //! Throughput unit: Elements(32) per iteration (one batch).
@@ -32,7 +32,7 @@ fn bench_first_batch(c: &mut Criterion) {
             let mut loader = DataLoader::builder(HeavyCpuDs(BS))
                 .batch_size(BS)
                 .num_workers(workers)
-                .items_in_parallel(items)
+                .item_concurrency(items)
                 .collator(CatCollator)
                 .build();
             b.iter(|| std::hint::black_box(loader.iter().next().unwrap().unwrap()));

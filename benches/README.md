@@ -10,7 +10,7 @@ the network is the point. Results and their reading:
 |---|---|---|---|---|
 | `bench_batch_size` | the loader's own cost per batch | `InMemoryDs(4096)` | `batch_size` 1 … 4096 | sequential; 4 workers, depth 16 |
 | `bench_num_workers` | scaling with batch-level threads | `HeavyCpuDs(256)` | `num_workers` 0, 1, 2, 4 | `batch_size` 16, depth 4 |
-| `bench_items_in_parallel` | item- against batch-level parallelism at equal threads | `HeavyCpuDs(128)` | (workers, items) (1, 1), (1, 2), (1, 4), (2, 2), (4, 1) | `batch_size` 64: 2 batches |
+| `bench_item_concurrency` | item- against batch-level parallelism at equal threads | `HeavyCpuDs(128)` | (workers, items) (1, 1), (1, 2), (1, 4), (2, 2), (4, 1) | `batch_size` 64: 2 batches |
 | `bench_prefetch_depth` | does loading overlap the consumer's work? | `HeavyCpuDs(64)` | sequential; `prefetch_depth` 1, 2, 4, 8 | `batch_size` 4, 2 workers, a consumer step of ≈ 0.22 ms per batch |
 | `bench_first_batch` | latency to the first batch | `HeavyCpuDs(32)` | (workers, items) (0, 1), (1, 1), (0, 2), (0, 4), (1, 4) | one batch of 32 |
 | `bench_sampler` | sampler cost | `InMemoryDs(N)` | N 1k, 10k, 100k; sequential vs random | `batch_size` 128, no workers |
