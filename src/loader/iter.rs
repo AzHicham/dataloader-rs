@@ -11,6 +11,7 @@ use crate::{
     dataset::Dataset,
     error::{Error, Result},
     loader::worker::{Epoch, WorkerMsg, process_batch},
+    transform::{Identity, Transform},
 };
 
 /// The error of an epoch used in a process `fork()`ed after it started: the
@@ -21,17 +22,18 @@ fn forked() -> Error {
 
 // ── ParallelCore ──────────────────────────────────────────────────────────────
 
-// Batch tasks run on the loader's rayon pool and share the dataset and
-// collator through `Arc` clones, so the iterator owns everything they touch
+// Batch tasks run on the loader's rayon pool and share the dataset,
+// transform and collator through `Arc` clones, so the iterator owns everything they touch
 // and does not borrow the loader. Dropping (or leaking) the iterator never
 // waits on them: a task in flight finishes its batch and exits.
 
-struct ParallelCore<D, C>
+struct ParallelCore<D, T, C>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
 {
-    epoch: Arc<Epoch<D, C>>,
+    epoch: Arc<Epoch<D, T, C>>,
     result_rx: Receiver<WorkerMsg<C::Batch>>,
     /// Results waiting to be returned in epoch order: batch `i` waits in slot
     /// `i % window`. Batches in flight or waiting always lie in
@@ -42,14 +44,17 @@ where
     pid: u32,
 }
 
-impl<D, C> ParallelCore<D, C>
+impl<D, T, C> ParallelCore<D, T, C>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
     C::Batch: Send + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         dataset: &Arc<D>,
+        transform: &Arc<T>,
         collator: &Arc<C>,
         pool: &Arc<rayon::ThreadPool>,
         item_concurrency: usize,
@@ -66,6 +71,7 @@ where
             .max(1);
         let epoch = Arc::new(Epoch::new(
             Arc::clone(dataset),
+            Arc::clone(transform),
             Arc::clone(collator),
             item_concurrency,
             Arc::clone(pool),
@@ -172,10 +178,11 @@ where
     }
 }
 
-impl<D, C> Drop for ParallelCore<D, C>
+impl<D, T, C> Drop for ParallelCore<D, T, C>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
 {
     fn drop(&mut self) {
         // Tasks stop claiming; one already processing finishes its batch and
@@ -186,16 +193,18 @@ where
 
 // ── DataLoaderIter ────────────────────────────────────────────────────────────
 
-enum Inner<D, C>
+enum Inner<D, T, C>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
 {
     /// num_workers=0: process batches on the calling thread, zero allocation.
     /// Concrete types + monomorphized `process_batch` — no virtual dispatch.
     Direct {
         chunks: std::vec::IntoIter<Vec<usize>>,
         dataset: Arc<D>,
+        transform: Arc<T>,
         collator: Arc<C>,
         item_concurrency: usize,
         pool: Option<Arc<rayon::ThreadPool>>,
@@ -204,29 +213,33 @@ where
         pid: u32,
     },
     /// num_workers>0: batch tasks on the loader's rayon pool.
-    Parallel(ParallelCore<D, C>),
+    Parallel(ParallelCore<D, T, C>),
 }
 
 /// Iterator over one epoch of a [`DataLoader`](crate::DataLoader).
 ///
-/// Owns shared handles to the dataset and collator, so it does not borrow the
-/// loader and can be stored, sent to another thread, or outlive it.
-pub struct DataLoaderIter<D, C>
+/// Owns shared handles to the dataset, transform and collator, so it does not
+/// borrow the loader and can be stored, sent to another thread, or outlive it.
+pub struct DataLoaderIter<D, C, T = Identity>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
 {
-    inner: Inner<D, C>,
+    inner: Inner<D, T, C>,
 }
 
-impl<D, C> DataLoaderIter<D, C>
+impl<D, C, T> DataLoaderIter<D, C, T>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
     C::Batch: Send + 'static,
 {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         dataset: &Arc<D>,
+        transform: &Arc<T>,
         collator: &Arc<C>,
         pool: Option<&Arc<rayon::ThreadPool>>,
         item_concurrency: usize,
@@ -237,6 +250,7 @@ where
         let inner = match pool {
             Some(pool) if num_workers > 0 => Inner::Parallel(ParallelCore::new(
                 dataset,
+                transform,
                 collator,
                 pool,
                 item_concurrency,
@@ -247,6 +261,7 @@ where
             _ => Inner::Direct {
                 chunks: chunks.into_iter(),
                 dataset: Arc::clone(dataset),
+                transform: Arc::clone(transform),
                 collator: Arc::clone(collator),
                 item_concurrency,
                 pool: pool.cloned(),
@@ -274,10 +289,11 @@ where
     }
 }
 
-impl<D, C> Iterator for DataLoaderIter<D, C>
+impl<D, C, T> Iterator for DataLoaderIter<D, C, T>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
     C::Batch: Send + 'static,
 {
     type Item = Result<C::Batch>;
@@ -287,6 +303,7 @@ where
             Inner::Direct {
                 chunks,
                 dataset,
+                transform,
                 collator,
                 item_concurrency,
                 pool,
@@ -299,6 +316,7 @@ where
                 }
                 Some(process_batch(
                     &**dataset,
+                    &**transform,
                     &indices,
                     &**collator,
                     *item_concurrency,
@@ -318,10 +336,11 @@ where
     }
 }
 
-impl<D, C> ExactSizeIterator for DataLoaderIter<D, C>
+impl<D, C, T> ExactSizeIterator for DataLoaderIter<D, C, T>
 where
     D: Dataset,
-    C: Collator<D::Item>,
+    T: Transform<D::Item>,
+    C: Collator<T::Output>,
     C::Batch: Send + 'static,
 {
 }

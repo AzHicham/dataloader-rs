@@ -7,18 +7,21 @@ use crate::{
     dataset::Dataset,
     loader::core::{DataLoader, LoaderPool, ThreadMain},
     sampler::{BatchSampler, Sampler, SequentialSampler},
+    transform::{Identity, Transform},
 };
 
 /// Builder for [`DataLoader`].
-pub struct DataLoaderBuilder<D, S, C> {
+pub struct DataLoaderBuilder<D, S, C, T = Identity> {
     dataset: D,
     sampler: S,
+    transform: T,
     collator: C,
     settings: Settings,
 }
 
 /// The settings that do not depend on the builder's type parameters, carried
 /// over as they are when [`sampler`](DataLoaderBuilder::sampler),
+/// [`transform`](DataLoaderBuilder::transform),
 /// [`collator`](DataLoaderBuilder::collator) or `pin_memory` change a type.
 struct Settings {
     batch_size: usize,
@@ -37,6 +40,7 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
         DataLoaderBuilder {
             dataset,
             sampler: SequentialSampler,
+            transform: Identity,
             collator: VecCollator,
             settings: Settings {
                 batch_size: 1,
@@ -50,7 +54,7 @@ impl<D: Dataset> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
     }
 }
 
-impl<D, S, C> DataLoaderBuilder<D, S, C> {
+impl<D, S, C, T> DataLoaderBuilder<D, S, C, T> {
     /// Number of items per batch. Default: `1`.
     pub fn batch_size(mut self, n: usize) -> Self {
         assert!(n > 0, "batch_size must be > 0");
@@ -117,45 +121,93 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
     ///
     /// Available only for `tch::Tensor` batches under `torch-rs` feature.
     #[cfg(feature = "torch-rs")]
-    pub fn pin_memory(self, enabled: bool) -> DataLoaderBuilder<D, S, TorchPinnedCollator<C>>
+    pub fn pin_memory(self, enabled: bool) -> DataLoaderBuilder<D, S, TorchPinnedCollator<C>, T>
     where
         D: Dataset,
-        C: Collator<D::Item, Batch = tch::Tensor>,
+        T: Transform<D::Item>,
+        C: Collator<T::Output, Batch = tch::Tensor>,
     {
         DataLoaderBuilder {
             dataset: self.dataset,
             sampler: self.sampler,
+            transform: self.transform,
             collator: TorchPinnedCollator::new(self.collator, enabled),
             settings: self.settings,
         }
     }
 
     /// Replace the sampler and preserve all other settings.
-    pub fn sampler<S2: Sampler>(self, sampler: S2) -> DataLoaderBuilder<D, S2, C> {
+    pub fn sampler<S2: Sampler>(self, sampler: S2) -> DataLoaderBuilder<D, S2, C, T> {
         DataLoaderBuilder {
             dataset: self.dataset,
             sampler,
+            transform: self.transform,
+            collator: self.collator,
+            settings: self.settings,
+        }
+    }
+
+    /// Apply `transform` to every item, with its index, before collation; it
+    /// replaces any previous one (chain them with
+    /// [`Transform::then`]). Default: [`Identity`], at no cost.
+    ///
+    /// It runs where the item is loaded: right after `get` / `get_batch` on the
+    /// worker (in each item lane when
+    /// [`item_concurrency`](Self::item_concurrency) is above 1, so items are
+    /// transformed in parallel).
+    /// The collator receives the transformed items. An error fails the item's
+    /// batch; a panic is re-raised by the iterator.
+    ///
+    /// ```rust
+    /// use dataloader_rs::{DataLoader, Dataset, error::Result};
+    ///
+    /// struct Numbers;
+    ///
+    /// impl Dataset for Numbers {
+    ///     type Item = u64;
+    ///     fn get(&self, index: usize) -> Result<u64> { Ok(index as u64) }
+    ///     fn len(&self) -> usize { 4 }
+    /// }
+    ///
+    /// let mut loader = DataLoader::builder(Numbers)
+    ///     .batch_size(2)
+    ///     .transform(|index: usize, x: u64| -> Result<String> { Ok(format!("{index}:{}", x * 10)) })
+    ///     .build();
+    /// let batches: Vec<Vec<String>> = loader.iter().map(|b| b.unwrap()).collect();
+    /// assert_eq!(batches, [["0:0", "1:10"], ["2:20", "3:30"]]);
+    /// ```
+    pub fn transform<T2>(self, transform: T2) -> DataLoaderBuilder<D, S, C, T2>
+    where
+        D: Dataset,
+        T2: Transform<D::Item>,
+    {
+        DataLoaderBuilder {
+            dataset: self.dataset,
+            sampler: self.sampler,
+            transform,
             collator: self.collator,
             settings: self.settings,
         }
     }
 
     /// Replace the collator and preserve all other settings.
-    pub fn collator<C2>(self, collator: C2) -> DataLoaderBuilder<D, S, C2> {
+    pub fn collator<C2>(self, collator: C2) -> DataLoaderBuilder<D, S, C2, T> {
         DataLoaderBuilder {
             dataset: self.dataset,
             sampler: self.sampler,
+            transform: self.transform,
             collator,
             settings: self.settings,
         }
     }
 
     /// Finalize configuration and construct a [`DataLoader`].
-    pub fn build(self) -> DataLoader<D, S, C>
+    pub fn build(self) -> DataLoader<D, S, C, T>
     where
         D: Dataset,
         S: Sampler,
-        C: Collator<D::Item>,
+        T: Transform<D::Item>,
+        C: Collator<T::Output>,
     {
         let Settings {
             batch_size,
@@ -177,6 +229,7 @@ impl<D, S, C> DataLoaderBuilder<D, S, C> {
         DataLoader {
             dataset: Arc::new(self.dataset),
             batch_sampler: BatchSampler::new(self.sampler, batch_size, drop_last),
+            transform: Arc::new(self.transform),
             collator: Arc::new(self.collator),
             prefetch_depth,
             num_workers,

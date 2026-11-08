@@ -36,7 +36,8 @@
 //!
 //! | Module | Content |
 //! |---|---|
-//! | [`dataset`] | the [`Dataset`] contract |
+//! | [`dataset`] | the [`Dataset`] contract: a source that fetches items |
+//! | [`transform`] | [`Transform`]: per-item CPU work the loader applies, closures included |
 //! | [`sampler`] | index order: sequential, random, distributed, batching |
 //! | [`collator`] | batch assembly: `Vec`, PyTorch-like `DefaultCollator`, pinned tensors |
 //! | [`loader`] | [`DataLoader`], its builder and iterator, the worker threads |
@@ -61,6 +62,7 @@ pub mod loader;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod sampler;
+pub mod transform;
 
 // ── Top-level re-exports ──────────────────────────────────────────────────────
 
@@ -69,3 +71,4 @@ pub use dataset::{Dataset, IterableDataset};
 pub use error::{Error, Result};
 pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter};
 pub use sampler::{BatchSampler, DistributedSampler, RandomSampler, Sampler, SequentialSampler};
+pub use transform::{Identity, Transform};

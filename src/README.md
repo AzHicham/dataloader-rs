@@ -4,6 +4,7 @@
 |---|---|---|
 | `lib.rs` | crate docs and the top-level re-exports | |
 | `dataset.rs` | the `Dataset` trait (map-style) and `IterableDataset` | below |
+| `transform.rs` | `Transform`: per-item CPU work the loader applies, with the item's index; `Identity`; closures are transforms, `then` chains them | |
 | `error.rs` | `Error` (`Box<dyn Error + Send + Sync>`) and `Result<T>` | below |
 | `sampler/` | `Sampler`, `SequentialSampler`, `RandomSampler`, `DistributedSampler`, `BatchSampler` | [sampler/README.md](sampler/README.md) |
 | `collator/` | `Collator`, `VecCollator`, `DefaultCollator` / `DefaultCollate`, `TorchPinnedCollator` | [collator/README.md](collator/README.md) |
