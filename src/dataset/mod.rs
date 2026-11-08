@@ -1,8 +1,32 @@
 #[cfg(feature = "async")]
 mod async_dataset;
+#[cfg(feature = "async")]
+mod fetch_error;
+#[cfg(feature = "async")]
+mod file;
+#[cfg(feature = "http")]
+mod http;
+#[cfg(feature = "async")]
+mod location;
+#[cfg(feature = "async")]
+mod retry;
+#[cfg(feature = "async")]
+mod template;
+#[cfg(all(test, feature = "http"))]
+mod test_server;
 
 #[cfg(feature = "async")]
 pub use async_dataset::AsyncDataset;
+#[cfg(feature = "async")]
+pub use fetch_error::FetchError;
+#[cfg(feature = "async")]
+pub use file::{DEFAULT_MAX_BYTES, FileDataset, FileDatasetBuilder};
+#[cfg(feature = "http")]
+pub use http::{HttpDataset, HttpDatasetBuilder};
+#[cfg(feature = "async")]
+pub use retry::Retry;
+#[cfg(feature = "async")]
+pub use template::Column;
 
 use crate::error::Result;
 
