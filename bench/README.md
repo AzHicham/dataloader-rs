@@ -63,6 +63,22 @@ uv run --python 3.13 python bench/compare_torch.py --workloads remote   # GIL bu
 installed only `dataloader_rs` runs. Array samples stay small (64 and 147 KB, batches of 2 and
 4.6 MiB): from 16 MiB, mimalloc resets a block freed by another thread whatever its settings.
 
+## Async datasets against PyTorch
+
+`compare_async.py` fetches 2 048 tiles of 64 KiB over HTTP (a mock tile server, `aiohttp.web`
+answering after 10 ms with keep-alive, in its own processes on `--server-cpus`) in batches of 64,
+through torch with 8 and 16 worker processes and through `dataloader_rs` with a sync `PyDataset`
+on threads (both with a `requests.Session` per thread or process, like the product), a
+`PyAsyncDataset` (an `aiohttp.ClientSession` closed in `aclose()`) and the Rust `HttpDataset`.
+Each measurement builds a fresh loader, then reports the median epoch time, first-batch time and
+CPU time over rounds run in a rotated order. Results: [BENCH.md](../BENCH.md).
+
+```bash
+uv run maturin develop --release
+uv run python -X gil=0 bench/compare_async.py --rounds 7
+uv run --python 3.13 python bench/compare_async.py --rounds 7   # GIL build
+```
+
 ## Shared code
 
 | File | What |

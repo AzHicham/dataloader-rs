@@ -43,6 +43,10 @@ jobs:
           - bench_item_concurrency
           - bench_real_world
           - bench_first_batch
+        # Suites with required-features: Cargo skips them silently without.
+        include:
+          - bench: bench_async
+            features: http
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,6 +70,7 @@ jobs:
         run: |
           rm -rf target/criterion
           cargo bench --bench ${{ matrix.bench }} \
+            ${{ matrix.features && format('--features {0}', matrix.features) || '' }} \
             -- --output-format bencher \
             | tee ${{ matrix.bench }}.txt
 
