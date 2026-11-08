@@ -15,6 +15,7 @@ the network is the point. Results and their reading:
 | `bench_first_batch` | latency to the first batch | `HeavyCpuDs(32)` | (workers, items) (0, 1), (1, 1), (0, 2), (0, 4), (1, 4) | one batch of 32 |
 | `bench_sampler` | sampler cost | `InMemoryDs(N)` | N 1k, 10k, 100k; sequential vs random | `batch_size` 128, no workers |
 | `bench_real_world` | real per-item work | 4 096 files of 16 KB; 2 ms blocking latency | `num_workers` 0, 1, 2, 4; 4, 16, 64 requests in flight | `batch_size` 32; glibc's malloc thresholds pinned |
+| `bench_async` | futures (`builder_async` + `HttpDataset`) against threads (sync loader, one blocking request per thread) at equal requests in flight; needs `--features http` | 512 GETs on a local keep-alive server, 64 KiB after 10 ms | (workers, items) (1, 64), (2, 32), (4, 16), (8, 1) | `batch_size` 64 |
 
 `common.rs` holds the shared datasets, collators and consumer work:
 
@@ -28,7 +29,7 @@ the network is the point. Results and their reading:
 ## Running
 
 ```bash
-taskset -c 0,2,4,6 cargo bench            # every suite, pinned to 4 cores like the runner
+taskset -c 0,2,4,6 cargo bench --features http  # every suite, pinned to 4 cores like the runner
 cargo bench --bench bench_prefetch_depth  # one suite
 cargo bench -- depth/4                    # one case
 ```
@@ -43,4 +44,5 @@ two versions, delete `target/criterion` between builds and alternate them ([BENC
 `benches/`, `bench/` or `Cargo.*` change), with `--output-format bencher`, and stores the results
 per commit on the [dashboard](https://azhicham.github.io/dataloader-rs/benchmarks/rust/). Adding a
 suite: a `[[bench]]` entry with `harness = false` in `Cargo.toml`, and its name in the workflow's
-`matrix.bench` list.
+`matrix.bench` list; a suite with `required-features` (`bench_async`) goes in `matrix.include`
+with its `features` instead, since Cargo skips it silently without them.

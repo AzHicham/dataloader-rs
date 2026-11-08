@@ -175,3 +175,8 @@ harness = false
 [[bench]]
 name    = "bench_first_batch"
 harness = false
+
+[[bench]]
+name              = "bench_async"
+harness           = false
+required-features = ["http"]
