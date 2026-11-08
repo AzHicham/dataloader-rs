@@ -12,13 +12,20 @@ pub(crate) enum Escape {
     /// A file path: written as it is, but a value cannot hold `/`, `\` or NUL, so that it
     /// cannot leave the template's directory.
     Path,
+    /// An `object_store` key: written as it is, but a value must be a valid key part: not
+    /// empty, no `/`, no ASCII control character.
+    #[cfg_attr(not(feature = "object-store"), allow(dead_code))]
+    Key,
 }
 
 impl Escape {
     /// The bytes a path component splits on: a value never writes one.
     pub(super) fn separators(self) -> &'static [char] {
-        // URL parsers read `\` as `/` in http(s) URLs.
-        &['/', '\\']
+        match self {
+            // URL parsers read `\` as `/` in http(s) URLs.
+            Self::Url | Self::Path => &['/', '\\'],
+            Self::Key => &['/'],
+        }
     }
 
     /// Why `value` cannot be written, if it cannot.
@@ -31,13 +38,21 @@ impl Escape {
             Self::Path => value
                 .contains(['/', '\\', '\0'])
                 .then_some("holds '/', '\\' or NUL"),
+            Self::Key => value
+                .chars()
+                .any(|c| c == '/' || c.is_ascii_control())
+                .then_some("holds '/' or a control character"),
         }
     }
 
     /// Why a path component holding a value is refused, if it is: `.` and `..` would move
-    /// out of the template's directory.
+    /// out of the template's directory, an empty key part is invalid.
     pub(super) fn refuse_component(self, component: &str) -> Option<&'static str> {
-        matches!(component, "." | "..").then_some("would be resolved as a path segment")
+        match component {
+            "." | ".." => Some("would be resolved as a path segment"),
+            "" if self == Self::Key => Some("is an empty key part"),
+            _ => None,
+        }
     }
 
     /// The length of `value` once written.
@@ -46,7 +61,7 @@ impl Escape {
             Self::Url => value.bytes().fold(0usize, |len, byte| {
                 len.saturating_add(if is_unreserved(byte) { 1 } else { 3 })
             }),
-            Self::Path => value.len(),
+            Self::Path | Self::Key => value.len(),
         }
     }
 
@@ -54,7 +69,7 @@ impl Escape {
     pub(super) fn write(self, value: &str, out: &mut String) {
         match self {
             Self::Url => percent_encode(value, out),
-            Self::Path => out.push_str(value),
+            Self::Path | Self::Key => out.push_str(value),
         }
     }
 }
@@ -110,6 +125,17 @@ mod tests {
         }
         for value in ["", "...", "a..b", ".hidden", "s 1.svs"] {
             assert_eq!(Escape::Path.refuse(value), None, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn keys_follow_object_store_part_rules() {
+        assert_eq!(written(Escape::Key, "s 1%é"), "s 1%é");
+        for value in ["", ".", "..", "a/b", "a\nb", "a\u{7f}b"] {
+            assert!(Escape::Key.refuse(value).is_some(), "{value:?}");
+        }
+        for value in ["...", "a..b", "a\\b", "s 1.svs"] {
+            assert_eq!(Escape::Key.refuse(value), None, "{value:?}");
         }
     }
 }

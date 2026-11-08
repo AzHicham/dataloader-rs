@@ -8,12 +8,17 @@ mod file;
 mod http;
 #[cfg(feature = "async")]
 mod location;
+#[cfg(feature = "object-store")]
+mod object;
 #[cfg(feature = "async")]
 mod retry;
 #[cfg(feature = "async")]
 mod template;
-#[cfg(all(test, feature = "http"))]
+#[cfg(all(test, any(feature = "http", feature = "object-store")))]
+#[cfg_attr(not(feature = "http"), allow(dead_code))]
 mod test_server;
+#[cfg(any(feature = "http", feature = "object-store"))]
+mod tls;
 
 #[cfg(feature = "async")]
 pub use async_dataset::AsyncDataset;
@@ -23,6 +28,8 @@ pub use fetch_error::FetchError;
 pub use file::{DEFAULT_MAX_BYTES, FileDataset, FileDatasetBuilder};
 #[cfg(feature = "http")]
 pub use http::{HttpDataset, HttpDatasetBuilder};
+#[cfg(feature = "object-store")]
+pub use object::{ObjectStoreDataset, ObjectStoreDatasetBuilder};
 #[cfg(feature = "async")]
 pub use retry::Retry;
 #[cfg(feature = "async")]

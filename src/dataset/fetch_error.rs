@@ -23,12 +23,18 @@ pub enum FetchError {
         status: u16,
         attempts: u32,
     },
-    /// The request or read failed (connection, timeout, I/O, store), after `attempts`
-    /// attempts.
+    /// The request or read failed (connection, timeout, I/O), after `attempts` attempts.
     Io {
         location: String,
         attempts: u32,
         timeout: bool,
+        source: Box<dyn StdError + Send + Sync>,
+    },
+    /// An object store request failed after the store's own retries: at most `max_attempts`
+    /// attempts, when known (a store opened by `ObjectStoreDataset::from_url`).
+    Store {
+        location: String,
+        max_attempts: Option<u32>,
         source: Box<dyn StdError + Send + Sync>,
     },
 }
@@ -77,6 +83,21 @@ impl Display for FetchError {
                     "{location}: {what} after {attempts} attempt(s): {source}"
                 )
             }
+            Self::Store {
+                location,
+                max_attempts: Some(max_attempts),
+                source,
+            } => write!(
+                f,
+                "{location}: failed after up to {max_attempts} attempt(s), \
+                 retried by object_store: {source}"
+            ),
+            Self::Store {
+                location, source, ..
+            } => write!(
+                f,
+                "{location}: failed, retried by the store's own settings: {source}"
+            ),
         }
     }
 }
@@ -84,7 +105,7 @@ impl Display for FetchError {
 impl StdError for FetchError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
-            Self::Io { source, .. } => Some(source.as_ref()),
+            Self::Io { source, .. } | Self::Store { source, .. } => Some(source.as_ref()),
             _ => None,
         }
     }

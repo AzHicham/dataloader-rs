@@ -24,6 +24,14 @@ python = ["dep:pyo3"]
 async = ["dep:tokio", "tokio/time", "dep:futures-util", "dep:bytes"]
 # HttpDataset: reqwest over rustls (ring provider, bundled Mozilla roots).
 http = ["async", "dep:reqwest", "dep:rustls", "dep:webpki-root-certs"]
+# ObjectStoreDataset: S3, GCS, Azure and HTTP stores of the object_store crate, same TLS.
+object-store = [
+    "async",
+    "dep:object_store",
+    "dep:reqwest",
+    "dep:rustls",
+    "dep:webpki-root-certs",
+]
 
 
 [profile.release]
@@ -70,6 +78,13 @@ optional         = true
 version          = "0.13"
 default-features = false
 features         = ["rustls-no-provider"]
+optional         = true
+
+# The `*-base` features plus `ring` keep aws-lc out; reqwest's TLS is set above.
+[dependencies.object_store]
+version          = "0.14"
+default-features = false
+features         = ["aws-base", "gcp-base", "azure-base", "http-base", "reqwest", "ring"]
 optional         = true
 
 [dependencies.rustls]
