@@ -4,7 +4,7 @@ use bytes::Bytes;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::{error::Result, transform::Transform};
+use crate::{error::Result, python::pool::attach, transform::Transform};
 
 /// `PyDataloader(transform=f)`: `f(index, item)` for each item, on the loader's threads,
 /// holding the interpreter only for the call. Without `f`, items are left as they are, except a Rust
@@ -50,7 +50,7 @@ impl Transform<Py<PyAny>> for PyTransform {
     fn apply(&self, index: usize, item: Py<PyAny>) -> Result<Py<PyAny>> {
         match &self.function {
             None => Ok(item),
-            Some(f) => Ok(Python::attach(|py| f.call1(py, (index, item)))?),
+            Some(f) => Ok(attach(|py| f.call1(py, (index, item)))?),
         }
     }
 
@@ -64,7 +64,7 @@ impl Transform<Bytes> for PyTransform {
     type Output = Py<PyAny>;
 
     fn apply(&self, index: usize, item: Bytes) -> Result<Py<PyAny>> {
-        Ok(Python::attach(|py| {
+        Ok(attach(|py| {
             let item = PyBytes::new(py, &item).into_any().unbind();
             self.call(py, index, item)
         })?)

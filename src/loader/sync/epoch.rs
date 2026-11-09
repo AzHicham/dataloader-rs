@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 #[cfg(feature = "python")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::{reorder::ParallelCore, worker::process_batch};
 use crate::{
@@ -132,6 +132,18 @@ where
         match self {
             Self::Parallel(core) => core.next_until(deadline),
             Self::Direct { .. } => deadline.map(|_| self.next()),
+        }
+    }
+
+    /// The direct path has nothing in flight between two batches.
+    #[cfg(feature = "python")]
+    fn stop(&mut self, timeout: Duration) -> bool {
+        match self {
+            Self::Parallel(core) => core.stop(timeout),
+            Self::Direct { chunks, .. } => {
+                *chunks = Vec::new().into_iter();
+                true
+            }
         }
     }
 }

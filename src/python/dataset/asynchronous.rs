@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyCFunction, PyDict, PyString, PyTuple};
 use tokio::sync::oneshot;
 
-use crate::{dataset::AsyncDataset, error::Result};
+use crate::{dataset::AsyncDataset, error::Result, python::pool::attach};
 
 /// Base class of the datasets whose `__getitem__` (or `__getitems__`) is `async def`.
 #[pyclass(
@@ -127,7 +127,7 @@ impl PyAsyncItems {
         rayon::spawn(move || {
             // A panic must not escape: rayon aborts the process on a panicking `spawn`.
             let submitted = catch_unwind(AssertUnwindSafe(|| {
-                Python::attach(|py| shared.submit(py, method, arg))
+                attach(|py| shared.submit(py, method, arg))
             }));
             // Released before the result can end the epoch.
             drop(shared);
@@ -222,7 +222,7 @@ impl AsyncDataset for PyAsyncItems {
             return Ok(items);
         }
         let samples = self.submit("__getitems__", indices.to_vec()).await?;
-        let samples = Python::attach(|py| {
+        let samples = attach(|py| {
             samples
                 .bind(py)
                 .try_iter()?

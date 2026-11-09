@@ -50,7 +50,7 @@ iter(loader)
 
 - **Never wait for workers while holding the interpreter.** A worker may be waiting to attach
   (inside `__getitem__` or `collate_fn`); `__next__` detaches before it waits on the channel, and
-  dropping an iterator does not wait at all.
+  dropping an iterator detaches before it waits (at most 5 s) for the batches in flight.
 - **Python exceptions keep their type.** They cross the core as boxed `PyErr`s; `into_py_err`
   downcasts them back, and only non-Python errors become `RuntimeError`.
 - **Nothing ends an epoch silently.** A raising `__len__`, a sampler that raises or yields a
