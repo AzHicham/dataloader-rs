@@ -224,6 +224,9 @@ for images, tile_coords in loader:  # (64, 224, 224, 3) and (64, 2)
     save(model(images), tile_coords)
 ```
 
+To get the indices of each batch without a Python transform, pass `return_indices=True` (see
+[Per-item metadata](#per-item-metadata)).
+
 ## Image transforms in Rust
 
 `dataloader_rs.transforms` has torchvision-like image transforms implemented in Rust (pure-Rust
@@ -296,34 +299,6 @@ batches and writes the next ones into them: a fresh 38.5 MB float32 batch spends
 of its collation on page faults. It never waits for a buffer, so holding batches only costs
 memory.
 
-### Per-item metadata
-
-Batches follow the sampler's order (sequential by default), so batch `k`
-holds the items from `k * batch_size` on, and you can slice your coordinates the same way. You
-can also pair each image with its metadata in a Python transform; `ImageCollator` then returns
-`(batch, [metadata])`:
-
-```python
-coords = np.array(tile_coords)  # (n, 2)
-tiles_http = HttpDataset.from_template(
-    "https://tiles.example/images/image-1/tile?x={x}&y={y}&size=224",
-    {"x": coords[:, 0], "y": coords[:, 1]},
-)
-loader = PyDataloader(
-    tiles_http,
-    batch_size=64,
-    num_workers=2,
-    item_concurrency=32,
-    transform=lambda i, png: (tiles(png), coords[i]),  # Rust work, GIL released inside
-    collate_fn=ImageCollator(),
-)
-for batch, batch_coords in loader:  # ImageBatch, list of 64 coordinate rows
-    save(model(torch.from_dlpack(batch)), np.stack(batch_coords))
-```
-
-The first form never takes the interpreter; the second takes it once per item, to call the
-lambda.
-
 Runnable versions of these examples, which work offline, are in
 [`examples/`](../examples/README.md): all in Rust, Rust and torch mixed, torchvision transforms on
 bytes fetched in Rust, and tiles fetched by coordinates.
@@ -355,6 +330,55 @@ def transform(i, png):
   copy.
 - Without numpy, objects with the buffer protocol and their own shape (a `memoryview` cast to
   `(h, w, c)`) are read, `"hwc"` only.
+
+### Per-item metadata
+
+To know where each item of a batch belongs (the coordinates of a tile, a label), pass
+`return_indices=True`: each batch comes as `(batch, indices)`, where `indices` is a `list` of the
+dataset indices of its items, in the order the sampler drew them. Look the metadata up with them;
+with NumPy, `coords[indices]`:
+
+```python
+coords = np.array(tile_coords)  # (n, 2)
+tiles_http = HttpDataset.from_template(
+    "https://tiles.example/images/image-1/tile?x={x}&y={y}&size=224",
+    {"x": coords[:, 0], "y": coords[:, 1]},
+)
+loader = PyDataloader(
+    tiles_http,
+    batch_size=64,
+    num_workers=2,
+    item_concurrency=32,
+    transform=tiles,  # the Compose above
+    collate_fn=ImageCollator(),
+    return_indices=True,
+)
+for batch, indices in loader:  # ImageBatch, list of 64 ints
+    save(model(torch.from_dlpack(batch)), coords[indices])
+```
+
+With a Rust dataset, the Rust transforms and `ImageCollator`, items are fetched, decoded and
+batched without the interpreter: only the loop itself runs Python, once per batch. It works the
+same with any dataset and `collate_fn`.
+
+To mix Python and Rust work on each item, use a Python transform instead: it gets the item's
+index too, so it can return the metadata with the image, and `ImageCollator` then returns
+`(batch, [metadata])`:
+
+```python
+loader = PyDataloader(
+    tiles_http,
+    batch_size=64,
+    num_workers=2,
+    item_concurrency=32,
+    transform=lambda i, png: (tiles(png), coords[i]),  # Rust work, GIL released inside
+    collate_fn=ImageCollator(),
+)
+for batch, batch_coords in loader:  # ImageBatch, list of 64 coordinate rows
+    save(model(torch.from_dlpack(batch)), np.stack(batch_coords))
+```
+
+This form takes the interpreter once per item, to call the lambda.
 
 ## Samplers
 

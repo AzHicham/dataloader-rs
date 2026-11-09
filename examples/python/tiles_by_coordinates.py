@@ -1,5 +1,5 @@
-"""Tiles of a large image, fetched over HTTP by their (x, y) coordinates, decoded in Rust and
-batched together with their coordinates: each batch is ``(images, coordinates)``.
+"""Tiles of a large image, fetched over HTTP by their (x, y) coordinates, decoded and batched in
+Rust; each batch comes with the indices of its tiles, which give their coordinates.
 
 This is the usual way to run a model over a very large image (a satellite image, a scanned
 microscope slide): a tile server cuts it into tiles on request, and the coordinates say where
@@ -67,15 +67,16 @@ def main() -> None:
             batch_size=4,
             num_workers=2,
             item_concurrency=4,  # 8 tile requests in flight
-            # The transform gets each item's index, whatever order the sampler chose, so it
-            # can return the tile's coordinates with the image. decode() runs in Rust, with the
-            # GIL released.
-            transform=lambda index, data: (decode(data), coords[index]),
-            # Items that are (image, extra) tuples give (ImageBatch, [extra, ...]) batches.
+            # Fetching, decoding and batching all run in Rust, without the GIL.
+            transform=decode,
             collate_fn=ImageCollator(),
+            # Each batch comes as (images, indices): the dataset indices of its tiles, in the
+            # order the sampler drew them, so coords[indices] are their coordinates.
+            return_indices=True,
         )
-        for images, tile_coords in loader:
+        for images, indices in loader:
             batch = np.asarray(images)  # a view of the batch's buffer, no copy
+            tile_coords = coords[indices]  # shape (len(indices), 2)
             # A model would run on the batch here (torch.from_dlpack(images) is a view too).
             print(batch.shape, batch.dtype, "at", [tuple(int(v) for v in c) for c in tile_coords])
 
