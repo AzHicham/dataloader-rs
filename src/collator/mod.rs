@@ -1,12 +1,16 @@
 #![doc = include_str!("README.md")]
 
 mod default_collator;
+#[cfg(feature = "image")]
+mod image;
 #[cfg(feature = "torch-rs")]
 mod torch;
 mod traits;
 mod vec_collator;
 
 pub use default_collator::{DefaultCollate, DefaultCollator};
+#[cfg(feature = "image")]
+pub use image::{BatchLayout, ImageBatch, ImageCollator};
 #[cfg(feature = "torch-rs")]
 pub use torch::TorchPinnedCollator;
 pub use traits::Collator;
