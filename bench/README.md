@@ -4,8 +4,9 @@ Two kinds of scripts, sharing their datasets:
 
 - **Regression guards** (`test_bench_*.py`): pytest-benchmark cases on `dataloader_rs` alone, run
   by CI on every pull request (free-threaded 3.14t) and tracked per commit.
-- **Comparison with PyTorch** (`compare_torch.py`): the same workloads through
-  `dataloader_rs.PyDataloader` and `torch.utils.data.DataLoader`, run on demand.
+- **Comparison with PyTorch** (`compare_torch.py`, `compare_async.py`, `compare_image.py`): the
+  same workloads through `dataloader_rs.PyDataloader` and `torch.utils.data.DataLoader`, run on
+  demand.
 
 Both are sized for a 4-vCPU machine, the CI runner: at most 4 workers, except where waiting on
 the network is the point. Both run with the allocator settings of `real_world.PINNED_ALLOCATOR`
@@ -88,3 +89,15 @@ uv run --python 3.13 python bench/compare_async.py --rounds 7   # GIL build
 | `conftest.py` | puts `bench/` on `sys.path` for the pytest cases |
 
 torch is only needed for the comparison; the guards and `real_world.py` import it lazily.
+
+## Image tiles: `compare_image.py`
+
+msintuit-ec's feature pass on local PNG tiles: torch's `DataLoader` with Pillow + torchvision
+(4 and 8 worker processes) against `FileDataset` with the same Pillow code as a Python
+`transform`, and with `dataloader_rs.transforms` + `ImageCollator` (with and without reused
+buffers). Batches become torch tensors (`torch.from_dlpack` for `dataloader_rs`); the first
+batch of each `dataloader_rs` loader is checked bit for bit against torch's.
+
+```bash
+taskset -c 0,2,4,6 python bench/compare_image.py --dir ~/tiles --rounds 5   # Pillow + torchvision for torch
+```

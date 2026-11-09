@@ -16,6 +16,7 @@ the network is the point. Results and their reading:
 | `bench_sampler` | sampler cost | `InMemoryDs(N)` | N 1k, 10k, 100k; sequential vs random | `batch_size` 128, no workers |
 | `bench_real_world` | real per-item work | 4 096 files of 16 KB; 2 ms blocking latency | `num_workers` 0, 1, 2, 4; 4, 16, 64 requests in flight | `batch_size` 32; glibc's malloc thresholds pinned |
 | `bench_async` | futures (`builder_async` + `HttpDataset`) against threads (sync loader, one blocking request per thread) at equal requests in flight; needs `--features http` | 512 GETs on a local keep-alive server, 64 KiB after 10 ms | (workers, items) (1, 64), (2, 32), (4, 16), (8, 1) | `batch_size` 64 |
+| `bench_image` | the image transforms and `ImageCollator`, alone and through a loader; with and without reused batch buffers; needs `--features image` | 512 in-memory 224 × 224 RGB PNGs (every eighth 224 × 150): decode, RGB, `PadTo(224)`, `ToFloat`, `Normalize`, CHW | one item; collation NCHW / NHWC, buffers 0 / 4; loader (workers, items) (1, 4), (4, 1), buffers 0 / 8 | `batch_size` 64, `f32` |
 
 `common.rs` holds the shared datasets, collators and consumer work:
 
@@ -29,7 +30,7 @@ the network is the point. Results and their reading:
 ## Running
 
 ```bash
-taskset -c 0,2,4,6 cargo bench --features http  # every suite, pinned to 4 cores like the runner
+taskset -c 0,2,4,6 cargo bench --features http,image  # every suite, pinned to 4 cores like the runner
 cargo bench --bench bench_prefetch_depth  # one suite
 cargo bench -- depth/4                    # one case
 ```
@@ -44,5 +45,5 @@ two versions, delete `target/criterion` between builds and alternate them ([BENC
 `benches/`, `bench/` or `Cargo.*` change), with `--output-format bencher`, and stores the results
 per commit on the [dashboard](https://azhicham.github.io/dataloader-rs/benchmarks/rust/). Adding a
 suite: a `[[bench]]` entry with `harness = false` in `Cargo.toml`, and its name in the workflow's
-`matrix.bench` list; a suite with `required-features` (`bench_async`) goes in `matrix.include`
+`matrix.bench` list; a suite with `required-features` (`bench_async`, `bench_image`) goes in `matrix.include`
 with its `features` instead, since Cargo skips it silently without them.
