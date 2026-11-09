@@ -14,11 +14,19 @@ import zlib
 from pathlib import Path
 
 import numpy as np
+import torch
+import torchvision.transforms.v2.functional as F
 from PIL import Image
 
 OUT = Path(__file__).parent
 # Odd sizes, so that off-by-one errors in rows, centers and padding show.
 W, H = 37, 29
+RESAMPLE = {
+    "nearest": Image.Resampling.NEAREST,
+    "bilinear": Image.Resampling.BILINEAR,
+    "bicubic": Image.Resampling.BICUBIC,
+    "lanczos3": Image.Resampling.LANCZOS,
+}
 
 
 def scene(width: int, height: int, seed: int) -> np.ndarray:
@@ -100,8 +108,70 @@ def decode_fixtures() -> None:
     assert (np.asarray(Image.open(OUT / "rgb16.png").convert("RGB")) == rgb).all()
 
 
+def chw(image: np.ndarray) -> "torch.Tensor":
+    return torch.from_numpy(np.ascontiguousarray(image.transpose(2, 0, 1)))
+
+
+def hwc(tensor: "torch.Tensor") -> np.ndarray:
+    return tensor.permute(1, 2, 0).numpy()
+
+
+def constant_fill_2d(img: Image.Image, shape: tuple[int, int], value: float) -> Image.Image:
+    """prime_dx 2.5.0 `ConstantFill2d.__call__` (transforms/transforms.py), without its log."""
+    right_padding = shape[0] - img.size[0]
+    bottom_padding = shape[1] - img.size[1]
+    if right_padding > 0 or bottom_padding > 0:
+        return Image.fromarray(
+            np.pad(
+                np.array(img),
+                pad_width=((0, bottom_padding), (0, right_padding), (0, 0)),
+                mode="constant",
+                constant_values=value,
+            )
+        )
+    return img
+
+
+def geometry_fixtures() -> None:
+    rgb = scene(W, H, seed=0)
+    img = Image.fromarray(rgb, "RGB")
+    tensor = chw(rgb)
+    save("crop_3_5_20_30.u8", hwc(F.crop(tensor, 3, 5, 20, 30)))
+    for h, w in [(20, 30), (40, 45), (31, 20)]:
+        save(f"center_crop_{h}_{w}.u8", hwc(F.center_crop(tensor, [h, w])))
+        assert (np.asarray(F.center_crop(img, [h, w])) == hwc(F.center_crop(tensor, [h, w]))).all()
+    save("hflip.u8", hwc(F.horizontal_flip(tensor)))
+    save("vflip.u8", hwc(F.vertical_flip(tensor)))
+    for k in (1, 2, 3):
+        save(f"rot90_{k}.u8", np.rot90(rgb, k))
+        assert (hwc(torch.rot90(tensor, k, dims=(-2, -1))) == np.rot90(rgb, k)).all()
+
+    sides = [3, 1, 4, 2]  # left, top, right, bottom
+    save("pad_constant.u8", hwc(F.pad(tensor, sides, fill=[10, 20, 30], padding_mode="constant")))
+    for mode in ("edge", "reflect", "symmetric"):
+        save(f"pad_{mode}.u8", hwc(F.pad(tensor, sides, padding_mode=mode)))
+        # Wider than the image: numpy.pad, as torchvision on PIL images.
+        wide = np.pad(rgb, ((30, 50), (40, 2), (0, 0)), mode=mode)
+        assert (np.asarray(F.pad(img, [40, 30, 2, 50], padding_mode=mode)) == wide).all()
+        save(f"pad_wide_{mode}.u8", wide)
+
+    # ConstantFill2d: an undersized tile, an exact one, one undersized on one side only.
+    save("pad_to_64.u8", np.asarray(constant_fill_2d(img, (64, 64), 0)))
+    save("pad_to_37_40.u8", np.asarray(constant_fill_2d(img, (37, 40), 255)))
+
+    # Resize: Pillow (what torchvision does on PIL images, antialiased) and torch
+    # without antialias.
+    for name, f in RESAMPLE.items():
+        save(f"resize_down_{name}.u8", np.asarray(img.resize((17, 13), f)))
+        save(f"resize_up_{name}.u8", np.asarray(img.resize((53, 41), f)))
+    # torch's bicubic is a = -0.75, Pillow's -0.5: only bilinear compares.
+    small = F.resize(tensor, [13, 17], interpolation=F.InterpolationMode.BILINEAR, antialias=False)
+    save("resize_down_bilinear_no_aa.u8", hwc(small))
+
+
 def main() -> None:
     decode_fixtures()
+    geometry_fixtures()
     total = sum(p.stat().st_size for p in OUT.iterdir() if p.suffix != ".py")
     print(f"{total / 1024:.0f} KiB of fixtures in {OUT}")
 
