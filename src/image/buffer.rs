@@ -148,6 +148,13 @@ pub(crate) fn with_capacity<T>(len: usize) -> Result<Vec<T>> {
     Ok(data)
 }
 
+/// `len` copies of `value`, allocated as [`with_capacity`] does.
+pub(crate) fn filled<T: Clone>(len: usize, value: T) -> Result<Vec<T>> {
+    let mut data = with_capacity(len)?;
+    data.resize(len, value);
+    Ok(data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Image, Sample};

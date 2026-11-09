@@ -15,8 +15,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torchvision.transforms.v2 as transforms_v2
 import torchvision.transforms.v2.functional as F
 from PIL import Image
+from torchvision import transforms
 
 OUT = Path(__file__).parent
 # Odd sizes, so that off-by-one errors in rows, centers and padding show.
@@ -169,9 +171,43 @@ def geometry_fixtures() -> None:
     save("resize_down_bilinear_no_aa.u8", hwc(small))
 
 
+MEAN = (0.485, 0.456, 0.406)
+STD = (0.229, 0.224, 0.225)
+TILE = 48
+
+
+def float_fixtures() -> None:
+    img = Image.open(OUT / "rgb.png")
+    to_tensor = transforms.ToTensor()
+    save("to_tensor.f32", to_tensor(img).numpy())
+    save("to_tensor_normalize.f32", transforms.Normalize(MEAN, STD)(to_tensor(img)).numpy())
+    # torchvision v2's ToDtype multiplies by 1/255 where ToTensor divides by 255: 126 of the
+    # 256 values differ by one ulp. ToFloat divides.
+    v2 = transforms_v2.Compose(
+        [transforms_v2.PILToTensor(), transforms_v2.ToDtype(torch.float32, scale=True)]
+    )
+    assert torch.allclose(v2(img), to_tensor(img), rtol=1e-7, atol=0)
+
+    # msintuit-ec's feature pass (prime_dx): ConstantFill2d + ToTensor + Normalize, on a full
+    # tile, an undersized edge tile and tiles that are not RGB.
+    full = Image.fromarray(scene(TILE, TILE, seed=2), "RGB")
+    full.save(OUT / "tile_full.png")
+    pipeline = transforms.Compose(
+        [
+            lambda x: constant_fill_2d(x.convert("RGB"), (TILE, TILE), 0.0),
+            transforms.ToTensor(),
+            transforms.Normalize(MEAN, STD),
+        ]
+    )
+    for name in ["tile_full.png", "rgb.png", "rgba.png", "gray.png", "palette.png"]:
+        expected = pipeline(Image.open(OUT / name))
+        save(f"msintuit_{Path(name).stem}.f32", expected.numpy())
+
+
 def main() -> None:
     decode_fixtures()
     geometry_fixtures()
+    float_fixtures()
     total = sum(p.stat().st_size for p in OUT.iterdir() if p.suffix != ".py")
     print(f"{total / 1024:.0f} KiB of fixtures in {OUT}")
 
