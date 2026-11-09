@@ -9,7 +9,7 @@ use crate::python::dataloader::PyDataloader;
 use crate::python::dataset::{Fetcher, PyAsyncItems, PyDataset, RustSource};
 use crate::python::error::into_py_err;
 use crate::python::pool::exiting;
-use crate::python::transform::PyTransform;
+use crate::python::transform::{PyItem, PyTransform};
 use crate::transform::Transform;
 
 type SyncIter = DataLoaderIter<SyncSource<PyDataset>, PyCollator, PyTransform>;
@@ -51,7 +51,7 @@ fn wait_next<Src>(
 ) -> PyResult<Option<PyResult<PyBatch>>>
 where
     Src: LoaderSource,
-    PyTransform: Transform<Src::Item, Output = Py<PyAny>>,
+    PyTransform: Transform<Src::Item, Output = PyItem>,
 {
     let next = match inner.next_until(None) {
         Some(next) => next,

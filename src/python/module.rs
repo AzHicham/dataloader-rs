@@ -8,6 +8,7 @@ use crate::python::{
         PyAsyncDatasetBase, PyDatasetBase, PyFileDataset, PyHttpDataset, PyObjectStoreDataset,
         PyRustDataset,
     },
+    image::{self, PyImage, PyImageBatch, PyImageCollator, PyImageTransform},
     iterator::PyDataloaderIter,
     pool,
 };
@@ -27,5 +28,31 @@ fn dataloader_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFileDataset>()?;
     m.add_class::<PyObjectStoreDataset>()?;
     m.add_function(wrap_pyfunction!(pool::keep_pools_alive, m)?)?;
+    m.add_class::<PyImage>()?;
+    m.add_class::<PyImageBatch>()?;
+    m.add_class::<PyImageCollator>()?;
+    m.add_class::<PyImageTransform>()?;
+    // `dataloader_rs.transforms` re-exports these from the extension module.
+    for transform in [
+        wrap_pyfunction!(image::decode, m)?,
+        wrap_pyfunction!(image::to_rgb, m)?,
+        wrap_pyfunction!(image::to_rgba, m)?,
+        wrap_pyfunction!(image::to_gray, m)?,
+        wrap_pyfunction!(image::crop, m)?,
+        wrap_pyfunction!(image::center_crop, m)?,
+        wrap_pyfunction!(image::pad, m)?,
+        wrap_pyfunction!(image::pad_to, m)?,
+        wrap_pyfunction!(image::resize, m)?,
+        wrap_pyfunction!(image::hflip, m)?,
+        wrap_pyfunction!(image::vflip, m)?,
+        wrap_pyfunction!(image::rotate90, m)?,
+        wrap_pyfunction!(image::to_float, m)?,
+        wrap_pyfunction!(image::normalize, m)?,
+        wrap_pyfunction!(image::to_chw, m)?,
+        wrap_pyfunction!(image::to_hwc, m)?,
+        wrap_pyfunction!(image::compose, m)?,
+    ] {
+        m.add_function(transform)?;
+    }
     Ok(())
 }

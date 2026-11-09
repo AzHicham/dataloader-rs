@@ -1,8 +1,12 @@
 import atexit
 
+from . import transforms
 from .dataloader_rs import (
     FileDataset,
     HttpDataset,
+    Image,
+    ImageBatch,
+    ImageCollator,
     ObjectStoreDataset,
     PyDataloader,
     PyDataloaderIter,
@@ -20,10 +24,14 @@ atexit.register(_keep_pools_alive)
 __all__ = [
     "FileDataset",
     "HttpDataset",
+    "Image",
+    "ImageBatch",
+    "ImageCollator",
     "ObjectStoreDataset",
     "PyAsyncDataset",
     "PyDataset",
     "PyDataloader",
     "PyDataloaderIter",
     "RustDataset",
+    "transforms",
 ]

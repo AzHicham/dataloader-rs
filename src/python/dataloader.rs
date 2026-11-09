@@ -14,7 +14,7 @@ use crate::python::dataset::{
 use crate::python::iterator::{AsyncIter, PyDataloaderIter, PyIterInner};
 use crate::python::pool::{attach_global_pool, run_attached, track};
 use crate::python::sampler::PySampler;
-use crate::python::transform::PyTransform;
+use crate::python::transform::{PyItem, PyTransform};
 use crate::sampler::{RandomSampler, SequentialSampler};
 use crate::transform::Transform;
 
@@ -59,7 +59,7 @@ impl Options {
     ) -> DataLoader<Src, PySampler, PyCollator, PyTransform>
     where
         Src: LoaderSource,
-        PyTransform: Transform<Src::Item, Output = Py<PyAny>>,
+        PyTransform: Transform<Src::Item, Output = PyItem>,
     {
         let loader = builder
             .batch_size(self.batch_size)
@@ -82,7 +82,7 @@ impl Options {
     fn build_async<A>(self, dataset: A) -> AsyncLoader<A>
     where
         A: AsyncDataset,
-        PyTransform: Transform<A::Item, Output = Py<PyAny>>,
+        PyTransform: Transform<A::Item, Output = PyItem>,
     {
         let mut builder = DataLoader::builder_async(dataset);
         if let Some(threads) = self.runtime_threads {
@@ -124,7 +124,7 @@ fn start_async<A>(
 ) -> PyResult<AsyncIter<A>>
 where
     A: AsyncDataset,
-    PyTransform: Transform<A::Item, Output = Py<PyAny>>,
+    PyTransform: Transform<A::Item, Output = PyItem>,
 {
     dataset.bind(py).len()?;
     let chunks = loader.epoch_chunks();
@@ -146,7 +146,7 @@ fn traverse_async<A>(
 ) -> Result<(), PyTraverseError>
 where
     A: AsyncDataset,
-    PyTransform: Transform<A::Item, Output = Py<PyAny>>,
+    PyTransform: Transform<A::Item, Output = PyItem>,
 {
     visit.call(dataset)?;
     visit.call(loader.sampler().python_sampler())?;
@@ -158,7 +158,7 @@ where
 fn len_async<A>(py: Python<'_>, loader: &AsyncLoader<A>, dataset: &Py<PyAny>) -> PyResult<usize>
 where
     A: AsyncDataset,
-    PyTransform: Transform<A::Item, Output = Py<PyAny>>,
+    PyTransform: Transform<A::Item, Output = PyItem>,
 {
     match loader.sampler().python_sampler() {
         Some(sampler) => Ok(loader.num_batches(sampler.bind(py).len()?)),
@@ -213,7 +213,7 @@ impl PyDataloader {
         shuffle: bool,
         sampler: Option<Py<PyAny>>,
         num_workers: usize,
-        collate_fn: Option<Py<PyAny>>,
+        collate_fn: Option<Bound<'_, PyAny>>,
         drop_last: bool,
         seed: Option<u64>,
         mut item_concurrency: usize,
@@ -281,8 +281,8 @@ impl PyDataloader {
             item_concurrency,
             runtime_threads,
             sampler,
-            transform: PyTransform::new(transform.map(Bound::unbind)),
-            collator: PyCollator::new(collate_fn),
+            transform: PyTransform::new(transform.as_ref()),
+            collator: PyCollator::new(collate_fn.as_ref()),
         };
         Ok(Self {
             inner: core_for(py, &dataset, options)?,
