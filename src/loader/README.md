@@ -16,7 +16,7 @@ returns `D` or `A`.
 | `sync/epoch.rs` | `SyncEpoch`: the direct path, or batch tasks on the pool |
 | `sync/worker.rs` | `process_batch` (fetch + transform + collate one batch) and `Epoch`: batch tasks, the claim window, item lanes |
 | `sync/reorder.rs` | `ParallelCore`: the reorder buffer, fork check, drop |
-| `asynchronous/epoch.rs` | feature `async`: `AsyncEpoch`: the driver task, batch tasks, the bounded channel ([ARCHITECTURE.md, 3.7](../../ARCHITECTURE.md#37-async-datasets-builder_async)) |
+| `asynchronous/epoch.rs` | feature `async`: `AsyncEpoch`: the driver task, batch tasks, the bounded channel ([ARCHITECTURE.md, 2.6](../../ARCHITECTURE.md#26-async-dataset-dataloaderbuilder_async)) |
 | `asynchronous/runtime.rs` | feature `async`: the loader's tokio runtime, its own (`runtime_threads`) or the caller's (`runtime`) |
 
 ## Building and iterating
@@ -113,7 +113,7 @@ each calling `Dataset::get` for the batch's next item and transforming it: at mo
 a batch in flight, transformed in parallel.
 
 The threads, the backpressure and the reorder buffer are described in
-[ARCHITECTURE.md, section 3](../../ARCHITECTURE.md#3-life-of-an-epoch).
+[ARCHITECTURE.md, section 2](../../ARCHITECTURE.md#2-life-of-an-epoch).
 
 ## Errors, panics, early exit
 

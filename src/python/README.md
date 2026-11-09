@@ -49,7 +49,7 @@ iter(loader)
   batch's lanes fetch its items with one `Dataset::get` (one attach, one `__getitem__`) each.
 - **Async**: `PyDataloader` builds `DataLoader::builder_async` around `PyAsyncItems` or a Rust
   dataset, with `PyTransform` (which also makes a Rust dataset's items `bytes`); `__next__` waits on it like on the threaded core
-  (`wait_next`). See [ARCHITECTURE.md, 6.2](../../ARCHITECTURE.md#62-async-and-rust-datasets).
+  (`wait_next`). See [ARCHITECTURE.md, 6.3 and 6.4](../../ARCHITECTURE.md#63-pyasyncdataset-an-asyncio-loop-of-its-own).
 
 ## Rules this code keeps
 
