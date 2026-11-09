@@ -69,7 +69,7 @@ installed only `dataloader_rs` runs. Array samples stay small (64 and 147 KB, ba
 `compare_async.py` fetches 2 048 tiles of 64 KiB over HTTP (a mock tile server, `aiohttp.web`
 answering after 10 ms with keep-alive, in its own processes on `--server-cpus`) in batches of 64,
 through torch with 8 and 16 worker processes and through `dataloader_rs` with a sync `PyDataset`
-on threads (both with a `requests.Session` per thread or process, like the product), a
+on threads (both with a `requests.Session` per thread or process, as a real client would), a
 `PyAsyncDataset` (an `aiohttp.ClientSession` closed in `aclose()`) and the Rust `HttpDataset`.
 Each measurement builds a fresh loader, then reports the median epoch time, first-batch time and
 CPU time over rounds run in a rotated order. Results: [BENCH.md](../BENCH.md).
@@ -92,7 +92,7 @@ torch is only needed for the comparison; the guards and `real_world.py` import i
 
 ## Image tiles: `compare_image.py`
 
-msintuit-ec's feature pass on local PNG tiles: torch's `DataLoader` with Pillow + torchvision
+A tile feature-extraction pass on local PNG tiles: torch's `DataLoader` with Pillow and torchvision
 (4 and 8 worker processes) against `FileDataset` with the same Pillow code as a Python
 `transform`, and with `dataloader_rs.transforms` + `ImageCollator` (with and without reused
 buffers). Batches become torch tensors (`torch.from_dlpack` for `dataloader_rs`); the first

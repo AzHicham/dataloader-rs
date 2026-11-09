@@ -3,10 +3,14 @@
 The PyO3 module `dataloader_rs`, built by maturin into the `dataloader-rs` Python package. This is
 the implementation guide; the user guide is [python/README.md](../../python/README.md).
 
+In this guide, a thread *attaches* to the interpreter when it takes the right to run Python code
+(the GIL, on builds that have one) and *detaches* when it gives it back; these are PyO3's terms
+(`Python::attach`, `py.detach`).
+
 | File | What |
 |---|---|
-| `module.rs` | the `#[pymodule]` (`gil_used = false`: loads on free-threaded CPython) |
-| `error.rs` | `into_py_err`: core errors back into Python exceptions |
+| `module.rs` | The `#[pymodule]`, declared with `gil_used = false` so that it loads on free-threaded CPython without enabling the GIL. |
+| `error.rs` | `into_py_err`, which turns the core's errors back into Python exceptions. |
 | `dataset/sync.rs` | `PyDatasetBase` (the `PyDataset` base class), `Dataset` for `Py<PyDatasetBase>`, `Fetcher` (`__getitems__` or `__getitem__`) |
 | `dataloader.rs` | `PyDataloader`: arguments, validation, `__iter__`, `__len__` |
 | `iterator.rs` | `PyDataloaderIter`: the direct, threaded and async epochs, `__next__` |

@@ -83,7 +83,7 @@ epochs):
 | `python_cpu` | 9.0 ms | 13.0 ms | 2.9 ms |
 | `python_cpu_local` | 1.3 ms | 13.6 ms | 1.9 ms |
 
-Image tiles (section 5.6), msintuit-ec's feature pass on 2 048 local PNGs, 4 cores: the Rust
+Image tiles (section 5.6), a tile feature-extraction pass on 2 048 local PNGs, 4 cores: the Rust
 image transforms with `ImageCollator` read an epoch in 0.49 s on 3.13 and 0.47 s on 3.14t,
 against 1.17 s for torch with 4 Pillow + torchvision worker processes (**2.4×**, with 2.4× less
 CPU), the same values bit for bit.
@@ -345,7 +345,7 @@ suite is sized for CI (about 35 s); an earlier run of 1 024 GETs gave the same p
 
 ### 4.9 Image transforms: `bench_image`
 
-msintuit-ec's tile chain (`Decode` → `ToRgb` → `PadTo(224)` → `ToFloat` → `Normalize` → `ToChw`)
+A tile chain (`Decode`, `ToRgb`, `PadTo(224)`, `ToFloat`, `Normalize`, `ToChw`)
 on 224 × 224 RGB PNGs of gradients and noise held in memory (every eighth one 224 × 150), 9
 November 2026, branch `feat/image-transforms`, features `image`, pinned to CPUs 0–7 (performance cores).
 Criterion estimates (`--output-format bencher`) of three runs:
@@ -512,11 +512,11 @@ a time (1 worker) and 19 % with 4 batches in parallel. Hence `reuse_buffers`, of
 
 `bench/compare_async.py`, 8 November 2026, branch `feat/async-dataset`: 2 048 GETs of 64 KiB from
 a mock tile server answering after 10 ms (`aiohttp.web` 3.14.5, keep-alive, 4 processes sharing
-the port on the 8 efficiency cores), `batch_size` 64 like the msintuit-ec feature pass, loaders on
+the port on the 8 efficiency cores), `batch_size` 64 as in a tile feature-extraction pass, loaders on
 the 12 performance cores. The sync clients (torch, `PyDataset`) use a `requests.Session` per
-process or thread, like the product; the `PyAsyncDataset` one `aiohttp.ClientSession` on the
+process or thread, as a real client would; the `PyAsyncDataset` one `aiohttp.ClientSession` on the
 loader's event loop, closed in `aclose()`; aiohttp's C extensions load on 3.14t with the GIL off.
-Every measurement builds a fresh loader (one per slide in the product) and reads one epoch;
+Every measurement builds a fresh loader (one per large image in real use) and reads one epoch;
 3.14t with `maturin develop --release`, 3.13 with a release wheel; medians of 7 rounds in a
 rotated order, (min–max):
 
@@ -544,8 +544,8 @@ rotated order, (min–max):
 
 ### 5.6 Image tiles: `compare_image.py`
 
-`bench/compare_image.py`, 9 November 2026, branch `feat/image-transforms`: msintuit-ec's
-feature pass (prime_dx's `ConstantFill2d(224)` + `ToTensor` + `Normalize`) on 2 048 local PNG
+`bench/compare_image.py`, 9 November 2026, branch `feat/image-transforms`: a tile
+feature-extraction pass (padding at the right and bottom to 224, `ToTensor`, `Normalize`) on 2 048 local PNG
 tiles of 224 × 224 (every eighth 224 × 150), `batch_size` 64, every batch made a torch tensor
 (`torch.from_dlpack` for `dataloader_rs`, no copy). Pinned to 4 cores, glibc's malloc thresholds
 pinned; 3.13 with a release wheel (torch 2.15, torchvision 0.29, Pillow 13), 3.14t with
