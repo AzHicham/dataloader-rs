@@ -1,7 +1,8 @@
 # `tests/`: integration tests
 
-Two suites: Rust integration tests against the public API, and pytest against the Python
-package. Unit tests live next to the code (`#[cfg(test)]` modules in `src/`).
+There are two suites: Rust integration tests against the public API, and pytest tests against
+the Python package. Unit tests live next to the code, in the `#[cfg(test)]` modules of `src/`.
+The Rust examples of `examples/rust/` are compiled by `cargo clippy --all-targets`.
 
 ## Rust
 
@@ -12,7 +13,7 @@ package. Unit tests live next to the code (`#[cfg(test)]` modules in `src/`).
 | `integration_collate_default.rs` | `DefaultCollator` on nested structures through a loader | |
 | `integration_collate_ndarray.rs` | `DefaultCollator` stacking `ndarray::Array` | `ndarray` |
 | `integration_collate_torch.rs` | `DefaultCollator` stacking `tch::Tensor`, `pin_memory` | `torch-rs` |
-| `image.rs` | the image transforms against golden files from Pillow, numpy, torchvision and prime_dx (`fixtures/image/make_fixtures.py`); hostile input (huge declared sizes, truncated, corrupted, garbage); `ImageCollator` through a loader | `image` |
+| `image.rs` | the image transforms against reference files made with Pillow, NumPy and torchvision (`fixtures/image/make_fixtures.py`); hostile input (huge declared sizes, truncated, corrupted or random data); `ImageCollator` through a loader | `image` |
 
 ```bash
 cargo test                           # unit + integration + doc tests
@@ -35,8 +36,8 @@ cargo test --all-features            # as CI does; torch-rs downloads libtorch
 | `test_dataloader_integration.py` | end-to-end scenarios: batches without `collate_fn`, `drop_last`, `collate_fn` sequential and parallel, a Python sampler's order |
 | `test_dataset_async.py` | `PyAsyncDataset` and the Rust datasets (`HttpDataset`, `FileDataset`, `ObjectStoreDataset`): base-class checks, order, cancellation, `aclose`, errors, templates, retry settings |
 | `test_transform.py` | `transform=f`, called as `f(index, item)`, on every kind of dataset |
-| `test_image_transforms.py` | `dataloader_rs.transforms` and `ImageCollator`: golden files, errors, every kind of dataset, `(Image, coords)` tuples, zero-copy numpy and DLPack views, buffer reuse; `Image.from_array` (round trips, CHW and strided input, refused types, shapes and sizes, a Rust → torch → Rust loader) |
-| `test_examples.py` | the Python examples of `examples/python/` run to the end (skipped without torch / torchvision) |
+| `test_image_transforms.py` | `dataloader_rs.transforms` and `ImageCollator`: reference files, errors, every kind of dataset, `(Image, coords)` tuples, zero-copy numpy and DLPack views, buffer reuse; `Image.from_array` (round trips, CHW and strided input, refused types, shapes and sizes, a loader that goes from Rust to torch and back) |
+| `test_examples.py` | every Python example of `examples/python/` runs to the end and prints what it should (an example is skipped when NumPy, aiohttp, torch or torchvision, as it needs, is missing) |
 | `py_dataloader_test_utils.py` | shared datasets (`ListDataset`, `ToyDataset`) and helpers |
 
 ```bash

@@ -6,22 +6,22 @@ epoch starts in milliseconds, and against PyTorch it is **4.9–6.6× faster on 
 overhead, 3.2–3.9× on network-bound datasets and 2.5–3.5× on array samples** with free-threaded
 Python — with no PyTorch dependency.
 
-- **PyTorch's arguments**: `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`,
-  `drop_last`, plus `seed` for reproducible shuffling, `prefetch_depth`, and `item_concurrency`
-  to fetch the items of a batch concurrently.
+- **PyTorch's arguments**: `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn` and
+  `drop_last`, plus `seed` for reproducible shuffling, `prefetch_depth`, `item_concurrency` to
+  fetch the items of a batch concurrently, and `transform` for per-item work.
 - **Any batch type**: lists by default, NumPy arrays or tensors from your `collate_fn`.
 - **Batched fetching**: `__getitems__(indices)` is used when your dataset defines it.
 - **Async datasets**: `async def __getitem__` on a `PyAsyncDataset`, or the built-in
-  `HttpDataset`, `FileDataset` and `ObjectStoreDataset`, which fetch in Rust without the GIL:
-  64 requests in flight from two worker threads.
+  `HttpDataset`, `FileDataset` and `ObjectStoreDataset`, which fetch in Rust without the GIL.
+  Many requests are in flight at once (64, say) without a thread for each.
 - **Image transforms in Rust**: `dataloader_rs.transforms` (`Decode`, `PadTo`, `Resize`,
   `Normalize`, …, `Compose`) decode and transform images on the loader's threads without the
-  GIL, bit for bit like Pillow + torchvision where it matters; `ImageCollator` batches them in
-  one buffer that `torch.from_dlpack` takes without a copy.
+  GIL, with the same values as Pillow and torchvision; `ImageCollator` batches them in one
+  buffer that `torch.from_dlpack` takes without a copy.
 - **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
 - **Free-threaded Python**: on CPython 3.14t and 3.15t, worker threads run Python code in
-  parallel. Wheels for the GIL builds (3.11 to 3.15) too: there, threads help work that releases
-  the GIL (see below).
+  parallel. There are wheels for the GIL builds (3.11 to 3.15) too; there, threads speed up the
+  work that releases the GIL (see below).
 
 > **When PyTorch is faster.** The workers are threads in one process, not processes. On regular
 > CPython (the GIL build, such as 3.13), only one thread runs Python code at a time: a
@@ -60,10 +60,11 @@ pip install dataloader-rs
 
 | Wheels | Platforms |
 |---|---|
-| CPython 3.11 to 3.15 and free-threaded 3.14t, 3.15t | Linux x86_64 (x86-64-v3 CPU: AVX2, Intel 2013+ / AMD 2017+) and arm64 (glibc ≥ 2.28), macOS arm64 (11.0+) |
+| CPython 3.11 to 3.15, and the free-threaded 3.14t and 3.15t | Linux x86_64 (a CPU with AVX2: Intel from 2013, AMD from 2017) and arm64 (glibc 2.28 or later); macOS arm64 (11.0 or later) |
 
-Other interpreters and platforms build from the source distribution, which needs a Rust
-toolchain; from a checkout: `pip install maturin && maturin develop --release --features python`.
+On other interpreters and platforms, pip builds the package from the source distribution, which
+needs a Rust toolchain. From a checkout of the repository, run
+`pip install maturin && maturin develop --release`.
 
 ## Quick start
 
@@ -111,9 +112,9 @@ Subclass `PyDataset` and implement `__len__` and `__getitem__(index)`. Call `sup
 if you define `__init__`.
 
 Optionally implement `__getitems__(indices)` — PyTorch's batched-fetch protocol — to fetch a whole
-batch in one call: one database query, one NumPy fancy-indexing, one Python call instead of
-`batch_size`. It receives a `list[int]` and must return one sample per index, in order (any
-iterable); a wrong count raises `ValueError`. Setting `__getitems__ = None` in a subclass turns it
+batch in one call: one database query, or one NumPy indexing, instead of `batch_size` Python
+calls. It receives a `list[int]` and must return one sample per index, in order, as any
+iterable; a wrong number of samples raises `ValueError`. Setting `__getitems__ = None` in a subclass turns it
 off, as in PyTorch.
 
 ```python
@@ -132,33 +133,34 @@ class Rows(PyDataset):
         return list(self.table[indices])  # one vectorised read per batch
 ```
 
-With `num_workers > 0`, `__getitem__` / `__getitems__` run on several threads at once: keep the
-dataset read-only, or protect shared state with a lock.
+With `num_workers > 0`, `__getitem__` and `__getitems__` run on several threads at once: keep
+the dataset read-only, or protect the state it changes with a lock.
 
 ## PyDataloader arguments
 
 | Argument | Default | Meaning |
 |---|---|---|
-| `dataset` | — | a `PyDataset`, a `PyAsyncDataset`, or a Rust dataset (`HttpDataset`, `FileDataset`, `ObjectStoreDataset`; see [Async datasets](#async-datasets)) |
-| `batch_size` | `1` | samples per batch (> 0) |
-| `shuffle` | `False` | a new random order every epoch; exclusive with `sampler` |
-| `seed` | `None` | seed for `shuffle=True` (requires it): same seed, same sequence of epoch orders |
-| `sampler` | `None` | any iterable of `int` indices, iterated at the start of each epoch |
-| `num_workers` | `0` | batches loaded in parallel; `0` loads each batch in the calling thread |
-| `prefetch_depth` | `2` | how far ahead workers may load: at most `num_workers + prefetch_depth` batches in progress or waiting (with `num_workers > 0`, > 0) |
-| `transform` | `None` | `(index, sample) -> sample`, applied to every item before `collate_fn` (see [Transforms](#transforms)) |
-| `collate_fn` | `None` | `list[sample] -> batch`; without it a batch is a `list` |
-| `drop_last` | `False` | drop a final batch smaller than `batch_size` |
-| `item_concurrency` | `1` | items of one batch fetched in parallel, one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)); formerly `items_in_parallel=`, still accepted with a `DeprecationWarning` |
-| `runtime_threads` | `None` | async and Rust datasets only: worker threads of the loader's tokio runtime, 1 to 1024; `None` = one per CPU available to the process. `ValueError` with a `PyDataset` |
+| `dataset` | — | The source of the items: a `PyDataset`, a `PyAsyncDataset`, or a Rust dataset (`HttpDataset`, `FileDataset`, `ObjectStoreDataset`; see [Async datasets](#async-datasets)). |
+| `batch_size` | `1` | The number of samples per batch (at least 1). |
+| `shuffle` | `False` | Draws a new random order every epoch. It cannot be combined with `sampler`. |
+| `seed` | `None` | The seed of `shuffle=True` (and only allowed with it): two loaders with the same seed produce the same sequence of epoch orders. |
+| `sampler` | `None` | Any iterable of `int` indices, read at the start of each epoch. |
+| `num_workers` | `0` | The number of batches loaded in parallel. With `0`, each batch is loaded in the calling thread. |
+| `prefetch_depth` | `2` | How far ahead the workers may load: at most `num_workers + prefetch_depth` batches are in progress or waiting. It must be at least 1. |
+| `transform` | `None` | A function `(index, sample) -> sample`, applied to every item before `collate_fn` (see [Transforms](#transforms)). |
+| `collate_fn` | `None` | A function `list[sample] -> batch`. Without it, a batch is a `list`. |
+| `drop_last` | `False` | Drops the last batch of an epoch when it is smaller than `batch_size`. |
+| `item_concurrency` | `1` | The number of items of one batch fetched in parallel, with one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)). Its former name, `items_in_parallel`, is still accepted with a `DeprecationWarning`. |
+| `runtime_threads` | `None` | For async and Rust datasets only: the number of threads of the loader's tokio runtime, from 1 to 1024. `None` means one per CPU available to the process. It raises `ValueError` with a `PyDataset`. |
 
-`len(loader)` is the number of batches per epoch; `len(iterator)` the number left in the current
-one.
+`len(loader)` is the number of batches per epoch, and `len(iterator)` is the number of batches
+left in the current epoch.
 
 ## Batches and `collate_fn`
 
-Without `collate_fn` a batch is the `list` of its samples. `collate_fn` receives that list and
-returns anything: `np.stack`, `torch.stack`, a dict of arrays. It runs on the worker thread that
+Without `collate_fn`, a batch is the `list` of its samples. `collate_fn` receives that list and
+can return anything: `np.stack` and `torch.stack` work, and so does a function that returns a
+dict of arrays. It runs on the worker thread that
 loaded the batch (or the calling thread with `num_workers=0`), so heavy collation is parallel too.
 
 ## Transforms
@@ -181,8 +183,9 @@ compose = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, 
 loader = PyDataloader(dataset, batch_size=32, transform=lambda i, x: compose(x))
 ```
 
-The index finds what belongs to each item without carrying it through the dataset. Tiles of a
-slide, fetched in Rust, decoded on the loader's threads, batched with their coordinates:
+The index lets the transform find what belongs to each item, without the dataset carrying it.
+Here, tiles of a large image are fetched in Rust by their coordinates, decoded on the loader's
+threads, and batched together with their coordinates:
 
 ```python
 import io
@@ -193,7 +196,7 @@ from dataloader_rs import HttpDataset, PyDataloader
 
 coords = np.array(tile_coords)  # (n, 2): x, y of each tile at level 0
 tiles = HttpDataset.from_template(
-    "https://imgsrv.example/slides/slide-1/tile?x={x}&y={y}&w=224&h=224&f=png",
+    "https://tiles.example/images/image-1/tile?x={x}&y={y}&size=224",
     {"x": coords[:, 0], "y": coords[:, 1]},
     headers={"Authorization": f"Bearer {token}"},
 )
@@ -235,7 +238,7 @@ tiles = T.Compose(
     [
         T.Decode(),  # PNG, JPEG, WebP, TIFF, BMP bytes → uint8 HWC
         T.ToRgb(),  # Image.convert("RGB")
-        T.PadTo(224, 224),  # prime_dx ConstantFill2d((224, 224), 0)
+        T.PadTo(224, 224),  # pad with 0 at the right and bottom, up to 224 x 224
         T.ToFloat(),  # ToTensor's values (/ 255)
         T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         T.ToChw(),  # ToTensor's layout
@@ -253,52 +256,54 @@ for batch in loader:  # ImageBatch (64, 3, 224, 224)
     x = torch.from_dlpack(batch)  # no copy; .to("cuda") as usual
 ```
 
-| `dataloader_rs.transforms` | torchvision / Pillow | Takes → gives |
+| `dataloader_rs.transforms` | Pillow or torchvision equivalent | Input and output |
 |---|---|---|
-| `Decode(max_width=16384, max_height=16384, max_alloc=256 MiB)` | `Image.open(...)`; `decode_image` | bytes → uint8 HWC, the image's channels (1, 2, 3, 4) |
+| `Decode(max_width=16384, max_height=16384, max_alloc=256 MiB)` | `Image.open(...)`; `decode_image` | bytes in; uint8 HWC out, with the image's own channels (1, 2, 3 or 4) |
 | `ToRgb()`, `ToRgba()`, `ToGray()` | `convert("RGB" / "RGBA" / "L")` | uint8 HWC |
 | `Crop(top, left, height, width)` | `F.crop` | HWC, either type |
 | `CenterCrop(size)` | `CenterCrop` | HWC, either type |
 | `Pad(padding, fill=0, padding_mode="constant")` | `Pad` (constant, edge, reflect, symmetric) | HWC, either type |
-| `PadTo(width, height, fill=0, anchor="top_left")` | prime_dx `ConstantFill2d`; `"center"`: even padding | HWC, either type; never crops |
+| `PadTo(width, height, fill=0, anchor="top_left")` | `F.pad` on the right and bottom; with `anchor="center"`, even padding on all sides | HWC, either type; never crops |
 | `Resize(size, interpolation="bilinear", max_size=None, antialias=True)` | `Resize` (nearest, bilinear, bicubic, lanczos3) | uint8 HWC |
 | `HFlip()`, `VFlip()`, `Rotate90(k=1)` | `F.hflip`, `F.vflip`, `numpy.rot90` | HWC, either type |
-| `ToFloat(scale=True)` | `ToTensor` values, `ToDtype(float32, scale=True)` | uint8 → float32 |
+| `ToFloat(scale=True)` | the values of `ToTensor`, `ToDtype(float32, scale=True)` | uint8 in, float32 out |
 | `Normalize(mean, std)` | `Normalize` | float32, HWC or CHW |
-| `ToChw()`, `ToHwc()` | `ToTensor`'s permute | layout |
+| `ToChw()`, `ToHwc()` | the axis order of `ToTensor` | changes the layout |
 | `Compose(transforms)` | `Compose` | — |
 
-- **Same values**: decoding (PNG, BMP, TIFF, lossless WebP), color conversions, crops, padding,
-  flips, rotations, `ToFloat` and `Normalize` give Pillow's / torchvision's values bit for bit;
-  `Decode → ToRgb → PadTo → ToFloat → Normalize` equals prime_dx's `ConstantFill2d + ToTensor +
-  Normalize` on RGB, RGBA, gray, palette and undersized tiles. JPEG decoding differs by at most
-  a few levels (another IDCT); `Resize` is within 1 level of Pillow for bilinear, a few for
+- **Same values**: decoding (PNG, BMP, TIFF, lossless WebP), colour conversions, crops, padding,
+  flips, rotations, `ToFloat` and `Normalize` give the same values as Pillow and torchvision, bit
+  for bit. The chain `Decode`, `ToRgb`, `PadTo`, `ToFloat`, `Normalize` equals Pillow's decoding
+  followed by padding at the right and bottom, `ToTensor` and `Normalize`, on RGB, RGBA, gray,
+  palette and undersized tiles. JPEG decoding differs by at most a few levels (it uses another
+  inverse DCT); `Resize` is within 1 level of Pillow for bilinear, a few for
   bicubic and Lanczos. torchvision v2's `ToDtype(scale=True)` multiplies by 1/255 and differs
   from `ToTensor` (and `ToFloat`) by one ulp on half the values.
 - **Errors**: a corrupt or truncated image, one above `Decode`'s limits (checked from the header,
   before decoding: decompression bombs are refused), or a transform given an image it does not
   take (`Normalize` before `ToFloat`) raises `ValueError` for its batch, saying why.
-- **Called directly**, `tiles(png_bytes)` returns an `Image`; `np.asarray(image)` is a read-only
-  view of it. A Python `transform` can call them, with the interpreter released while they run.
-- **Without `ImageCollator`**, a batch is a `list` of `Image`s, or whatever `collate_fn` makes of
-  them.
+- **Called directly**, `tiles(png_bytes)` returns an `Image`, and `np.asarray(image)` is a
+  read-only view of it. A Python `transform` can call them, with the interpreter released while they run.
+- **Without `ImageCollator`**, a batch is a `list` of `Image` objects, or whatever `collate_fn`
+  makes of them.
 
-`ImageCollator(layout="NCHW", dtype=None, buffers=0)`: one `ImageBatch` per batch, `"NCHW"` or
-`"NHWC"`; `dtype` (`"uint8"` or `"float32"`) checks the items' type; images of different shapes
-fail the batch. `np.asarray(batch)` and `torch.from_dlpack(batch)` are writable views of its
+`ImageCollator(layout="NCHW", dtype=None, buffers=0)` makes one `ImageBatch` per batch, in the
+`"NCHW"` or `"NHWC"` layout. `dtype` (`"uint8"` or `"float32"`), when given, checks the type of
+the items, and images of different shapes fail the batch. `np.asarray(batch)` and `torch.from_dlpack(batch)` are writable views of its
 buffer, without a copy, and keep it alive. `buffers=n` keeps the buffers of up to `n` dropped
 batches and writes the next ones into them: a fresh 38.5 MB float32 batch spends three quarters
 of its collation on page faults. It never waits for a buffer, so holding batches only costs
 memory.
 
 **Per-item metadata.** Batches follow the sampler's order (sequential by default), so batch `k`
-holds items `k * batch_size` and on: slice your coordinates the same way. Or pair each image
-with its metadata in a Python transform; `ImageCollator` then returns `(batch, [metadata])`:
+holds the items from `k * batch_size` on, and you can slice your coordinates the same way. You
+can also pair each image with its metadata in a Python transform; `ImageCollator` then returns
+`(batch, [metadata])`:
 
 ```python
 coords = np.array(tile_coords)  # (n, 2)
 tiles_http = HttpDataset.from_template(
-    "https://imgsrv.example/slides/slide-1/tile?x={x}&y={y}&w=224&h=224&f=png",
+    "https://tiles.example/images/image-1/tile?x={x}&y={y}&size=224",
     {"x": coords[:, 0], "y": coords[:, 1]},
 )
 loader = PyDataloader(
@@ -313,11 +318,12 @@ for batch, batch_coords in loader:  # ImageBatch, list of 64 coordinate rows
     save(model(torch.from_dlpack(batch)), np.stack(batch_coords))
 ```
 
-The first form keeps the interpreter out entirely; the second attaches once per item for the
+The first form never takes the interpreter; the second takes it once per item, to call the
 lambda.
 
-Runnable versions, offline (they write their own tiles): [`examples/python/`](../examples/python/)
-— all Rust, Rust and torch mixed, and torchvision transforms on Rust-fetched bytes.
+Runnable versions of these examples, which work offline, are in
+[`examples/`](../examples/README.md): all in Rust, Rust and torch mixed, torchvision transforms on
+bytes fetched in Rust, and tiles fetched by coordinates.
 
 **Back from numpy or torch.** `Image.from_array(obj, layout="hwc")` makes an `Image` of a numpy
 array, a CPU torch tensor or anything `np.asarray` takes, so a Python transform can mix Rust and
@@ -335,10 +341,11 @@ def transform(i, png):
     return normalize(Image.from_array(chw, layout="chw")), coords[i]
 ```
 
-- Values are `uint8` or `float32` (others raise `TypeError`, never converted); the shape is
+- Values are `uint8` or `float32`; other types raise `TypeError` and are never converted. The
+  shape is
   `(height, width)` or, in `layout`, `(height, width, channels)` (`"hwc"`) or `(channels, height,
   width)` (`"chw"`), with 1, 3 or 4 channels and `Decode`'s limits (16384 × 16384, 256 MiB), else
-  `ValueError`. A GPU tensor raises `TypeError`: `.cpu()` it first.
+  `ValueError`. A GPU tensor raises `TypeError`: move it with `.cpu()` first.
 - The image is HWC, so every transform and `ImageCollator` take it. A contiguous HWC array is
   copied once, into Rust's buffer; a CHW or strided one is made contiguous by numpy first (one
   more copy, several times faster than reading it strided). The interpreter is held during the
@@ -350,8 +357,8 @@ def transform(i, png):
 
 - `shuffle=True`: a Rust permutation, new every epoch; with `seed=` two loaders produce the same
   sequence of orders.
-- `sampler=`: any finite iterable of indices — a list, a generator-producing object, a weighted
-  sampler. It is read whole at the start of each epoch (`iter(loader)`), so an endless sampler
+- `sampler=`: any finite iterable of indices, such as a list, an object whose `__iter__` is a
+  generator, or a weighted sampler. It is read whole at the start of each epoch (`iter(loader)`), so an endless sampler
   (`itertools.cycle`, the infinite samplers of iteration-based training) never starts one: give
   each epoch a finite sampler instead (Ctrl-C stops one that never ends). `len(loader)` uses
   `len(sampler)`, so a sampler without `__len__` makes `len(loader)` raise `TypeError`, as in
@@ -460,11 +467,11 @@ the number of items of each batch in flight, so `num_workers × item_concurrency
 once, from a few threads. The other arguments, the order of batches and the errors are the same
 as for `PyDataset`.
 
-| Setting | Sizes | Rule |
+| Setting | What it sizes | How to choose it |
 |---|---|---|
-| `num_workers × item_concurrency` | requests in flight | latency × wanted items/s; far more than cores |
-| `runtime_threads` | CPU for network receive, TLS, body copy (tokio) | default (CPUs available) is enough; lower it to leave cores to training |
-| the loader's pool (`num_workers × item_concurrency` threads, at most the CPUs available, with a `transform` or a Rust dataset; else `num_workers`) | `transform` and `collate_fn` | the CPU-bound part |
+| `num_workers × item_concurrency` | The requests in flight. | The latency times the items per second you need; it can be far more than the number of cores. |
+| `runtime_threads` | The CPU used by the network: receiving data, TLS, copying bodies (on tokio). | The default (the CPUs available) is enough; lower it to leave cores to training. |
+| The loader's thread pool: `num_workers × item_concurrency` threads, at most the CPUs available, with a `transform` or a Rust dataset; otherwise `num_workers` | The CPU used by `transform` and `collate_fn`. | It is the CPU-bound part. |
 
 **`PyAsyncDataset`**: subclass it and write `async def __getitem__` (and optionally
 `async def __getitems__(indices)`, used when `item_concurrency=1`). The loader runs the
@@ -508,17 +515,17 @@ loader's `transform` turns them into what you need.
 
 | Dataset | Item `i` | Options |
 |---|---|---|
-| `HttpDataset(urls)` | body of a GET of `urls[i]`; one client, keep-alive | `headers`, `timeout` (s, per attempt, body included; 30), `connect_timeout` (10), `retries` (3), `backoff`, `max_backoff`, `max_bytes` |
-| `HttpDataset.from_template(template, columns, *, length)` | body of a GET of the URL made from `template` with the values of item `i` | the options of `HttpDataset(urls)` |
-| `FileDataset(paths)` | content of `paths[i]` | `timeout` (s, per attempt; `None`), `retries` (0), `backoff`, `max_backoff`, `max_bytes` |
-| `FileDataset.from_template(template, columns, *, length)` | content of the path made from `template` with the values of item `i` | the options of `FileDataset(paths)` |
-| `ObjectStoreDataset(url, keys)` | object `keys[i]` under the store and prefix of `url` (`s3://`, `gs://`, `az://`, `https://`) | `options` (`object_store` keys such as `aws_region`; credentials also from `AWS_*`, `GOOGLE_*`, `AZURE_*`), `timeout` (s, per request; `None`: 30), `retries` (3), `backoff`, `max_backoff`, `max_bytes` |
-| `ObjectStoreDataset.from_template(url, template, columns, *, length)` | object whose key, under the prefix of `url`, is made from `template` with the values of item `i` | the options of `ObjectStoreDataset(url, keys)` |
+| `HttpDataset(urls)` | The body of a GET request to `urls[i]`. One client keeps connections open. | `headers`; `timeout` (seconds per attempt, body included; 30 by default); `connect_timeout` (10); `retries` (3); `backoff`, `max_backoff`, `max_bytes` |
+| `HttpDataset.from_template(template, columns, *, length)` | The body of a GET request to the URL made from `template` with the values of item `i`. | The options of `HttpDataset(urls)` |
+| `FileDataset(paths)` | The content of `paths[i]`. | `timeout` (seconds per attempt; `None` by default); `retries` (0); `backoff`, `max_backoff`, `max_bytes` |
+| `FileDataset.from_template(template, columns, *, length)` | The content of the path made from `template` with the values of item `i`. | The options of `FileDataset(paths)` |
+| `ObjectStoreDataset(url, keys)` | The object `keys[i]` under the store and prefix of `url` (`s3://`, `gs://`, `az://`, `https://`). | `options` (`object_store` keys such as `aws_region`; credentials also come from the `AWS_*`, `GOOGLE_*` and `AZURE_*` environment variables); `timeout` (seconds per request; `None` means 30); `retries` (3); `backoff`, `max_backoff`, `max_bytes` |
+| `ObjectStoreDataset.from_template(url, template, columns, *, length)` | The object whose key, under the prefix of `url`, is made from `template` with the values of item `i`. | The options of `ObjectStoreDataset(url, keys)` |
 
-Every `from_template` makes the locations in Rust, item by item: no string per item is kept.
-`length` is required without `columns`. The retry options are the same everywhere: up to
+Every `from_template` makes the locations in Rust, item by item, so no string is kept per item.
+`length` is required when there are no `columns`. The retry options are the same everywhere: up to
 `retries` more attempts after a transient failure, waiting `backoff × 2ⁿ` seconds with jitter,
-at most `max_backoff` (0.1 and 5 by default).
+at most `max_backoff` seconds (0.1 and 5 by default).
 
 ```python
 import io
@@ -528,7 +535,7 @@ from PIL import Image
 from dataloader_rs import HttpDataset, PyDataloader
 
 tiles = HttpDataset(
-    [f"https://tiles.example/slide/{x}_{y}.png" for x, y in coords],
+    [f"https://tiles.example/image-1/{x}_{y}.png" for x, y in coords],
     headers={"Authorization": f"Bearer {token}"},
     retries=5,  # 408, 429, 5xx and connection errors, with exponential backoff
 )
@@ -542,25 +549,25 @@ loader = PyDataloader(
 )
 ```
 
-For many URLs that differ only by a few values (34 000 tiles of a slide, say), give a template
-and the values instead of a list of URLs. The template is parsed once; each URL is made in Rust
+For many URLs that differ only by a few values (34,000 tiles of one large image, say), give a
+template and the values instead of a list of URLs. The template is parsed once; each URL is made in Rust
 when its item is fetched:
 
 ```python
-cols, rows = np.meshgrid(np.arange(200), np.arange(170))  # 34 000 (col, row) coordinates
+cols, rows = np.meshgrid(np.arange(200), np.arange(170))  # 34,000 (col, row) coordinates
 tiles = HttpDataset.from_template(
-    "https://imgsrv.example/slides/{slide}/tile?x={x}&y={y}&w=224&h=224&l=12&f=png&q=100",
-    {"slide": ["slide 1.svs"] * cols.size, "x": cols.ravel() * 224, "y": rows.ravel() * 224},
+    "https://tiles.example/images/{image}/tile?x={x}&y={y}&size=224&format=png",
+    {"image": ["image 1.tif"] * cols.size, "x": cols.ravel() * 224, "y": rows.ravel() * 224},
     headers={"Authorization": f"Bearer {token}"},
 )
 ```
 
 `{name}` is the value of column `name` for the item, `{index}` the item index, `{{` and `}}`
 literal braces. A column is a sequence or a numpy array (any integer dtype) of ints, written in
-decimal, or of strs, percent-encoded as a URL component (`"slide 1.svs"` → `slide%201.svs`; `.`
-and `..` are refused). All columns have the same length, the number of items; with `{index}`
-only, pass `length=`. A placeholder without a column, a column the template does not use (a
-typo, likely), unbalanced braces, or an invalid first URL raise `ValueError`; a column that is
+decimal, or of strs, percent-encoded as a URL component (`"image 1.tif"` becomes
+`image%201.tif`; `.` and `..` are refused). All columns have the same length, the number of items; with `{index}`
+only, pass `length=`. A placeholder without a column, a column the template does not use
+(probably a typo), unbalanced braces, or an invalid first URL raise `ValueError`; a column that is
 not ints or strs raises `TypeError`.
 
 Files and objects take templates the same way. In a path or a key a str is written as it is,
@@ -612,7 +619,7 @@ a `PyAsyncDataset` (`aclose` included), a class with both bases, or a missing `_
   `max_bytes`, `IndexError` for an index out of range. Messages show URLs without their query
   or credentials.
 - A `__len__` or a sampler that raises, or a sampler that yields something other than a
-  non-negative `int`, makes `iter(loader)` raise — an epoch never silently comes out empty or
+  non-negative `int`, makes `iter(loader)` raise: an epoch never comes out silently empty or
   short.
 - Invalid arguments raise `ValueError` (`batch_size=0`, `shuffle` with `sampler`, `seed` without
   `shuffle`) or `TypeError` (a non-iterable `sampler`).
@@ -624,13 +631,13 @@ a `PyAsyncDataset` (`aclose` included), a class with both bases, or a missing `_
 | `torch.utils.data.Dataset` | subclass `PyDataset` (same `__len__` / `__getitem__` / `__getitems__`) |
 | `batch_size`, `shuffle`, `sampler`, `num_workers`, `collate_fn`, `drop_last` | same |
 | `generator=` for a reproducible shuffle | `seed=` |
-| `prefetch_factor` (per worker) | `prefetch_depth` (total, beyond the `num_workers` batches in progress) |
-| worker processes, `persistent_workers`, `worker_init_fn`, `multiprocessing_context` | threads: nothing to start, copy or initialise per worker |
+| `prefetch_factor` (batches per worker) | `prefetch_depth` (batches in total, beyond the `num_workers` batches in progress) |
+| worker processes, `persistent_workers`, `worker_init_fn`, `multiprocessing_context` | threads: there is nothing to start, copy or initialise per worker |
 | a `Dataset` doing blocking I/O in worker processes | `PyAsyncDataset`, or `HttpDataset` / `FileDataset` / `ObjectStoreDataset` |
 | transforms applied inside `__getitem__` | `transform=f`, applied by the loader to any dataset as `f(index, item)` |
 | Pillow + torchvision image transforms | `dataloader_rs.transforms.Compose([...])`, in Rust, without the GIL |
 | `pin_memory`, `timeout`, `batch_sampler`, `IterableDataset` | not supported |
-| default collation into tensors | a `list`; pass `collate_fn` (e.g. `np.stack`, `torch.stack`) |
+| default collation into tensors | a `list`; pass a `collate_fn` such as `np.stack` or `torch.stack` |
 
 ## Performance
 
