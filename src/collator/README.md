@@ -103,7 +103,7 @@ are an error for their batch.
 `reuse_buffers(n)` keeps the buffers of up to `n` dropped batches and writes the next batches
 into them. A fresh buffer costs a page fault per 4 KiB on first write: for 64 × 3 × 224 × 224
 `f32` (38.5 MB) collation takes 13.8 ms fresh and 3.6 ms reused, and a 512-tile epoch of PNG
-decoding + collation runs 19–33 % faster ([BENCH.md](../../BENCH.md)). The pool never waits:
+decoding + collation runs 19–33 % faster ([benches/README.md](../../benches/README.md#reference-results)). The pool never waits:
 when no kept buffer fits, one is allocated, so a consumer holding many batches costs memory,
 never a deadlock. A batch's buffer goes back to the pool when the batch is dropped (`into_vec`
 takes it out for good).

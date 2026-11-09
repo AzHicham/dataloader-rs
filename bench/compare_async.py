@@ -16,6 +16,8 @@ start-up counts, then reads one epoch:
 Loaders (requests in flight in brackets):
   torch_w8          torch, 8 worker processes, requests.Session each    [8]
   torch_w16         the same with 16 workers                            [16]
+  torch_w32         the same with 32 workers                            [32]
+  torch_w64         the same with 64 workers                            [64]
   dlrs_sync_w4_c16  PyDataset, a requests.Session per thread, 64 threads [64]
   dlrs_async_w2_c32 PyAsyncDataset, one aiohttp.ClientSession on the
                     loader's event loop, closed in aclose()              [64]
@@ -216,6 +218,8 @@ def dlrs_http_loader(port: int, workers: int, concurrency: int):
 LOADERS = {
     "torch_w8": lambda port: torch_loader(port, 8),
     "torch_w16": lambda port: torch_loader(port, 16),
+    "torch_w32": lambda port: torch_loader(port, 32),
+    "torch_w64": lambda port: torch_loader(port, 64),
     "dlrs_sync_w4_c16": lambda port: dlrs_sync_loader(port, 4, 16),
     "dlrs_async_w2_c32": lambda port: dlrs_async_loader(port, 2, 32),
     "dlrs_http_w2_c32": lambda port: dlrs_http_loader(port, 2, 32),

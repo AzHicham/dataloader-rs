@@ -110,8 +110,8 @@ jobs:
       - name: Build wheel
         run: uv run maturin develop --release
 
-      # The allocator settings of bench/real_world.py PINNED_ALLOCATOR (BENCH.md,
-      # section 8): the guards measure the loader, not the allocators' defaults.
+      # The allocator settings of bench/real_world.py PINNED_ALLOCATOR (bench/README.md,
+      # "Allocator settings"): the guards measure the loader, not the allocators' defaults.
       - name: Run pytest-benchmark
         env:
           GLIBC_TUNABLES: glibc.malloc.trim_threshold=67108864:glibc.malloc.mmap_threshold=33554432

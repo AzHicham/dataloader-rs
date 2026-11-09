@@ -33,7 +33,7 @@ pub trait Sampler: Send + 'static {
 ## `RandomSampler`
 
 Inside-out Fisher–Yates with `fastrand` (wyrand): one forward pass, no pre-filled array. It costs
-1.6–2× the sequential sampler, about 4 ns per index ([BENCH.md](../../BENCH.md)).
+1.6–2× the sequential sampler, about 4 ns per index ([benches/README.md](../../benches/README.md#reference-results)).
 
 ## `DistributedSampler`
 

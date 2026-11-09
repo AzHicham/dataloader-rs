@@ -9,7 +9,7 @@ the loading (scheduling, parallelism, prefetching, collation) differs.
 Array samples are sized so that a batch of 32 stays far below 16 MiB: from
 there CPython's mimalloc (where NumPy's buffers come from on 3.15t) resets a
 block freed by another thread, whatever its settings. The harnesses also pin
-the allocator settings (compare_torch.py, BENCH.md section 8), so the numbers
+the allocator settings (compare_torch.py, bench/README.md), so the numbers
 measure the loaders, not the allocators' defaults.
 """
 
@@ -25,8 +25,8 @@ import numpy as np
 
 from dataloader_rs import PyDataset
 
-# Allocator settings the harnesses run with, for both loaders (BENCH.md,
-# section 8). Both are read when the process starts: glibc's thresholds,
+# Allocator settings the harnesses run with, for both loaders (bench/README.md,
+# "Allocator settings"). Both are read when the process starts: glibc's thresholds,
 # which NumPy uses on 3.13 and 3.14t, and the purge delay of mimalloc,
 # CPython's allocator, which NumPy uses on 3.15t.
 PINNED_ALLOCATOR = {
