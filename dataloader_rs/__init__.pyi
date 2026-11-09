@@ -18,21 +18,32 @@ PyDataloader     Main entry point.  Mirrors the ``torch.utils.data.DataLoader``
                  ``transform``.
 PyDataloaderIter Iterator returned by ``PyDataloader.__iter__``.  Supports
                  ``len()`` (number of batches remaining in the current epoch).
+transforms       Image transforms implemented in Rust (``Decode``, ``PadTo``,
+                 ``Normalize``, ...); a ``Compose`` of them passed as
+                 ``transform=`` runs without the interpreter.
+ImageCollator    ``collate_fn`` for their images: one ``ImageBatch`` buffer,
+                 viewed by numpy and torch without a copy.
 """
 
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from os import PathLike
-from typing import Any
+from typing import Any, Literal
+
+from . import transforms as transforms
 
 __all__ = [
     "FileDataset",
     "HttpDataset",
+    "Image",
+    "ImageBatch",
+    "ImageCollator",
     "ObjectStoreDataset",
     "PyAsyncDataset",
     "PyDataset",
     "PyDataloader",
     "PyDataloaderIter",
     "RustDataset",
+    "transforms",
 ]
 
 class PyDataset:
@@ -274,6 +285,97 @@ class ObjectStoreDataset(RustDataset):
         """
         ...
 
+class Image:
+    """One image from :mod:`dataloader_rs.transforms`, in Rust's buffer.
+
+    ``np.asarray(image)`` is a read-only view of it, without a copy;
+    :class:`ImageCollator` batches images.
+    """
+
+    @staticmethod
+    def from_array(obj: Any, layout: Literal["hwc", "chw", "HWC", "CHW"] = "hwc") -> Image:
+        """An image of ``obj``, back into Rust after a numpy or torch step.
+
+        ``obj`` is a numpy array, a CPU torch tensor or anything ``np.asarray``
+        takes (without numpy: an object with the buffer protocol and its own
+        shape) of ``uint8`` or ``float32`` values; other types are a
+        ``TypeError``, never converted. Its shape is ``(height, width)`` or,
+        in ``layout``, ``(height, width, channels)`` (``"hwc"``, default) or
+        ``(channels, height, width)`` (``"chw"``, torch's), with 1, 3 or 4
+        channels and ``Decode``'s limits (16384 x 16384, 256 MiB); else
+        ``ValueError``. A GPU tensor is a ``TypeError``: move it first
+        (``tensor.cpu()``).
+
+        The image is HWC, so every transform and :class:`ImageCollator` take
+        it. A contiguous HWC array is copied once; a CHW or strided one is
+        made contiguous by numpy first (one more copy).
+        """
+        ...
+    @property
+    def shape(self) -> tuple[int, int, int]:
+        """``(height, width, channels)`` or ``(channels, height, width)``."""
+        ...
+    @property
+    def dtype(self) -> Literal["uint8", "float32"]: ...
+    @property
+    def layout(self) -> Literal["HWC", "CHW"]: ...
+    @property
+    def __array_interface__(self) -> dict[str, Any]: ...
+    def __dlpack__(self, **kwargs: Any) -> Any: ...
+    def __dlpack_device__(self) -> tuple[int, int]: ...
+
+class ImageBatch:
+    """A batch from :class:`ImageCollator`: images of one shape in one buffer.
+
+    ``np.asarray(batch)`` and ``torch.from_dlpack(batch)`` are writable views
+    of it, without a copy; the buffer lives as long as the batch or any view.
+    """
+
+    @property
+    def shape(self) -> tuple[int, int, int, int]:
+        """``(batch, channels, height, width)`` or ``(batch, height, width, channels)``."""
+        ...
+    @property
+    def dtype(self) -> Literal["uint8", "float32"]: ...
+    @property
+    def layout(self) -> Literal["NCHW", "NHWC"]: ...
+    @property
+    def __array_interface__(self) -> dict[str, Any]: ...
+    def __len__(self) -> int: ...
+    def __dlpack__(self, **kwargs: Any) -> Any: ...
+    def __dlpack_device__(self) -> tuple[int, int]: ...
+
+class ImageCollator:
+    """``collate_fn`` for :class:`Image` items: one :class:`ImageBatch`.
+
+    As a loader's ``collate_fn`` with a :mod:`dataloader_rs.transforms`
+    ``transform``, batches are collated in Rust, without the interpreter.
+    Items may also be tuples ``(Image, a, ...)`` (from a Python transform):
+    the batch is then ``(ImageBatch, [a, ...], ...)``.
+
+    Parameters
+    ----------
+    layout:
+        ``"NCHW"`` (default) or ``"NHWC"``; items of either layout are
+        transposed as needed.
+    dtype:
+        ``"uint8"`` or ``"float32"``: the type items must have (``ValueError``
+        otherwise). Default: the items' own.
+    buffers:
+        Keep the buffers of up to this many dropped batches and write the
+        next batches into them: no page faults on fresh memory (a 64 x 3 x
+        224 x 224 float32 batch collates about 4x faster). Never waits for a
+        buffer. Default: ``0``.
+    """
+
+    def __init__(
+        self,
+        layout: Literal["NCHW", "NHWC"] = "NCHW",
+        dtype: Literal["uint8", "float32"] | None = None,
+        buffers: int = 0,
+    ) -> None: ...
+    def __call__(self, items: list[Any]) -> Any: ...
+
 class PyDataloaderIter:
     """Iterator over one epoch of a :class:`PyDataloader`.
 
@@ -311,7 +413,8 @@ class PyDataloader:
         ``0`` (default) processes batches on the calling thread.
     collate_fn:
         A callable ``(list[sample]) -> batch`` that merges individual samples
-        (after *transform*) into a single batch object.  When ``None``
+        (after *transform*) into a single batch object, or an
+        :class:`ImageCollator` (collates in Rust).  When ``None``
         (default) each batch is a plain ``list`` of samples.
     drop_last:
         If ``True``, drop the last batch when the dataset size is not divisible
@@ -350,7 +453,9 @@ class PyDataloader:
         interpreter only for the call; items of a batch are transformed in
         parallel with ``item_concurrency > 1``, and as they arrive for async
         and Rust datasets. An exception it raises fails its batch and keeps
-        its type. Default: ``None``, items as fetched.
+        its type. A :mod:`dataloader_rs.transforms` ``Transform`` (or
+        ``Compose``) instead runs in Rust, without the interpreter, on
+        ``bytes`` items. Default: ``None``, items as fetched.
 
     Example
     -------
@@ -385,13 +490,13 @@ class PyDataloader:
         shuffle: bool = False,
         sampler: Iterable[int] | None = None,
         num_workers: int = 0,
-        collate_fn: Callable[[list[Any]], Any] | None = None,
+        collate_fn: Callable[[list[Any]], Any] | ImageCollator | None = None,
         drop_last: bool = False,
         seed: int | None = None,
         item_concurrency: int = 1,
         items_in_parallel: int | None = None,
         runtime_threads: int | None = None,
-        transform: Callable[[int, Any], Any] | None = None,
+        transform: Callable[[int, Any], Any] | transforms.Transform | None = None,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""
