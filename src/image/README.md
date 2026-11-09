@@ -20,7 +20,17 @@ assert_eq!(image.shape(), [29, 37, 3]);
 | `Decode` | PNG, JPEG, WebP, TIFF, BMP `Bytes` → `Image<u8>`, format sniffed from the bytes, pure-Rust decoders |
 | `DecodeLimits` | the largest image `Decode` accepts: 16384 × 16384 and 256 MiB by default |
 | `ToRgb`, `ToRgba`, `ToGray` | channel conversions of `Image<u8>`, as Pillow's `convert` |
+| `Crop`, `CenterCrop` | a region (bounds checked), the central one (padded with zeros if larger, as torchvision) |
+| `Pad`, `PadMode`, `Fill` | padding of each side: constant (per channel), edge, reflect, symmetric |
+| `PadTo`, `Anchor` | constant padding up to a fixed size, never cropping; top-left anchor = prime_dx's `ConstantFill2d` |
+| `Resize`, `Filter` | `fast_image_resize`: exact size or shorter side (+ `max_size`), nearest / bilinear / bicubic / Lanczos3, antialiased by default |
+| `HFlip`, `VFlip`, `Rotate90` | mirrors and lossless quarter turns (`numpy.rot90`) |
 | `ImageError` | `Decode`, `Limits` or `Invalid`, boxed in the crate's `Error` |
+
+Geometric transforms take `Image<T>` for both sample types, except `Resize` (`u8` only: resize
+before `ToFloat`). A chain whose *first* transform takes both types needs the input type
+written out (`Transform::<Image<u8>>::then(HFlip, Crop::new(0, 0, 8, 8))`); starting from
+`Decode` it is inferred.
 
 ## Decoding
 

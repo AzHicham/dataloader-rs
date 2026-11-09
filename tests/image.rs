@@ -7,7 +7,10 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use dataloader_rs::Transform;
 use dataloader_rs::error::Error;
-use dataloader_rs::image::{Decode, DecodeLimits, Image, ImageError, ToGray, ToRgb, ToRgba};
+use dataloader_rs::image::{
+    CenterCrop, Crop, Decode, DecodeLimits, Fill, Filter, HFlip, Image, ImageError, Pad, PadMode,
+    PadTo, Resize, Rotate90, ToGray, ToRgb, ToRgba, VFlip,
+};
 
 /// Width and height of the fixtures.
 const W: usize = 37;
@@ -293,5 +296,104 @@ fn corrupted_files_never_panic() {
                 assert_eq!(image.data().len(), a * b * c, "{name}");
             }
         }
+    }
+}
+
+// ── Geometry: the same pixels as torchvision, numpy and prime_dx ─────────────
+
+fn rgb() -> Image<u8> {
+    decode("rgb.png")
+}
+
+fn assert_exact(image: &Image<u8>, shape: [usize; 3], expected: &str) {
+    assert_eq!(image.shape(), shape, "{expected}");
+    assert!(image.data() == fixture(expected).as_slice(), "{expected}");
+}
+
+#[test]
+fn crops_flips_and_rotations_are_exact() {
+    assert_exact(
+        &Crop::new(3, 5, 20, 30).apply(0, rgb()).unwrap(),
+        [20, 30, 3],
+        "crop_3_5_20_30.u8",
+    );
+    for (h, w) in [(20, 30), (40, 45), (31, 20)] {
+        let out = CenterCrop::new(h, w).apply(0, rgb()).unwrap();
+        assert_exact(&out, [h, w, 3], &format!("center_crop_{h}_{w}.u8"));
+    }
+    assert_exact(&HFlip.apply(0, rgb()).unwrap(), [H, W, 3], "hflip.u8");
+    assert_exact(&VFlip.apply(0, rgb()).unwrap(), [H, W, 3], "vflip.u8");
+    for k in 1..=3 {
+        let shape = if k == 2 { [H, W, 3] } else { [W, H, 3] };
+        assert_exact(
+            &Rotate90::new(k).apply(0, rgb()).unwrap(),
+            shape,
+            &format!("rot90_{k}.u8"),
+        );
+    }
+}
+
+#[test]
+fn padding_modes_are_exact() {
+    let fill = PadMode::Constant(Fill::from([10.0, 20.0, 30.0]));
+    let shape = [H + 3, W + 7, 3];
+    assert_exact(
+        &Pad::new(3, 1, 4, 2, fill).apply(0, rgb()).unwrap(),
+        shape,
+        "pad_constant.u8",
+    );
+    for (name, mode) in [
+        ("edge", PadMode::Edge),
+        ("reflect", PadMode::Reflect),
+        ("symmetric", PadMode::Symmetric),
+    ] {
+        let out = Pad::new(3, 1, 4, 2, mode.clone()).apply(0, rgb()).unwrap();
+        assert_exact(&out, shape, &format!("pad_{name}.u8"));
+        let wide = Pad::new(40, 30, 2, 50, mode).apply(0, rgb()).unwrap();
+        assert_exact(&wide, [H + 80, W + 42, 3], &format!("pad_wide_{name}.u8"));
+    }
+}
+
+/// prime_dx's `ConstantFill2d`: pad right and bottom up to the tile size.
+#[test]
+fn pad_to_is_constant_fill_2d() {
+    assert_exact(
+        &PadTo::new(64, 64, 0.0).apply(0, rgb()).unwrap(),
+        [64, 64, 3],
+        "pad_to_64.u8",
+    );
+    let out = PadTo::new(37, 40, 255.0).apply(0, rgb()).unwrap();
+    assert_exact(&out, [40, 37, 3], "pad_to_37_40.u8");
+    assert_eq!(PadTo::new(20, 20, 0.0).apply(0, rgb()).unwrap(), rgb());
+}
+
+/// fast_image_resize against Pillow (antialiased) and torch (not): the same filters with
+/// different fixed-point rounding; the cubic and Lanczos kernels overshoot, so their largest
+/// differences are at hard edges. Measured: nearest 0; bilinear max 1, mean 0.18–0.20;
+/// bicubic max 3–4, mean 0.21–0.23; Lanczos max 6–7, mean 0.21–0.29. (torch's bicubic uses
+/// a = -0.75, Pillow's and ours -0.5: not compared.)
+#[test]
+fn resize_is_close_to_pillow_and_torch() {
+    let down = || Resize::new(13, 17);
+    let up = || Resize::new(41, 53);
+    let cases = [
+        ("down_nearest", down().filter(Filter::Nearest), 0, 0.0),
+        ("down_bilinear", down(), 1, 0.25),
+        ("down_bicubic", down().filter(Filter::Bicubic), 4, 0.3),
+        ("down_lanczos3", down().filter(Filter::Lanczos3), 8, 0.35),
+        ("up_nearest", up().filter(Filter::Nearest), 0, 0.0),
+        ("up_bilinear", up(), 1, 0.25),
+        ("up_bicubic", up().filter(Filter::Bicubic), 4, 0.3),
+        ("up_lanczos3", up().filter(Filter::Lanczos3), 8, 0.35),
+        ("down_bilinear_no_aa", down().antialias(false), 1, 0.25),
+    ];
+    for (name, resize, max_diff, mean_diff) in cases {
+        let out = resize.apply(0, rgb()).unwrap();
+        assert_eq!(out.shape()[2], 3);
+        let (max, mean) = diff(out.data(), &fixture(&format!("resize_{name}.u8")));
+        assert!(
+            max <= max_diff && mean <= mean_diff,
+            "{name}: max {max}, mean {mean:.3}"
+        );
     }
 }
