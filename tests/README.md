@@ -12,10 +12,12 @@ package. Unit tests live next to the code (`#[cfg(test)]` modules in `src/`).
 | `integration_collate_default.rs` | `DefaultCollator` on nested structures through a loader | |
 | `integration_collate_ndarray.rs` | `DefaultCollator` stacking `ndarray::Array` | `ndarray` |
 | `integration_collate_torch.rs` | `DefaultCollator` stacking `tch::Tensor`, `pin_memory` | `torch-rs` |
+| `image.rs` | the image transforms against golden files from Pillow, numpy, torchvision and prime_dx (`fixtures/image/make_fixtures.py`); hostile input (huge declared sizes, truncated, corrupted, garbage); `ImageCollator` through a loader | `image` |
 
 ```bash
 cargo test                           # unit + integration + doc tests
 cargo test --features ndarray,python
+cargo test --features image --test image   # regenerate the golden files: tests/fixtures/image/make_fixtures.py
 cargo test --all-features            # as CI does; torch-rs downloads libtorch
 ```
 
@@ -33,6 +35,7 @@ cargo test --all-features            # as CI does; torch-rs downloads libtorch
 | `test_dataloader_integration.py` | end-to-end scenarios: batches without `collate_fn`, `drop_last`, `collate_fn` sequential and parallel, a Python sampler's order |
 | `test_dataset_async.py` | `PyAsyncDataset` and the Rust datasets (`HttpDataset`, `FileDataset`, `ObjectStoreDataset`): base-class checks, order, cancellation, `aclose`, errors, templates, retry settings |
 | `test_transform.py` | `transform=f`, called as `f(index, item)`, on every kind of dataset |
+| `test_image_transforms.py` | `dataloader_rs.transforms` and `ImageCollator`: golden files, errors, every kind of dataset, `(Image, coords)` tuples, zero-copy numpy and DLPack views, buffer reuse; `Image.from_array` (round trips, CHW and strided input, refused types, shapes and sizes, a Rust → torch → Rust loader) |
 | `py_dataloader_test_utils.py` | shared datasets (`ListDataset`, `ToyDataset`) and helpers |
 
 ```bash

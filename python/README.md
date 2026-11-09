@@ -14,6 +14,10 @@ Python — with no PyTorch dependency.
 - **Async datasets**: `async def __getitem__` on a `PyAsyncDataset`, or the built-in
   `HttpDataset`, `FileDataset` and `ObjectStoreDataset`, which fetch in Rust without the GIL:
   64 requests in flight from two worker threads.
+- **Image transforms in Rust**: `dataloader_rs.transforms` (`Decode`, `PadTo`, `Resize`,
+  `Normalize`, …, `Compose`) decode and transform images on the loader's threads without the
+  GIL, bit for bit like Pillow + torchvision where it matters; `ImageCollator` batches them in
+  one buffer that `torch.from_dlpack` takes without a copy.
 - **Exceptions keep their type**: a `KeyError` in `__getitem__` reaches you as a `KeyError`.
 - **Free-threaded Python**: on CPython 3.14t and 3.15t, worker threads run Python code in
   parallel. Wheels for the GIL builds (3.11 to 3.15) too: there, threads help work that releases
@@ -39,6 +43,7 @@ Requires Python ≥ 3.11.
 - [PyDataloader arguments](#pydataloader-arguments)
 - [Batches and `collate_fn`](#batches-and-collate_fn)
 - [Transforms](#transforms)
+- [Image transforms in Rust](#image-transforms-in-rust)
 - [Samplers](#samplers)
 - [Workers, threads and the GIL](#workers-threads-and-the-gil)
 - [I/O-bound datasets](#io-bound-datasets)
@@ -214,6 +219,129 @@ loader = PyDataloader(
 for images, tile_coords in loader:  # (64, 224, 224, 3) and (64, 2)
     save(model(images), tile_coords)
 ```
+
+## Image transforms in Rust
+
+`dataloader_rs.transforms` has torchvision-like image transforms implemented in Rust (pure-Rust
+decoders, no C library). Pass a `Compose` of them as `transform=`: the loader runs it on its
+threads **without the interpreter**, so decoding scales with threads even on the GIL build, and
+with `collate_fn=ImageCollator()` the batch is assembled in Rust too.
+
+```python
+from dataloader_rs import FileDataset, ImageCollator, PyDataloader
+from dataloader_rs import transforms as T
+
+tiles = T.Compose(
+    [
+        T.Decode(),  # PNG, JPEG, WebP, TIFF, BMP bytes → uint8 HWC
+        T.ToRgb(),  # Image.convert("RGB")
+        T.PadTo(224, 224),  # prime_dx ConstantFill2d((224, 224), 0)
+        T.ToFloat(),  # ToTensor's values (/ 255)
+        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        T.ToChw(),  # ToTensor's layout
+    ]
+)
+loader = PyDataloader(
+    FileDataset(paths),
+    batch_size=64,
+    num_workers=4,
+    item_concurrency=4,
+    transform=tiles,
+    collate_fn=ImageCollator(buffers=8),  # one float32 buffer per batch, reused
+)
+for batch in loader:  # ImageBatch (64, 3, 224, 224)
+    x = torch.from_dlpack(batch)  # no copy; .to("cuda") as usual
+```
+
+| `dataloader_rs.transforms` | torchvision / Pillow | Takes → gives |
+|---|---|---|
+| `Decode(max_width=16384, max_height=16384, max_alloc=256 MiB)` | `Image.open(...)`; `decode_image` | bytes → uint8 HWC, the image's channels (1, 2, 3, 4) |
+| `ToRgb()`, `ToRgba()`, `ToGray()` | `convert("RGB" / "RGBA" / "L")` | uint8 HWC |
+| `Crop(top, left, height, width)` | `F.crop` | HWC, either type |
+| `CenterCrop(size)` | `CenterCrop` | HWC, either type |
+| `Pad(padding, fill=0, padding_mode="constant")` | `Pad` (constant, edge, reflect, symmetric) | HWC, either type |
+| `PadTo(width, height, fill=0, anchor="top_left")` | prime_dx `ConstantFill2d`; `"center"`: even padding | HWC, either type; never crops |
+| `Resize(size, interpolation="bilinear", max_size=None, antialias=True)` | `Resize` (nearest, bilinear, bicubic, lanczos3) | uint8 HWC |
+| `HFlip()`, `VFlip()`, `Rotate90(k=1)` | `F.hflip`, `F.vflip`, `numpy.rot90` | HWC, either type |
+| `ToFloat(scale=True)` | `ToTensor` values, `ToDtype(float32, scale=True)` | uint8 → float32 |
+| `Normalize(mean, std)` | `Normalize` | float32, HWC or CHW |
+| `ToChw()`, `ToHwc()` | `ToTensor`'s permute | layout |
+| `Compose(transforms)` | `Compose` | — |
+
+- **Same values**: decoding (PNG, BMP, TIFF, lossless WebP), color conversions, crops, padding,
+  flips, rotations, `ToFloat` and `Normalize` give Pillow's / torchvision's values bit for bit;
+  `Decode → ToRgb → PadTo → ToFloat → Normalize` equals prime_dx's `ConstantFill2d + ToTensor +
+  Normalize` on RGB, RGBA, gray, palette and undersized tiles. JPEG decoding differs by at most
+  a few levels (another IDCT); `Resize` is within 1 level of Pillow for bilinear, a few for
+  bicubic and Lanczos. torchvision v2's `ToDtype(scale=True)` multiplies by 1/255 and differs
+  from `ToTensor` (and `ToFloat`) by one ulp on half the values.
+- **Errors**: a corrupt or truncated image, one above `Decode`'s limits (checked from the header,
+  before decoding: decompression bombs are refused), or a transform given an image it does not
+  take (`Normalize` before `ToFloat`) raises `ValueError` for its batch, saying why.
+- **Called directly**, `tiles(png_bytes)` returns an `Image`; `np.asarray(image)` is a read-only
+  view of it. A Python `transform` can call them, with the interpreter released while they run.
+- **Without `ImageCollator`**, a batch is a `list` of `Image`s, or whatever `collate_fn` makes of
+  them.
+
+`ImageCollator(layout="NCHW", dtype=None, buffers=0)`: one `ImageBatch` per batch, `"NCHW"` or
+`"NHWC"`; `dtype` (`"uint8"` or `"float32"`) checks the items' type; images of different shapes
+fail the batch. `np.asarray(batch)` and `torch.from_dlpack(batch)` are writable views of its
+buffer, without a copy, and keep it alive. `buffers=n` keeps the buffers of up to `n` dropped
+batches and writes the next ones into them: a fresh 38.5 MB float32 batch spends three quarters
+of its collation on page faults. It never waits for a buffer, so holding batches only costs
+memory.
+
+**Per-item metadata.** Batches follow the sampler's order (sequential by default), so batch `k`
+holds items `k * batch_size` and on: slice your coordinates the same way. Or pair each image
+with its metadata in a Python transform; `ImageCollator` then returns `(batch, [metadata])`:
+
+```python
+coords = np.array(tile_coords)  # (n, 2)
+tiles_http = HttpDataset.from_template(
+    "https://imgsrv.example/slides/slide-1/tile?x={x}&y={y}&w=224&h=224&f=png",
+    {"x": coords[:, 0], "y": coords[:, 1]},
+)
+loader = PyDataloader(
+    tiles_http,
+    batch_size=64,
+    num_workers=2,
+    item_concurrency=32,
+    transform=lambda i, png: (tiles(png), coords[i]),  # Rust work, GIL released inside
+    collate_fn=ImageCollator(),
+)
+for batch, batch_coords in loader:  # ImageBatch, list of 64 coordinate rows
+    save(model(torch.from_dlpack(batch)), np.stack(batch_coords))
+```
+
+The first form keeps the interpreter out entirely; the second attaches once per item for the
+lambda.
+
+**Back from numpy or torch.** `Image.from_array(obj, layout="hwc")` makes an `Image` of a numpy
+array, a CPU torch tensor or anything `np.asarray` takes, so a Python transform can mix Rust and
+torch steps: Rust decode, a torch op on `torch.from_dlpack(image)` (a view), `Image.from_array`,
+then Rust `Normalize` and `ImageCollator`.
+
+```python
+decode = T.Compose([T.Decode(), T.ToRgb(), T.PadTo(224, 224)])
+normalize = T.Compose([T.ToFloat(), T.Normalize(MEAN, STD)])
+
+
+def transform(i, png):
+    chw = torch.from_dlpack(decode(png)).permute(2, 0, 1)  # no copy
+    chw = augment(chw)  # any torch / torchvision op on uint8 CHW
+    return normalize(Image.from_array(chw, layout="chw")), coords[i]
+```
+
+- Values are `uint8` or `float32` (others raise `TypeError`, never converted); the shape is
+  `(height, width)` or, in `layout`, `(height, width, channels)` (`"hwc"`) or `(channels, height,
+  width)` (`"chw"`), with 1, 3 or 4 channels and `Decode`'s limits (16384 × 16384, 256 MiB), else
+  `ValueError`. A GPU tensor raises `TypeError`: `.cpu()` it first.
+- The image is HWC, so every transform and `ImageCollator` take it. A contiguous HWC array is
+  copied once, into Rust's buffer; a CHW or strided one is made contiguous by numpy first (one
+  more copy, several times faster than reading it strided). The interpreter is held during the
+  copy.
+- Without numpy, objects with the buffer protocol and their own shape (a `memoryview` cast to
+  `(h, w, c)`) are read, `"hwc"` only.
 
 ## Samplers
 
@@ -497,6 +625,7 @@ a `PyAsyncDataset` (`aclose` included), a class with both bases, or a missing `_
 | worker processes, `persistent_workers`, `worker_init_fn`, `multiprocessing_context` | threads: nothing to start, copy or initialise per worker |
 | a `Dataset` doing blocking I/O in worker processes | `PyAsyncDataset`, or `HttpDataset` / `FileDataset` / `ObjectStoreDataset` |
 | transforms applied inside `__getitem__` | `transform=f`, applied by the loader to any dataset as `f(index, item)` |
+| Pillow + torchvision image transforms | `dataloader_rs.transforms.Compose([...])`, in Rust, without the GIL |
 | `pin_memory`, `timeout`, `batch_sampler`, `IterableDataset` | not supported |
 | default collation into tensors | a `list`; pass `collate_fn` (e.g. `np.stack`, `torch.stack`) |
 
