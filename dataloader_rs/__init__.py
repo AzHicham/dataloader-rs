@@ -1,6 +1,15 @@
 import atexit
 
-from .dataloader_rs import PyDataloader, PyDataloaderIter, _keep_pools_alive
+from .dataloader_rs import (
+    FileDataset,
+    HttpDataset,
+    ObjectStoreDataset,
+    PyDataloader,
+    PyDataloaderIter,
+    RustDataset,
+    _keep_pools_alive,
+)
+from .dataloader_rs import PyAsyncDatasetBase as PyAsyncDataset
 from .dataloader_rs import PyDatasetBase as PyDataset
 
 # Keep the loaders' thread pools alive while the interpreter shuts down: a
@@ -9,7 +18,12 @@ from .dataloader_rs import PyDatasetBase as PyDataset
 atexit.register(_keep_pools_alive)
 
 __all__ = [
+    "FileDataset",
+    "HttpDataset",
+    "ObjectStoreDataset",
+    "PyAsyncDataset",
     "PyDataset",
     "PyDataloader",
     "PyDataloaderIter",
+    "RustDataset",
 ]

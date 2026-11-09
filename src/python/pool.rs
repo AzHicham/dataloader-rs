@@ -7,7 +7,8 @@
 //! loop detached, so attaching from a task only re-activates their thread
 //! state.
 
-use std::sync::{Mutex, PoisonError, Weak};
+use std::sync::{Mutex, Once, PoisonError, Weak};
+use std::thread;
 
 use pyo3::prelude::*;
 
@@ -50,4 +51,29 @@ pub(crate) fn keep_pools_alive() {
     for pool in pools.iter().filter_map(Weak::upgrade) {
         std::mem::forget(pool);
     }
+}
+
+/// Attach the threads of rayon's global pool to the interpreter for their whole
+/// life too: `PyAsyncDataset` calls `__getitem__` and submits its coroutines
+/// from there. Called when the first such loader is built. Rayon waits for the global pool's threads to start, and a
+/// starting thread may wait for every attached thread to pause (free-threaded
+/// builds), so the caller waits with the interpreter released. A no-op if the
+/// global pool already exists.
+pub(crate) fn attach_global_pool(py: Python<'_>) {
+    static ONCE: Once = Once::new();
+    py.detach(|| {
+        ONCE.call_once(|| {
+            let _ = rayon::ThreadPoolBuilder::new()
+                .thread_name(|i| format!("dataloader-map-{i}"))
+                .spawn_handler(|thread| {
+                    let mut builder = thread::Builder::new();
+                    if let Some(name) = thread.name() {
+                        builder = builder.name(name.to_owned());
+                    }
+                    builder.spawn(move || run_attached(thread))?;
+                    Ok(())
+                })
+                .build_global();
+        })
+    });
 }

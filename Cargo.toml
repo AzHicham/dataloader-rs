@@ -19,7 +19,7 @@ crate-type = ["rlib", "cdylib"]
 default = []
 ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
-python = ["dep:pyo3"]
+python = ["dep:pyo3", "async", "http", "object-store"]
 # AsyncDataset and DataLoader::builder_async: items fetched by futures on tokio.
 async = ["dep:tokio", "tokio/time", "dep:futures-util", "dep:bytes"]
 # HttpDataset: reqwest over rustls (ring provider, bundled Mozilla roots).

@@ -1,5 +1,7 @@
+use std::slice;
+
 use crate::{dataset::Dataset, error::Result};
-use pyo3::exceptions::{PyNotImplementedError, PyValueError};
+use pyo3::exceptions::{PyNotImplementedError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyTuple};
@@ -41,7 +43,33 @@ pub(crate) fn get_item_py(
     py: Python<'_>,
     index: usize,
 ) -> PyResult<Py<PyAny>> {
-    dataset.call_method1(py, intern!(py, "__getitem__"), (index,))
+    let item = dataset.call_method1(py, intern!(py, "__getitem__"), (index,))?;
+    check_not_awaitable(py, slice::from_ref(&item))?;
+    Ok(item)
+}
+
+/// Refuse awaitable items: a sync `__getitem__` that returns a coroutine (an
+/// `async def` helper called without `await`) would fill batches with
+/// coroutines that never run. Checked on the first item of `items`; the
+/// coroutines are then closed so that Python does not warn that they were
+/// never awaited.
+fn check_not_awaitable(py: Python<'_>, items: &[Py<PyAny>]) -> PyResult<()> {
+    let Some(first) = items.first() else {
+        return Ok(());
+    };
+    let awaitable = intern!(py, "__await__");
+    if first.bind(py).get_type().getattr_opt(awaitable)?.is_none() {
+        return Ok(());
+    }
+    for item in items {
+        if let Some(close) = item.bind(py).getattr_opt(intern!(py, "close"))? {
+            close.call0()?;
+        }
+    }
+    Err(PyTypeError::new_err(
+        "PyDataset.__getitem__ returned an awaitable; subclass PyAsyncDataset \
+         and define `async def __getitem__` instead",
+    ))
 }
 
 /// How a batch of samples is fetched from a Python dataset.
@@ -75,7 +103,14 @@ impl Fetcher {
 
     pub(crate) fn fetch(&self, py: Python<'_>, indices: &[usize]) -> PyResult<Vec<Py<PyAny>>> {
         match self {
-            Self::PerItem(getitem) => indices.iter().map(|&i| getitem.call1(py, (i,))).collect(),
+            Self::PerItem(getitem) => {
+                let items = indices
+                    .iter()
+                    .map(|&i| getitem.call1(py, (i,)))
+                    .collect::<PyResult<Vec<_>>>()?;
+                check_not_awaitable(py, &items)?;
+                Ok(items)
+            }
             Self::Batched(getitems) => {
                 let samples = getitems.bind(py).call1((PyList::new(py, indices)?,))?;
                 let samples = samples
@@ -90,6 +125,7 @@ impl Fetcher {
                         indices.len()
                     )));
                 }
+                check_not_awaitable(py, &samples)?;
                 Ok(samples)
             }
         }
