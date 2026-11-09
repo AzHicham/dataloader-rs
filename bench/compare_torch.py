@@ -23,7 +23,7 @@ Workloads:
 Defaults are calibrated for a 4-vCPU machine (a GitHub-hosted runner); pin a
 bigger machine to 4 cores to compare (`taskset -c 0,2,4,6 ...`).
 
-The script runs with the allocator settings of BENCH.md section 8 for both
+The script runs with the allocator settings of bench/README.md for both
 loaders, re-executing itself with them when they are missing:
 --default-allocator measures the allocators' defaults instead.
 

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="458" viewBox="0 0 760 458" role="img" aria-labelledby="title desc" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="title">Speed-up over PyTorch DataLoader</title>
+<desc id="desc">Items already in memory: CPython 3.13 (GIL) 4.9×, CPython 3.14t (free-threaded) 6.0×; Local files, NumPy: CPython 3.13 (GIL) 1.0×, CPython 3.14t (free-threaded) 3.5×; Image augmentation, NumPy: CPython 3.13 (GIL) 1.5×, CPython 3.14t (free-threaded) 2.6×; PNG tiles, Rust transforms: CPython 3.13 (GIL) 2.4×, CPython 3.14t (free-threaded) not measured; HTTP tiles, HttpDataset: CPython 3.13 (GIL) 3.2×, CPython 3.14t (free-threaded) 2.8×; Network calls, 10 ms each: CPython 3.13 (GIL) 3.9×, CPython 3.14t (free-threaded) 3.2×; Pure-Python CPU work: CPython 3.13 (GIL) 0.4×, CPython 3.14t (free-threaded) 0.3×.</desc>
+<rect width="760" height="458" rx="6" fill="#1a1a19"/>
+<text x="24" y="30" fill="#f0efec" font-size="16" font-weight="600" text-anchor="start" dominant-baseline="central">Speed-up over PyTorch DataLoader</text>
+<text x="24" y="52" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start" dominant-baseline="central">Best configuration of each loader, 4 cores</text>
+<text x="260" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">0×</text>
+<line x1="318.86" y1="104" x2="318.86" y2="398" stroke="#2c2c2a" stroke-width="1"/>
+<text x="318.86" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">1×</text>
+<line x1="377.71" y1="104" x2="377.71" y2="398" stroke="#2c2c2a" stroke-width="1"/>
+<text x="377.71" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">2×</text>
+<line x1="436.57" y1="104" x2="436.57" y2="398" stroke="#2c2c2a" stroke-width="1"/>
+<text x="436.57" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">3×</text>
+<line x1="495.43" y1="104" x2="495.43" y2="398" stroke="#2c2c2a" stroke-width="1"/>
+<text x="495.43" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">4×</text>
+<line x1="554.29" y1="104" x2="554.29" y2="398" stroke="#2c2c2a" stroke-width="1"/>
+<text x="554.29" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">5×</text>
+<line x1="613.14" y1="104" x2="613.14" y2="398" stroke="#2c2c2a" stroke-width="1"/>
+<text x="613.14" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">6×</text>
+<line x1="672" y1="104" x2="672" y2="398" stroke="#2c2c2a" stroke-width="1"/>
+<text x="672" y="412" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">7×</text>
+<line x1="260" y1="104" x2="260" y2="398" stroke="#383835" stroke-width="1"/>
+<text x="466" y="434" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">times faster than PyTorch (higher is better)</text>
+<rect x="260" y="74" width="12" height="12" rx="2" fill="#3987e5"/>
+<text x="278" y="80" fill="#f0efec" font-size="13" font-weight="400" text-anchor="start" dominant-baseline="central">CPython 3.13 (GIL)</text>
+<rect x="437.04" y="74" width="12" height="12" rx="2" fill="#d95926"/>
+<text x="455.04" y="80" fill="#f0efec" font-size="13" font-weight="400" text-anchor="start" dominant-baseline="central">CPython 3.14t (free-threaded)</text>
+<text x="248" y="125" fill="#f0efec" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">Items already in memory</text>
+<path d="M260 112H545.58A4 4 0 0 1 549.58 116V120A4 4 0 0 1 545.58 124H260Z" fill="#3987e5"/>
+<text x="555.58" y="118" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">4.9×</text>
+<path d="M260 126H610.32A4 4 0 0 1 614.32 130V134A4 4 0 0 1 610.32 138H260Z" fill="#d95926"/>
+<text x="620.32" y="132" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">6.0×</text>
+<text x="248" y="167" fill="#f0efec" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">Local files, NumPy</text>
+<path d="M260 154H314.86A4 4 0 0 1 318.86 158V162A4 4 0 0 1 314.86 166H260Z" fill="#3987e5"/>
+<text x="324.86" y="160" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">1.0×</text>
+<path d="M260 168H463.18A4 4 0 0 1 467.18 172V176A4 4 0 0 1 463.18 180H260Z" fill="#d95926"/>
+<text x="473.18" y="174" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">3.5×</text>
+<text x="248" y="209" fill="#f0efec" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">Image augmentation, NumPy</text>
+<path d="M260 196H345.46A4 4 0 0 1 349.46 200V204A4 4 0 0 1 345.46 208H260Z" fill="#3987e5"/>
+<text x="355.46" y="202" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">1.5×</text>
+<path d="M260 210H409.62A4 4 0 0 1 413.62 214V218A4 4 0 0 1 409.62 222H260Z" fill="#d95926"/>
+<text x="419.62" y="216" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">2.6×</text>
+<text x="248" y="251" fill="#f0efec" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PNG tiles, Rust transforms</text>
+<path d="M260 238H396.67A4 4 0 0 1 400.67 242V246A4 4 0 0 1 396.67 250H260Z" fill="#3987e5"/>
+<text x="406.67" y="244" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">2.4×</text>
+<text x="266" y="258" fill="#c3c2b7" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">not measured</text>
+<text x="248" y="293" fill="#f0efec" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">HTTP tiles, HttpDataset</text>
+<path d="M260 280H441.64A4 4 0 0 1 445.64 284V288A4 4 0 0 1 441.64 292H260Z" fill="#3987e5"/>
+<text x="451.64" y="286" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">3.2×</text>
+<path d="M260 294H422.21A4 4 0 0 1 426.21 298V302A4 4 0 0 1 422.21 306H260Z" fill="#d95926"/>
+<text x="432.21" y="300" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">2.8×</text>
+<text x="248" y="335" fill="#f0efec" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">Network calls, 10 ms each</text>
+<path d="M260 322H483.78A4 4 0 0 1 487.78 326V330A4 4 0 0 1 483.78 334H260Z" fill="#3987e5"/>
+<text x="493.78" y="328" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">3.9×</text>
+<path d="M260 336H443.75A4 4 0 0 1 447.75 340V344A4 4 0 0 1 443.75 348H260Z" fill="#d95926"/>
+<text x="453.75" y="342" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">3.2×</text>
+<text x="248" y="377" fill="#f0efec" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">Pure-Python CPU work</text>
+<path d="M260 364H280.13A4 4 0 0 1 284.13 368V372A4 4 0 0 1 280.13 376H260Z" fill="#3987e5"/>
+<text x="290.13" y="370" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">0.4×</text>
+<path d="M260 378H276.01A4 4 0 0 1 280.01 382V386A4 4 0 0 1 276.01 390H260Z" fill="#d95926"/>
+<text x="286.01" y="384" fill="#f0efec" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">0.3×</text>
+<line x1="318.86" y1="98" x2="318.86" y2="398" stroke="#c3c2b7" stroke-width="1"/>
+<text x="322.86" y="102" fill="#c3c2b7" font-size="11" font-weight="400" text-anchor="start" dominant-baseline="central">PyTorch</text>
+</svg>

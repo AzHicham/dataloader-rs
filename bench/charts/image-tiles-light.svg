@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="256" viewBox="0 0 760 256" role="img" aria-labelledby="title desc" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="title">PNG tiles: seconds per epoch (lower is better)</title>
+<desc id="desc">PyTorch, 4 workers, Pillow: 1.17 s; PyTorch, 8 workers, Pillow: 1.38 s; FileDataset, same Pillow code: 1.28 s; FileDataset, Rust transforms: 0.49 s.</desc>
+<rect width="760" height="256" rx="6" fill="#fcfcfb"/>
+<text x="24" y="30" fill="#0b0b0b" font-size="16" font-weight="600" text-anchor="start" dominant-baseline="central">PNG tiles: seconds per epoch (lower is better)</text>
+<text x="24" y="52" fill="#52514e" font-size="13" font-weight="400" text-anchor="start" dominant-baseline="central">2,048 tiles decoded, padded to 224 and normalised, batches of 64, 4 cores, CPython 3.13</text>
+<text x="260" y="210" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">0</text>
+<line x1="397.33" y1="80" x2="397.33" y2="196" stroke="#e1e0d9" stroke-width="1"/>
+<text x="397.33" y="210" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">0.5</text>
+<line x1="534.67" y1="80" x2="534.67" y2="196" stroke="#e1e0d9" stroke-width="1"/>
+<text x="534.67" y="210" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">1</text>
+<line x1="672" y1="80" x2="672" y2="196" stroke="#e1e0d9" stroke-width="1"/>
+<text x="672" y="210" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">1.5</text>
+<line x1="260" y1="80" x2="260" y2="196" stroke="#c3c2b7" stroke-width="1"/>
+<text x="466" y="232" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">seconds per epoch</text>
+<text x="248" y="96" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyTorch, 4 workers, Pillow</text>
+<path d="M260 88H577.36A4 4 0 0 1 581.36 92V100A4 4 0 0 1 577.36 104H260Z" fill="#898781"/>
+<text x="587.36" y="96" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">1.17 s</text>
+<text x="248" y="124" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyTorch, 8 workers, Pillow</text>
+<path d="M260 116H636.14A4 4 0 0 1 640.14 120V128A4 4 0 0 1 636.14 132H260Z" fill="#898781"/>
+<text x="646.14" y="124" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">1.38 s</text>
+<text x="248" y="152" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">FileDataset, same Pillow code</text>
+<path d="M260 144H608.12A4 4 0 0 1 612.12 148V156A4 4 0 0 1 608.12 160H260Z" fill="#2a78d6"/>
+<text x="618.12" y="152" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">1.28 s</text>
+<text x="248" y="180" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">FileDataset, Rust transforms</text>
+<path d="M260 172H390.31A4 4 0 0 1 394.31 176V184A4 4 0 0 1 390.31 188H260Z" fill="#2a78d6"/>
+<text x="400.31" y="180" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">0.49 s</text>
+</svg>

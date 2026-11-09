@@ -1,0 +1,65 @@
+{
+  "about": "Numbers plotted in BENCH.md. Medians of whole epochs, Intel Core i9-13900H laptop, torch 2.14.1 (CPU). Regenerate the charts with: python bench/charts.py",
+  "charts": [
+    {
+      "name": "speedup",
+      "kind": "grouped",
+      "title": "Speed-up over PyTorch DataLoader",
+      "subtitle": "Best configuration of each loader, 4 cores",
+      "axis": "times faster than PyTorch (higher is better)",
+      "unit": "x",
+      "decimals": 1,
+      "max": 7,
+      "ticks": [0, 1, 2, 3, 4, 5, 6, 7],
+      "reference": {"value": 1, "label": "PyTorch"},
+      "series": ["CPython 3.13 (GIL)", "CPython 3.14t (free-threaded)"],
+      "missing_label": "not measured",
+      "rows": [
+        {"label": "Items already in memory", "values": [4.92, 6.02], "source": "compare_torch.py, in_memory"},
+        {"label": "Local files, NumPy", "values": [1.0, 3.52], "source": "compare_torch.py, local_files"},
+        {"label": "Image augmentation, NumPy", "values": [1.52, 2.61], "source": "compare_torch.py, image_augment"},
+        {"label": "PNG tiles, Rust transforms", "values": [2.39, null], "source": "compare_image.py: torch 4 workers 1.170 s / ours 0.489 s; no Pillow build on 3.14t"},
+        {"label": "HTTP tiles, HttpDataset", "values": [3.154, 2.824], "source": "compare_async.py, same run: torch 32 workers 1.211 / 1.237 s, HttpDataset 0.384 / 0.438 s"},
+        {"label": "Network calls, 10 ms each", "values": [3.87, 3.19], "source": "compare_torch.py, remote"},
+        {"label": "Pure-Python CPU work", "values": [0.41, 0.34], "source": "compare_torch.py, python_cpu"}
+      ]
+    },
+    {
+      "name": "http-tiles",
+      "kind": "single",
+      "title": "HTTP tiles: seconds per epoch (lower is better)",
+      "subtitle": "2,048 tiles of 64 KiB, 10 ms per request, batches of 64, CPython 3.13",
+      "axis": "seconds per epoch",
+      "unit": " s",
+      "decimals": 2,
+      "max": 3.0,
+      "ticks": [0, 1, 2, 3],
+      "rows": [
+        {"label": "PyTorch, 8 worker processes", "value": 2.988, "ours": false, "value_314t": 2.982},
+        {"label": "PyTorch, 16 worker processes", "value": 1.642, "ours": false, "value_314t": 1.661},
+        {"label": "PyTorch, 32 worker processes", "value": 1.211, "ours": false, "value_314t": 1.237},
+        {"label": "PyTorch, 64 worker processes", "value": 1.494, "ours": false, "value_314t": 1.496},
+        {"label": "PyDataset, 64 threads", "value": 1.044, "ours": true, "value_314t": 0.478},
+        {"label": "PyAsyncDataset + aiohttp", "value": 0.445, "ours": true, "value_314t": 0.45},
+        {"label": "HttpDataset", "value": 0.382, "ours": true, "value_314t": 0.384}
+      ]
+    },
+    {
+      "name": "image-tiles",
+      "kind": "single",
+      "title": "PNG tiles: seconds per epoch (lower is better)",
+      "subtitle": "2,048 tiles decoded, padded to 224 and normalised, batches of 64, 4 cores, CPython 3.13",
+      "axis": "seconds per epoch",
+      "unit": " s",
+      "decimals": 2,
+      "max": 1.5,
+      "ticks": [0, 0.5, 1, 1.5],
+      "rows": [
+        {"label": "PyTorch, 4 workers, Pillow", "value": 1.17, "ours": false},
+        {"label": "PyTorch, 8 workers, Pillow", "value": 1.384, "ours": false},
+        {"label": "FileDataset, same Pillow code", "value": 1.282, "ours": true},
+        {"label": "FileDataset, Rust transforms", "value": 0.489, "ours": true}
+      ]
+    }
+  ]
+}

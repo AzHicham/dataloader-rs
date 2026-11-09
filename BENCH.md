@@ -1,745 +1,127 @@
 # Benchmarks
 
-What `dataloader-rs` is measured on, why, how, and how it compares with
-`torch.utils.data.DataLoader`. Every number below comes from one session on one laptop pinned to
-4 cores, the size of the CI runners (section 2). The CI re-runs the regression suites on every
-pull request and plots them per commit on the dashboards for
-[Rust](https://azhicham.github.io/dataloader-rs/benchmarks/rust/) and
-[Python 3.14t](https://azhicham.github.io/dataloader-rs/benchmarks/python-3.14t/).
+These benchmarks compare `dataloader_rs.PyDataloader` with `torch.utils.data.DataLoader` on the
+same dataset code, each loader in its best configuration (number of workers, and requests in
+flight for network data). All numbers come from one Intel Core i9-13900H laptop running Linux,
+with the loaders pinned to 4 cores (the size of a GitHub-hosted CI runner; 12 hardware threads
+for the HTTP tiles), on CPython 3.13 with the GIL and free-threaded CPython 3.14t; each value is the median of
+whole epochs.
 
-| Reference run | |
-|---|---|
-| Code | `perf/hot-path` ([#53](https://github.com/AzHicham/dataloader-rs/pull/53)), on top of [#47](https://github.com/AzHicham/dataloader-rs/pull/47), 25 October 2026 |
-| Machine | Intel Core i9-13900H laptop, pinned to 4 performance cores |
-| Python | CPython 3.13.3 (GIL), 3.14.9t and 3.15.1t (free-threaded, `-X gil=0`); torch 2.14.1+cpu, NumPy 2.5.4 |
-| Rust | 1.98.1, Criterion 0.8 |
-| Allocator | settings pinned for both loaders by the harnesses (section 8) |
+## Speed-up over PyTorch
 
-Contents:
+<picture><source media="(prefers-color-scheme: dark)" srcset="bench/charts/speedup-dark.svg"><img alt="Horizontal bar chart of how many times faster dataloader-rs is than the PyTorch DataLoader, on CPython 3.13 and 3.14t: items already in memory 4.9 and 6.0 times, local files with NumPy 1.0 and 3.5 times, image augmentation with NumPy 1.5 and 2.6 times, PNG tiles with the Rust transforms 2.4 times on 3.13, HTTP tiles with HttpDataset 3.2 and 2.8 times, network calls of 10 ms 3.9 and 3.2 times, and pure-Python CPU work 0.4 and 0.3 times, where PyTorch is faster." src="bench/charts/speedup-light.svg"></picture>
 
-1. [Summary](#1-summary)
-2. [Setup and calibration](#2-setup-and-calibration)
-3. [Method: what is measured and why](#3-method-what-is-measured-and-why)
-4. [Results: Rust](#4-results-rust) (async datasets: 4.8, image transforms: 4.9)
-5. [Results: Python against PyTorch](#5-results-python-against-pytorch) (async datasets: 5.5, image tiles: 5.6)
-6. [Results: Python regression guards](#6-results-python-regression-guards)
-7. [Reading the results: choosing settings](#7-reading-the-results-choosing-settings)
-8. [Caveats and known bottlenecks](#8-caveats-and-known-bottlenecks)
-9. [Running it again](#9-running-it-again)
+dataloader-rs is faster on every workload whose work happens outside the Python interpreter:
+loading itself, NumPy, image decoding and network I/O. The free-threaded build helps most where
+the per-item Python code is short but not free, such as reading a file and normalising it with
+NumPy.
 
-## 1. Summary
+<details><summary>Numbers</summary>
 
-`dataloader_rs.PyDataloader` against `torch.utils.data.DataLoader`, the best configuration of each
-loader per workload: no workers or 4, plus 64 requests in flight for `remote`. 4 cores,
-`batch_size` 32, the same dataset code and the same allocator settings for both. Ratio of items
-per second; above 1, `dataloader_rs` is faster.
+| Workload | What each item does | 3.13 | 3.14t |
+|---|---|---:|---:|
+| Items already in memory | returns its index: the loader's own cost | 4.92× | 6.02× |
+| Local files, NumPy | reads a 16 KB file, normalises it to float32 | 1.00× | 3.52× |
+| Image augmentation, NumPy | crops, flips and normalises a 3×128×128 image | 1.52× | 2.61× |
+| PNG tiles, Rust transforms | decodes, pads and normalises a 224×224 PNG | 2.39× | not measured |
+| HTTP tiles, HttpDataset | fetches 64 KiB from a server answering after 10 ms | 3.15× | 2.82× |
+| Network calls, 10 ms each | a blocking 10 ms wait, like an object-store GET | 3.87× | 3.19× |
+| Pure-Python CPU work | tokenises text with a shared Python dictionary | 0.41× | 0.34× |
 
-| workload | 3.13 (GIL) | 3.14t | 3.15t |
-|---|---:|---:|---:|
-| `in_memory` | **4.92×** | **6.02×** | **6.61×** |
-| `local_files` | 1.00× | **3.52×** | **3.41×** |
-| `image_augment` | **1.52×** | **2.61×** | **2.48×** |
-| `remote` | **3.87×** | **3.19×** | **3.17×** |
-| `python_cpu` | 0.41× | 0.34× | 0.40× |
-| `python_cpu_local` | 0.39× | **1.16×** | **1.19×** |
+</details>
 
-> **Where PyTorch is faster, and why.** The workers are threads in one process. On regular CPython
-> (the GIL build, 3.13 here), only one thread runs Python code at a time, so pure-Python work in
-> `__getitem__` does not run in parallel, while PyTorch's worker processes each run their own
-> interpreter: PyTorch is 2.4–2.6× faster on `python_cpu` and `python_cpu_local`. On free-threaded
-> 3.14t / 3.15t the threads do run Python in parallel, but threads that all read one shared dict
-> or list contend on its reference count: PyTorch is 2.5–2.9× faster on `python_cpu`, and
-> `dataloader_rs` 1.16–1.19× faster once each thread has its own tables (`python_cpu_local`).
-> Work that releases the GIL (I/O, NumPy, image decoding) is not affected.
+## HTTP tiles
 
-- **Loader overhead** (`in_memory`, items that cost nothing): **4.9–6.6× faster**. Without
-  workers the whole loop runs in Rust; torch's runs in Python. With 4 workers, `dataloader_rs`
-  hands over 5.6–12 M items/s against 1.0–1.4 M for torch's persistent workers.
-- **Network-bound items** (`remote`, 10 ms per item): **3.2–3.9× faster**. With
-  `item_concurrency=16`, 4 workers keep 64 requests in flight. torch parallelises whole batches,
-  one process each: this 16-batch epoch keeps at most 16 of its 64 processes busy, and its first
-  batch always waits for `batch_size` × 10 ms.
-- **Array samples** (`local_files`, `image_augment`): **2.5–3.5× faster** on 3.14t and 3.15t,
-  where 4 workers reach 180–193 k and 57–59 k items/s. On 3.13 the GIL serialises the small
-  NumPy calls: 1.0–1.5×. torch's best configuration is no workers or persistent ones: handing a
-  batch between processes costs more than these small samples. With the allocators' default
-  settings, 4 workers lose up to half of that on 3.14t (section 8).
-- **Pure-Python CPU work** (`python_cpu*`): with a shared vocabulary, **torch is faster**
-  (2.4–2.9×): threads are serialised by the GIL on 3.13, and contend on the reference counts of
-  the shared objects on 3.14t and 3.15t. With per-thread tables (`python_cpu_local`),
-  `dataloader_rs` is **1.16–1.19× faster** on 3.14t and 3.15t; on 3.13 torch stays 2.6× ahead.
-- **First batch**: `dataloader_rs` starts an epoch in milliseconds. torch's fresh workers take
-  11–334 ms: process start-up, then a whole batch per worker.
+<picture><source media="(prefers-color-scheme: dark)" srcset="bench/charts/http-tiles-dark.svg"><img alt="Horizontal bar chart of seconds per epoch to fetch 2,048 HTTP tiles on CPython 3.13: PyTorch with 8, 16, 32 and 64 worker processes takes 2.99, 1.64, 1.21 and 1.49 seconds; dataloader-rs takes 1.04 seconds with PyDataset on 64 threads, 0.45 seconds with PyAsyncDataset and aiohttp, and 0.38 seconds with HttpDataset." src="bench/charts/http-tiles-light.svg"></picture>
 
-Latency to the first batch on 3.14t, workers already started for persistent torch (median of 5
-epochs):
+PyTorch keeps one request in flight per worker process, and stops improving beyond 32 processes;
+dataloader-rs keeps 64 in flight with 2 workers of 32 concurrent requests each, and `HttpDataset`
+is 3.2 times faster than PyTorch's best. On 3.14t, the 64 `PyDataset` threads also reach 0.48 s, because they no longer
+take turns on the GIL.
 
-| workload | dataloader_rs, 4 workers | torch, 4 fresh workers | torch, 4 persistent workers |
-|---|---:|---:|---:|
-| `in_memory` | 0.03 ms | 11.1 ms | 0.24 ms |
-| `local_files` | 0.73 ms | 23.3 ms | 5.7 ms |
-| `image_augment` | 2.2 ms | 36.2 ms | 10.3 ms |
-| `remote` | 20.8 ms (items=16) | 334 ms | 323 ms |
-| `python_cpu` | 9.0 ms | 13.0 ms | 2.9 ms |
-| `python_cpu_local` | 1.3 ms | 13.6 ms | 1.9 ms |
+<details><summary>Numbers</summary>
 
-Image tiles (section 5.6), a tile feature-extraction pass on 2 048 local PNGs, 4 cores: the Rust
-image transforms with `ImageCollator` read an epoch in 0.49 s on 3.13 and 0.47 s on 3.14t,
-against 1.17 s for torch with 4 Pillow + torchvision worker processes (**2.4×**, with 2.4× less
-CPU), the same values bit for bit.
+Seconds per epoch, a fresh loader for each epoch. The 32 and 64 worker runs come from a second
+session of the same script, where 16 workers took 1.69 s.
 
-Rust, without Python (section 4): up to 1 G items/s through the sequential path, about 0.5 µs of
-scheduling per batch with workers, 3.1× with 4 workers and 3.4–3.5× with 4 item lanes on
-CPU-bound items, and loading fully hidden behind a consumer step from `prefetch_depth = 1`.
-
-## 2. Setup and calibration
-
-The CI runs every suite on GitHub-hosted runners: for public repositories, Linux machines with
-**4 vCPUs and 16 GB of RAM** (x64 and arm64). Every suite is sized for them:
-
-- worker sweeps stop at 4 threads: beyond the core count they measure oversubscription, not the
-  loader;
-- the per-item costs keep an epoch between milliseconds and a few hundred milliseconds, so a suite
-  runs in about a minute;
-- the exception is waiting on the network, where threads that sleep are the point: 64 requests in
-  flight.
-
-Local runs emulate the runner by pinning every process to 4 performance cores, one hardware
-thread each:
-
-```bash
-taskset -c 0,2,4,6 cargo bench
-taskset -c 0,2,4,6 python -X gil=0 bench/compare_torch.py
-```
-
-| | |
-|---|---|
-| CPU | Intel Core i9-13900H: 6 performance cores (2 threads each), 8 efficiency cores. CPUs 0, 2, 4, 6 are 4 distinct performance cores |
-| Memory | 32 GB |
-| System | Ubuntu, Linux 6.14, glibc 2.41, on AC power; allocator settings pinned by the harnesses (section 8) |
-| Rust | 1.98.1, bench profile (`opt-level = 3`, thin LTO, one codegen unit) |
-| Python | CPython 3.13.3, 3.14.9t, 3.15.1t; torch 2.14.1+cpu; NumPy 2.5.4; pytest-benchmark 5.3 |
-| Extension | `maturin develop --release --features python`, once per interpreter |
-| Files | the `local_files` trees are in the temporary directory, a RAM-backed tmpfs here: reads measure the file API and the copy, not a disk |
-
-## 3. Method: what is measured and why
-
-### 3.1 One question per benchmark
-
-| Question | Measured as | Rust (`benches/`) | Python (`bench/`) |
-|---|---|---|---|
-| What does the loader itself cost? | throughput on items that cost nothing | `bench_batch_size` | `test_bench_batch_size.py`; `in_memory` |
-| Do more workers help on CPU-bound items? | throughput, `num_workers` 0–4 | `bench_num_workers` | `test_bench_workers.py` |
-| Item-level or batch-level parallelism? | throughput at equal thread counts | `bench_item_concurrency` | — |
-| Does loading overlap the training step? | epoch time with a step per batch | `bench_prefetch_depth` | `test_bench_prefetch.py` |
-| How long until the first batch? | `iter()` to the first batch | `bench_first_batch` | `test_bench_first_batch.py`; `compare_torch.py` |
-| What does the sampler cost? | index generation | `bench_sampler` | `test_bench_sampler.py` |
-| How does real per-item work spread? | file reads, augmentation, network latency, Python code | `bench_real_world` | `test_bench_real_world.py`; `compare_torch.py` |
-| How do we compare with PyTorch? | throughput and first batch, same dataset code | — | `compare_torch.py` |
-
-Throughput is what a long training run sees. First-batch latency is what every epoch start, a
-validation pass or an interactive session waits for, and where torch's worker processes cost the
-most. Overlap is what a training loop sees when loading is not the bottleneck: loading should
-hide behind the step.
-
-### 3.2 Datasets and workloads
-
-| Name | Per-item work | Cost here | Stands for |
-|---|---|---|---|
-| `InMemoryDs` (Rust, Python), `in_memory` | returns the index | ≈ 0 | the loader's own cost |
-| `HeavyCpuDs` (Rust) | 100 000 steps of a xorshift-multiply chain the compiler cannot shorten | ≈ 110 µs | decoding or augmenting a small sample |
-| `CpuBoundDs` (Python) | SHA-256 of 1 MB, releases the GIL | ≈ 0.5 ms | C-extension work |
-| `local_files` | read a 16 KB file, normalise to float32 | ≈ 18 µs (Python), 6 µs (Rust) | file I/O fan-out |
-| `image_augment` | random 112 crop, flip, normalise a 3×128×128 image with NumPy | ≈ 42 µs | image augmentation |
-| `remote` | blocking sleep: 10 ms in Python, 2 ms in Rust | latency | an object-store or HTTP GET |
-| `python_cpu` | pure-Python tokenisation over a module-level vocabulary | ≈ 40 µs | Python preprocessing |
-| `python_cpu_local` | the same with per-thread tables (`threading.local`) | ≈ 40 µs | the same, written for free-threaded Python |
-
-### 3.3 How a number is produced
-
-- **Rust**: Criterion; one iteration is a **whole epoch**, iterator creation included; the loader
-  is built once, outside the timed loop. Tables report Criterion's point estimate.
-- **Python against PyTorch** (`bench/compare_torch.py`): `time.perf_counter` around whole epochs,
-  1 warm-up and 5 timed epochs per configuration, **median**. Throughput includes creating the
-  iterator, which is where torch starts fresh workers; the first batch is `iter()` plus the first
-  `next()`.
-- **Same work on both sides**: each workload is written once (`bench/real_world.py`) and combined
-  with `PyDataset` and with `torch.utils.data.Dataset`.
-- **Each loader collates its own way**: `dataloader_rs` with `np.stack`; torch with its default
-  collation for array samples, which builds the batch tensor in shared memory inside the worker.
-  Handing torch the NumPy `collate_fn` instead would pickle every batch through a pipe: 3.6–3.9×
-  slower with 16 MB batches (measured), an unfair comparison. Other samples stay a `list` in both.
-- **Allocator settings pinned, for both loaders**: `GLIBC_TUNABLES` (glibc's mmap and trim
-  thresholds, what NumPy allocates with on 3.13 and 3.14t) and `MIMALLOC_PURGE_DELAY=-1`
-  (CPython's mimalloc, what NumPy allocates with on 3.15t). With the defaults, the allocator
-  returns the memory of every batch to the system and the numbers measure that instead of the
-  loader (section 8). `compare_torch.py` re-executes itself with them, CI sets them for the
-  guards, and the Rust real-world suite calls `mallopt`. Array samples also stay small (64 and
-  147 KB, batches of 2 and 4.6 MiB): from 16 MiB, mimalloc resets a block freed by another thread
-  whatever its settings.
-- **torch fresh and persistent**: fresh worker processes per epoch (the default) and
-  `persistent_workers=True`. For `remote`, torch also runs 64 persistent processes, the same
-  number of requests in flight as `dataloader_rs` with 4 workers × 16 items.
-- **Regression guards**: pytest-benchmark, at least 5 rounds after a warm-up, median.
-- **Tracking in CI**: Criterion's bencher output and pytest-benchmark's JSON go to
-  [github-action-benchmark](https://github.com/benchmark-action/github-action-benchmark), which
-  stores one point per commit on `dev` and fails the job, with a comment on the pull request, when
-  a benchmark is more than 1.5× slower than the last `dev` result.
-
-## 4. Results: Rust
-
-Criterion suites in `benches/`, without Python ([benches/README.md](benches/README.md) lists
-their parameters).
-
-### 4.1 Loader overhead: `bench_batch_size`
-
-4 096 `InMemoryDs` items summed per batch: the loader's own cost. Sequential is `num_workers = 0`;
-parallel is 4 workers with `prefetch_depth = 16`. Time per epoch:
-
-| batch_size | sequential | 4 workers |
-|---:|---:|---:|
-| 1 | 112.1 µs | 1.85 ms |
-| 8 | 27.3 µs | 186.4 µs |
-| 32 | 15.1 µs | 101.9 µs |
-| 128 | 9.1 µs | 24.0 µs |
-| 512 | 5.5 µs | 14.9 µs |
-| 1024 | 4.6 µs | 19.9 µs |
-| 4096 | 3.9 µs | 13.0 µs |
-
-- Sequential: 27 ns per batch at `batch_size` 1, and 0.7–1 G items/s from `batch_size` 512 up.
-- Parallel: about 0.5 µs of scheduling per batch, so workers only pay off when a batch costs more
-  than a few microseconds; nearly free batches are faster without workers. Most of it is a batch
-  task exiting when the window is full and being spawned again as the consumer advances: with a
-  window that never fills, the whole path (claim, fetch, hand-off, reorder) costs ≈ 0.16 µs.
-
-### 4.2 Batch-level parallelism: `bench_num_workers`
-
-256 `HeavyCpuDs` items, `batch_size` 16, `prefetch_depth` 4:
-
-| case | time / epoch | items / s | vs first |
-|---|---:|---:|---:|
-| num_workers = 0 | 23.94 ms | 10,692 | 1.00× |
-| num_workers = 1 | 24.21 ms | 10,576 | 0.99× |
-| num_workers = 2 | 12.31 ms | 20,802 | 1.95× |
-| num_workers = 4 | 7.68 ms | 33,329 | 3.12× |
-
-1.95× with 2 workers, 3.1× with 4. One worker matches the sequential path: its only extra cost is
-the hand-off. Most of the gap to 4× is the laptop's clock: items take ≈ 111 µs each when 4 cores
-are busy, ≈ 95 µs when one is (compare the first and third rows of 4.3).
-
-### 4.3 Item-level parallelism: `bench_item_concurrency`
-
-128 `HeavyCpuDs` items in 2 batches of 64: few batches, large ones.
-
-| case | time / epoch | items / s | vs first |
-|---|---:|---:|---:|
-| workers 1, items 1 | 12.16 ms | 10,529 | 1.00× |
-| workers 1, items 2 | 6.26 ms | 20,441 | 1.94× |
-| workers 1, items 4 | 3.56 ms | 35,960 | 3.42× |
-| workers 2, items 2 | 3.48 ms | 36,740 | 3.49× |
-| workers 4, items 1 | 6.15 ms | 20,816 | 1.98× |
-
-With 2 batches per epoch, 4 batch workers can only use 2 threads (2.0×). Spreading each batch's
-items over the threads uses all 4: 3.4–3.5×.
-
-### 4.4 Overlap with the consumer: `bench_prefetch_depth`
-
-16 batches of 4 `HeavyCpuDs` items (≈ 0.45 ms to load each); the consumer works ≈ 0.22 ms per
-batch, like a training step; 2 workers load a batch every ≈ 0.22 ms.
-
-| case | time / epoch | items / s | vs first |
-|---|---:|---:|---:|
-| sequential (no workers) | 8.97 ms | 7,135 | 1.00× |
-| prefetch_depth = 1 | 3.69 ms | 17,352 | 2.43× |
-| prefetch_depth = 2 | 3.73 ms | 17,172 | 2.41× |
-| prefetch_depth = 4 | 3.73 ms | 17,180 | 2.41× |
-| prefetch_depth = 8 | 3.72 ms | 17,186 | 2.41× |
-
-Sequential, loading and the step add up: ≈ 0.56 ms per batch. With workers, loading hides behind
-the step: 3.7 ms for 16 steps of ≈ 0.22 ms plus the first batch. `prefetch_depth = 1` already
-overlaps fully; a deeper prefetch only holds more memory.
-
-### 4.5 Latency to the first batch: `bench_first_batch`
-
-An epoch of one batch of 32 `HeavyCpuDs` items: one iteration is `iter()` until that batch is
-ready.
-
-| case | time / epoch | items / s | vs first |
-|---|---:|---:|---:|
-| workers 0, items 1 | 3.05 ms | 10,506 | 1.00× |
-| workers 1, items 1 | 3.12 ms | 10,259 | 0.98× |
-| workers 0, items 2 | 1.63 ms | 19,592 | 1.86× |
-| workers 0, items 4 | 832.8 µs | 38,422 | 3.66× |
-| workers 1, items 4 | 882.9 µs | 36,245 | 3.45× |
-
-A worker adds ≈ 0.07 ms of hand-off. `item_concurrency = 4` cuts the wait 3.7×: the first batch is
-fetched by 4 threads instead of one.
-
-### 4.6 Sampler: `bench_sampler`
-
-Index generation only, `batch_size` 128, no workers:
-
-| N | sequential | random |
-|---:|---:|---:|
-| 1,000 | 1.8 µs | 3.4 µs |
-| 10,000 | 21.8 µs | 33.8 µs |
-| 100,000 | 236.0 µs | 366.7 µs |
-
-2.4 ns per index sequential, 3.7 ns random (a Fisher–Yates permutation per epoch): 1.6×.
-
-### 4.7 Real per-item work: `bench_real_world`
-
-4 096 files of 16 KB, read and normalised to `f32`, `batch_size` 32, with glibc's malloc
-thresholds pinned by the suite (section 8):
-
-| case | time / epoch | items / s | vs first |
-|---|---:|---:|---:|
-| num_workers = 0 | 23.98 ms | 170,778 | 1.00× |
-| num_workers = 1 | 24.97 ms | 164,026 | 0.96× |
-| num_workers = 2 | 13.41 ms | 305,479 | 1.79× |
-| num_workers = 4 | 12.01 ms | 341,143 | 2.00× |
-
-1.8× with 2 workers, 2.0× with 4. Two things decide this suite besides the loader:
-
-- **The allocator.** Each item allocates a 64 KB `Vec<f32>`. With glibc's defaults, the memory of
-  every dropped batch goes back to the system and the next batch faults it in again: the same
-  epoch is 3.4× slower without workers (15 page faults per item). The suite therefore calls
-  `mallopt` with the thresholds of section 8 before it starts; a Rust program can do the same, or
-  pick another global allocator.
-- **Memory bandwidth.** This laptop copies 22.5, 27.5 and 32 GB/s with 1, 2 and 4 threads. With
-  64 KB files, about 0.7 MB of memory traffic per item, 2 workers already filled it and 4 were
-  slower than 2: each item cost twice the CPU time, in memory stalls. 16 KB files keep the suite
-  within the bandwidth (4 KB files scale 2.6× with 4 workers).
-
-512 items with a 2 ms blocking round trip, `batch_size` 32, 4 workers:
-
-| case | time / epoch | items / s | vs first |
-|---|---:|---:|---:|
-| 4 requests in flight (4 workers × 1 items) | 264.35 ms | 1,937 | 1.00× |
-| 16 requests in flight (4 workers × 4 items) | 78.64 ms | 6,511 | 3.36× |
-| 64 requests in flight (4 workers × 16 items) | 20.99 ms | 24,395 | 12.60× |
-
-Requests in flight are `num_workers × item_concurrency`, and throughput follows them: 264 ms
-for an ideal 256 ms at 4 in flight, 20.8 ms for an ideal 16 ms at 64.
-
-### 4.8 Futures against threads: `bench_async`
-
-512 GETs of 64 KiB from a local keep-alive server answering after 10 ms, `batch_size` 64 (8
-batches), pinned to 12 performance cores (8 November 2026, branch `feat/async-dataset`, features
-`http`). `futures`: `builder_async` + `HttpDataset`; `threads`: the sync loader with the same
-client, one blocking request per thread. Criterion estimates (`--output-format bencher`, flat
-sampling, 10 epochs) of three runs:
-
-| (workers, items) in flight | futures | threads |
+| Loader (requests in flight) | 3.13 | 3.14t |
 |---|---:|---:|
-| (1, 64) = 64 | 103.9 / 102.6 / 102.5 ms | 101.3 / 101.5 / 101.3 ms |
-| (2, 32) = 64 | 97.6 / 97.2 / 97.3 ms | 108.8 / 108.0 / 109.1 ms |
-| (4, 16) = 64 | 95.7 / 95.7 / 95.4 ms | 117.5 / 117.6 / 118.0 ms |
-| (8, 1) = 8 | 725.9 / 724.8 / 724.6 ms | 726.0 / 725.8 / 724.6 ms |
+| PyTorch, 8 worker processes (8) | 2.99 | 2.98 |
+| PyTorch, 16 worker processes (16) | 1.64 | 1.66 |
+| PyTorch, 32 worker processes (32) | 1.21 | 1.24 |
+| PyTorch, 64 worker processes (64) | 1.49 | 1.50 |
+| `PyDataset`, 4 workers × 16 threads (64) | 1.04 | 0.48 |
+| `PyAsyncDataset` + aiohttp, 2 × 32 (64) | 0.45 | 0.45 |
+| `HttpDataset`, 2 × 32 (64) | 0.38 | 0.38 |
 
-The ideal at 64 in flight is 512 / 64 × 10 ms = 80 ms; each batch waits for its slowest
-request, which adds about 2 ms per batch. In Rust, 64 threads blocking on requests cost about as
-much as 64 futures: futures are 1 % slower to 19 % faster, and steadier (the threads' spread is
-up to ±14 ms at (4, 16), the futures' under ±1.4 ms). Their gain is in Python (section 5.5). The
-suite is sized for CI (about 35 s); an earlier run of 1 024 GETs gave the same picture.
+</details>
 
-### 4.9 Image transforms: `bench_image`
+## PNG tiles
 
-A tile chain (`Decode`, `ToRgb`, `PadTo(224)`, `ToFloat`, `Normalize`, `ToChw`)
-on 224 × 224 RGB PNGs of gradients and noise held in memory (every eighth one 224 × 150), 9
-November 2026, branch `feat/image-transforms`, features `image`, pinned to CPUs 0–7 (performance cores).
-Criterion estimates (`--output-format bencher`) of three runs:
+<picture><source media="(prefers-color-scheme: dark)" srcset="bench/charts/image-tiles-dark.svg"><img alt="Horizontal bar chart of seconds per epoch to decode, pad and normalise 2,048 PNG tiles on CPython 3.13 with 4 cores: PyTorch with Pillow takes 1.17 seconds with 4 workers and 1.38 seconds with 8; dataloader-rs takes 1.28 seconds with the same Pillow code and 0.49 seconds with its Rust image transforms." src="bench/charts/image-tiles-light.svg"></picture>
 
-| case | run 1 | run 2 | run 3 |
-|---|---:|---:|---:|
-| one tile through the chain | 506 µs | 510 µs | 505 µs |
-| one tile, `Decode` only | 314 µs | 317 µs | 315 µs |
-| collate 64 × 3 × 224 × 224 `f32`, NCHW, fresh buffer | 13.93 ms | 13.77 ms | 13.79 ms |
-| the same, `reuse_buffers(4)` | 3.64 ms | 3.66 ms | 3.69 ms |
-| the same, NHWC (transposed), fresh buffer | 15.51 ms | 15.64 ms | 15.72 ms |
-| epoch of 512 tiles, 1 worker × 4 items, fresh buffers | 229.2 ms | 234.5 ms | 232.8 ms |
-| the same, `reuse_buffers(8)` | 152.3 ms | 156.6 ms | 155.6 ms |
-| epoch of 512 tiles, 4 workers × 1 item, fresh buffers | 147.2 ms | 149.4 ms | 148.9 ms |
-| the same, `reuse_buffers(8)` | 118.7 ms | 119.9 ms | 120.9 ms |
+The Rust image transforms are 2.4 times faster than PyTorch with Pillow and torchvision, use 2.4
+times less CPU time, and produce the same values bit for bit. The same Pillow code run as a
+Python transform is no faster than PyTorch: the speed-up comes from leaving the interpreter.
 
-Decoding is 60 % of a tile's work; the float conversion, normalisation and layout change the
-rest. A batch of 64 such tiles is 32 ms of CPU, spread over the loader's threads, then one serial
-copy into the 38.5 MB batch buffer. Into fresh memory that copy is 13.8 ms, three quarters of it
-page faults (glibc maps buffers this large with `mmap` and returns them on free); into a reused
-buffer 3.6 ms. Through the loader, reuse makes an epoch 33 % faster when one batch is collated at
-a time (1 worker) and 19 % with 4 batches in parallel. Hence `reuse_buffers`, off by default
-(the kept buffers stay allocated).
+<details><summary>Numbers</summary>
 
-## 5. Results: Python against PyTorch
+| Loader | Seconds per epoch (3.13) |
+|---|---:|
+| PyTorch, 4 worker processes, Pillow + torchvision | 1.17 |
+| PyTorch, 8 worker processes, Pillow + torchvision | 1.38 |
+| `FileDataset`, 4 × 4, the same Pillow code as `transform=` | 1.28 |
+| `FileDataset`, 4 × 4, `dataloader_rs.transforms` + `ImageCollator` | 0.49 (0.47 on 3.14t) |
 
-`bench/compare_torch.py`, 4 workers, `batch_size` 32. `w` is `num_workers`, `items` is
-`item_concurrency`; the last column divides by the best torch configuration of the workload.
+</details>
 
-### 5.1 CPython 3.14t (free-threaded, the default)
+## When PyTorch is faster
 
-| workload | loader | config | items / s | first batch | throughput vs best torch |
-|---|---|---|---:|---:|---:|
-| `in_memory` | **dataloader_rs** | w=0 | 31,730,292 | 0.01 ms | 6.02× |
-| `in_memory` | **dataloader_rs** | w=4 | 10,937,206 | 0.03 ms | 2.07× |
-| `in_memory` | torch | w=0 | 5,274,323 | 0.02 ms | 1.00× |
-| `in_memory` | torch | w=4 | 470,457 | 11.13 ms | 0.09× |
-| `in_memory` | torch | w=4 persistent | 1,432,027 | 0.24 ms | 0.27× |
-| `local_files` | **dataloader_rs** | w=0 | 58,495 | 0.57 ms | 1.14× |
-| `local_files` | **dataloader_rs** | w=4 | 180,448 | 0.73 ms | 3.52× |
-| `local_files` | torch | w=0 | 51,307 | 0.71 ms | 1.00× |
-| `local_files` | torch | w=4 | 33,007 | 23.27 ms | 0.64× |
-| `local_files` | torch | w=4 persistent | 43,244 | 5.73 ms | 0.84× |
-| `image_augment` | **dataloader_rs** | w=0 | 23,576 | 1.43 ms | 1.05× |
-| `image_augment` | **dataloader_rs** | w=4 | 58,845 | 2.22 ms | 2.61× |
-| `image_augment` | torch | w=0 | 21,087 | 1.58 ms | 0.94× |
-| `image_augment` | torch | w=4 | 15,675 | 36.22 ms | 0.70× |
-| `image_augment` | torch | w=4 persistent | 22,546 | 10.29 ms | 1.00× |
-| `remote` | **dataloader_rs** | w=0 | 99 | 323 ms | 0.06× |
-| `remote` | **dataloader_rs** | w=4 | 396 | 323 ms | 0.25× |
-| `remote` | **dataloader_rs** | w=4 items=16 | 5,006 | 20.79 ms | 3.19× |
-| `remote` | torch | w=0 | 99 | 323 ms | 0.06× |
-| `remote` | torch | w=4 | 389 | 334 ms | 0.25× |
-| `remote` | torch | w=4 persistent | 396 | 323 ms | 0.25× |
-| `remote` | torch | w=64 persistent | 1,568 | 326 ms | 1.00× |
-| `python_cpu` | **dataloader_rs** | w=0 | 26,372 | 1.22 ms | 0.34× |
-| `python_cpu` | **dataloader_rs** | w=4 | 12,568 | 8.97 ms | 0.16× |
-| `python_cpu` | torch | w=0 | 27,429 | 1.20 ms | 0.35× |
-| `python_cpu` | torch | w=4 | 43,298 | 13.02 ms | 0.55× |
-| `python_cpu` | torch | w=4 persistent | 78,242 | 2.89 ms | 1.00× |
-| `python_cpu_local` | **dataloader_rs** | w=0 | 27,115 | 1.19 ms | 0.34× |
-| `python_cpu_local` | **dataloader_rs** | w=4 | 92,757 | 1.33 ms | 1.16× |
-| `python_cpu_local` | torch | w=0 | 25,202 | 1.30 ms | 0.32× |
-| `python_cpu_local` | torch | w=4 | 42,108 | 13.60 ms | 0.53× |
-| `python_cpu_local` | torch | w=4 persistent | 79,833 | 1.87 ms | 1.00× |
+The workers of dataloader-rs are threads in one process. When `__getitem__` spends its time in
+pure Python code, threads take turns on the GIL of CPython 3.13 and slow each other down on
+shared objects on 3.14t, while PyTorch's processes share nothing: on a tokenisation workload,
+PyTorch is 2.4 times faster on 3.13 and 2.9 times faster on 3.14t, and on 3.14t dataloader-rs
+becomes 1.16 times faster once each thread keeps its own tables (`threading.local`). With items
+that cost nothing, worker threads cost more than they save: on 3.13, 4 workers deliver 5.6 M items
+per second against 6.0 M for PyTorch without workers, so keep `num_workers=0` there (29 M items
+per second).
 
-### 5.2 CPython 3.15t (free-threaded)
+## First batch
 
-| workload | loader | config | items / s | first batch | throughput vs best torch |
-|---|---|---|---:|---:|---:|
-| `in_memory` | **dataloader_rs** | w=0 | 29,052,788 | 0.01 ms | 6.61× |
-| `in_memory` | **dataloader_rs** | w=4 | 11,596,870 | 0.04 ms | 2.64× |
-| `in_memory` | torch | w=0 | 4,398,395 | 0.02 ms | 1.00× |
-| `in_memory` | torch | w=4 | 453,801 | 13.07 ms | 0.10× |
-| `in_memory` | torch | w=4 persistent | 1,408,675 | 0.24 ms | 0.32× |
-| `local_files` | **dataloader_rs** | w=0 | 56,083 | 0.58 ms | 0.99× |
-| `local_files` | **dataloader_rs** | w=4 | 192,613 | 0.74 ms | 3.41× |
-| `local_files` | torch | w=0 | 56,486 | 0.62 ms | 1.00× |
-| `local_files` | torch | w=4 | 32,916 | 24.59 ms | 0.58× |
-| `local_files` | torch | w=4 persistent | 50,065 | 4.34 ms | 0.89× |
-| `image_augment` | **dataloader_rs** | w=0 | 24,017 | 1.35 ms | 1.05× |
-| `image_augment` | **dataloader_rs** | w=4 | 56,971 | 2.10 ms | 2.48× |
-| `image_augment` | torch | w=0 | 22,930 | 1.47 ms | 1.00× |
-| `image_augment` | torch | w=4 | 15,591 | 38.76 ms | 0.68× |
-| `image_augment` | torch | w=4 persistent | 22,918 | 10.32 ms | 1.00× |
-| `remote` | **dataloader_rs** | w=0 | 99 | 323 ms | 0.06× |
-| `remote` | **dataloader_rs** | w=4 | 395 | 322 ms | 0.25× |
-| `remote` | **dataloader_rs** | w=4 items=16 | 4,978 | 20.80 ms | 3.17× |
-| `remote` | torch | w=0 | 99 | 323 ms | 0.06× |
-| `remote` | torch | w=4 | 389 | 335 ms | 0.25× |
-| `remote` | torch | w=4 persistent | 395 | 323 ms | 0.25× |
-| `remote` | torch | w=64 persistent | 1,569 | 326 ms | 1.00× |
-| `python_cpu` | **dataloader_rs** | w=0 | 25,838 | 1.23 ms | 0.35× |
-| `python_cpu` | **dataloader_rs** | w=4 | 30,018 | 3.10 ms | 0.40× |
-| `python_cpu` | torch | w=0 | 28,075 | 1.18 ms | 0.38× |
-| `python_cpu` | torch | w=4 | 41,963 | 13.10 ms | 0.56× |
-| `python_cpu` | torch | w=4 persistent | 74,317 | 2.28 ms | 1.00× |
-| `python_cpu_local` | **dataloader_rs** | w=0 | 28,637 | 1.14 ms | 0.36× |
-| `python_cpu_local` | **dataloader_rs** | w=4 | 95,361 | 1.72 ms | 1.19× |
-| `python_cpu_local` | torch | w=0 | 28,037 | 1.19 ms | 0.35× |
-| `python_cpu_local` | torch | w=4 | 46,104 | 13.79 ms | 0.58× |
-| `python_cpu_local` | torch | w=4 persistent | 80,088 | 2.98 ms | 1.00× |
+A fresh dataloader-rs loader delivers its first batch of HTTP tiles after about 0.03 s, a fresh
+PyTorch loader after 0.8 to 1.3 s, because it starts its worker processes and one of them fetches
+a whole batch.
 
-### 5.3 CPython 3.13 (GIL)
+> Tip: with NumPy arrays on Linux, and most of all on free-threaded builds, the allocator's
+> settings change the results; [bench/README.md](bench/README.md#allocator-settings) gives the
+> ones these benchmarks use.
 
-| workload | loader | config | items / s | first batch | throughput vs best torch |
-|---|---|---|---:|---:|---:|
-| `in_memory` | **dataloader_rs** | w=0 | 29,271,935 | 0.02 ms | 4.92× |
-| `in_memory` | **dataloader_rs** | w=4 | 5,638,138 | 0.05 ms | 0.95× |
-| `in_memory` | torch | w=0 | 5,951,350 | 0.02 ms | 1.00× |
-| `in_memory` | torch | w=4 | 574,458 | 8.21 ms | 0.10× |
-| `in_memory` | torch | w=4 persistent | 1,029,458 | 0.34 ms | 0.17× |
-| `local_files` | **dataloader_rs** | w=0 | 54,258 | 0.63 ms | 1.00× |
-| `local_files` | **dataloader_rs** | w=4 | 39,863 | 3.32 ms | 0.73× |
-| `local_files` | torch | w=0 | 54,291 | 0.63 ms | 1.00× |
-| `local_files` | torch | w=4 | 38,634 | 15.19 ms | 0.71× |
-| `local_files` | torch | w=4 persistent | 47,633 | 4.58 ms | 0.88× |
-| `image_augment` | **dataloader_rs** | w=0 | 23,703 | 1.42 ms | 1.08× |
-| `image_augment` | **dataloader_rs** | w=4 | 33,493 | 4.16 ms | 1.52× |
-| `image_augment` | torch | w=0 | 21,525 | 1.57 ms | 0.98× |
-| `image_augment` | torch | w=4 | 17,578 | 23.71 ms | 0.80× |
-| `image_augment` | torch | w=4 persistent | 21,970 | 10.45 ms | 1.00× |
-| `remote` | **dataloader_rs** | w=0 | 99 | 322 ms | 0.06× |
-| `remote` | **dataloader_rs** | w=4 | 396 | 322 ms | 0.25× |
-| `remote` | **dataloader_rs** | w=4 items=16 | 6,088 | 21.42 ms | 3.87× |
-| `remote` | torch | w=0 | 99 | 324 ms | 0.06× |
-| `remote` | torch | w=4 | 390 | 334 ms | 0.25× |
-| `remote` | torch | w=4 persistent | 395 | 323 ms | 0.25× |
-| `remote` | torch | w=64 persistent | 1,573 | 325 ms | 1.00× |
-| `python_cpu` | **dataloader_rs** | w=0 | 29,043 | 1.15 ms | 0.36× |
-| `python_cpu` | **dataloader_rs** | w=4 | 32,573 | 4.69 ms | 0.41× |
-| `python_cpu` | torch | w=0 | 30,675 | 1.08 ms | 0.38× |
-| `python_cpu` | torch | w=4 | 46,916 | 12.75 ms | 0.58× |
-| `python_cpu` | torch | w=4 persistent | 80,246 | 2.77 ms | 1.00× |
-| `python_cpu_local` | **dataloader_rs** | w=0 | 29,015 | 1.12 ms | 0.35× |
-| `python_cpu_local` | **dataloader_rs** | w=4 | 32,014 | 5.17 ms | 0.39× |
-| `python_cpu_local` | torch | w=0 | 28,627 | 1.14 ms | 0.35× |
-| `python_cpu_local` | torch | w=4 | 46,957 | 12.66 ms | 0.57× |
-| `python_cpu_local` | torch | w=4 persistent | 81,810 | 2.83 ms | 1.00× |
-
-### 5.4 Reading the tables
-
-- **`in_memory`**: without workers `dataloader_rs` streams 29–32 M items/s against torch's
-  4.4–6.0 M, because the loop runs in Rust. With 4 workers both loaders are bound by handing
-  batches over: `dataloader_rs` moves 5.6–12 M items/s, 5.4–8.2× torch's persistent workers
-  (1.0–1.4 M).
-- **`local_files`, `image_augment`**: on 3.14t and 3.15t, 4 workers reach 180–193 k and
-  57–59 k items/s, 3.1–3.4× and 2.4–2.5× the sequential path. On 3.13 the GIL serialises these
-  small NumPy calls: 4 workers are slower than none on `local_files` (40 k against 54 k) and
-  1.4× faster on `image_augment`. torch's best configuration is no workers or persistent ones
-  (51–57 k and 22–23 k): moving a batch between processes costs more than these small samples.
-- **`remote`**: requests in flight decide throughput, and only `item_concurrency` raises them
-  without more processes: 4 workers × 16 items reach 5.0–6.1 k items/s, for an ideal 6.4 k.
-  torch's first batch is always `batch_size` × 10 ms = 320 ms, because one process fetches a whole
-  batch.
-- **`python_cpu`**: threads lose. With the GIL they run one at a time. On 3.14t and 3.15t they run
-  in parallel but contend on the reference counts of the shared vocabulary dict and word list:
-  4 workers are slower than none on 3.14t.
-- **`python_cpu_local`**: per-thread tables remove that contention: 4 workers give 3.3–3.4× on
-  3.14t and 3.15t, 1.16–1.19× torch's persistent processes; that ratio spreads from about 0.94×
-  to 1.23× between runs (section 8). On 3.13 the GIL serialises them.
-
-### 5.5 Async datasets: tiles over HTTP
-
-`bench/compare_async.py`, 8 November 2026, branch `feat/async-dataset`: 2 048 GETs of 64 KiB from
-a mock tile server answering after 10 ms (`aiohttp.web` 3.14.5, keep-alive, 4 processes sharing
-the port on the 8 efficiency cores), `batch_size` 64 as in a tile feature-extraction pass, loaders on
-the 12 performance cores. The sync clients (torch, `PyDataset`) use a `requests.Session` per
-process or thread, as a real client would; the `PyAsyncDataset` one `aiohttp.ClientSession` on the
-loader's event loop, closed in `aclose()`; aiohttp's C extensions load on 3.14t with the GIL off.
-Every measurement builds a fresh loader (one per large image in real use) and reads one epoch;
-3.14t with `maturin develop --release`, 3.13 with a release wheel; medians of 7 rounds in a
-rotated order, (min–max):
-
-| loader (requests in flight) | 3.14t epoch s | 3.13 epoch s | first batch s | CPU s 3.14t / 3.13 |
-|---|---:|---:|---:|---:|
-| torch, 8 workers, `requests` (8) | 2.982 (2.953–3.002) | 2.988 (2.939–3.026) | 0.79–0.80 | 1.98 / 1.56 |
-| torch, 16 workers, `requests` (16) | 1.661 (1.643–1.676) | 1.642 (1.632–1.661) | 0.88–0.89 | 2.88 / 2.12 |
-| `PyDataset`, 4 × 16 threads, `requests` (64) | 0.478 (0.445–0.504) | 1.044 (1.038–1.109) | 0.06 / 0.15 | 1.66 / 1.39 |
-| `PyAsyncDataset`, 2 × 32, `aiohttp` (64) | 0.450 (0.424–0.457) | 0.445 (0.429–0.482) | 0.04 | 0.32 / 0.29 |
-| `HttpDataset`, 2 × 32 (64) | 0.384 (0.381–0.391) | 0.382 (0.377–0.387) | 0.03 | 0.27 / 0.25 |
-| `HttpDataset`, 8 × 1 (8) | 2.764 (2.756–2.770) | 2.759 (2.738–2.774) | 0.69 | 0.21 / 0.22 |
-
-- Requests in flight decide the epoch: torch's are its worker processes, so 8 workers take 3.0 s
-  for an ideal 2.56 s; `dataloader_rs` at the same 8 is barely faster (2.76 s). At 64 in flight,
-  `HttpDataset` is 4.3× faster than torch with 16 workers and 7.8× with 8, for an ideal 0.32 s;
-  `PyAsyncDataset` with aiohttp 3.7× and 6.6×.
-- Threads on a GIL build (3.13) take turns running `requests`, which does much more Python per
-  request than `http.client`: 1.04 s against 0.48 s on 3.14t. `HttpDataset` and
-  `PyAsyncDataset` do not depend on the build.
-- CPU per item: `PyAsyncDataset` with aiohttp about 150 µs (0.32 s for 2 048 items, `HttpDataset`
-  0.27 s), 64 threads with `requests` about 800 µs, torch's processes 1–1.4 ms.
-- First batch: torch starts its worker processes for every fresh loader (0.79–0.89 s);
-  `dataloader_rs` builds its threads and runtime in milliseconds (0.03–0.06 s, one batch of
-  requests; 0.15 s for `requests` threads under the GIL).
-
-### 5.6 Image tiles: `compare_image.py`
-
-`bench/compare_image.py`, 9 November 2026, branch `feat/image-transforms`: a tile
-feature-extraction pass (padding at the right and bottom to 224, `ToTensor`, `Normalize`) on 2 048 local PNG
-tiles of 224 × 224 (every eighth 224 × 150), `batch_size` 64, every batch made a torch tensor
-(`torch.from_dlpack` for `dataloader_rs`, no copy). Pinned to 4 cores, glibc's malloc thresholds
-pinned; 3.13 with a release wheel (torch 2.15, torchvision 0.29, Pillow 13), 3.14t with
-`maturin develop --release` (no Pillow there: `dataloader_rs` loaders only). A fresh loader per
-epoch, medians of 5 rounds in a rotated order (min–max):
-
-| loader | 3.13 epoch s | 3.14t epoch s | tiles/s (3.13) | CPU s (3.13) |
-|---|---:|---:|---:|---:|
-| torch, 4 workers, Pillow + torchvision | 1.170 (1.112–1.258) | — | 1 751 | 4.17 |
-| torch, 8 workers, Pillow + torchvision | 1.384 (1.242–1.698) | — | 1 479 | 4.76 |
-| `FileDataset` 4 × 4, the same Pillow code as `transform=` | 1.282 (1.265–1.336) | — | 1 598 | 4.21 |
-| `FileDataset` 4 × 4, `transforms.Compose` + `ImageCollator(buffers=8)` | **0.489** (0.479–0.519) | **0.472** (0.469–0.562) | 4 191 | 1.76 |
-| the same, `ImageCollator()` (no buffer reuse) | 0.565 (0.558–0.581) | 0.557 (0.542–0.579) | 3 625 | 2.06 |
-
-- The Rust transforms are **2.4× faster** than torch's best configuration and use 2.4× less
-  CPU; the first batch of every `dataloader_rs` loader equals torch's bit for bit.
-- Pillow code as a Python `transform` on 3.13 is no faster than torch's processes: decoding
-  releases the GIL, the rest of the per-item Python does not. The Rust chain never takes it, so
-  3.13 and 3.14t are the same.
-- Reusing batch buffers saves 13–15 % of the epoch (section 4.9).
-
-## 6. Results: Python regression guards
-
-`bench/test_bench_*.py` on 3.14t, the CI's interpreter, pinned to 4 cores; median per round.
-These cases run on every pull request; their history is on the
-[dashboard](https://azhicham.github.io/dataloader-rs/benchmarks/python-3.14t/).
-
-| file | case | median |
-|---|---|---:|
-| `test_bench_batch_size.py` | `test_batch_size_sequential[1]` | 0.55 ms |
-| `test_bench_batch_size.py` | `test_batch_size_sequential[64]` | 0.14 ms |
-| `test_bench_batch_size.py` | `test_batch_size_sequential[4096]` | 0.13 ms |
-| `test_bench_batch_size.py` | `test_batch_size_parallel[1]` | 1.11 ms |
-| `test_bench_batch_size.py` | `test_batch_size_parallel[64]` | 0.27 ms |
-| `test_bench_batch_size.py` | `test_batch_size_parallel[4096]` | 0.14 ms |
-| `test_bench_batch_size.py` | `test_batch_size_sequential_getitems[64]` | 0.07 ms |
-| `test_bench_batch_size.py` | `test_batch_size_sequential_getitems[4096]` | 0.06 ms |
-| `test_bench_batch_size.py` | `test_batch_size_parallel_getitems[64]` | 0.05 ms |
-| `test_bench_batch_size.py` | `test_batch_size_parallel_getitems[4096]` | 0.06 ms |
-| `test_bench_first_batch.py` | `test_first_batch[0-1]` | 14.27 ms |
-| `test_bench_first_batch.py` | `test_first_batch[1-1]` | 13.89 ms |
-| `test_bench_first_batch.py` | `test_first_batch[0-4]` | 3.71 ms |
-| `test_bench_first_batch.py` | `test_first_batch[1-4]` | 3.94 ms |
-| `test_bench_prefetch.py` | `test_overlap_sequential` | 118.31 ms |
-| `test_bench_prefetch.py` | `test_overlap_prefetch_depth[1]` | 68.72 ms |
-| `test_bench_prefetch.py` | `test_overlap_prefetch_depth[2]` | 68.70 ms |
-| `test_bench_prefetch.py` | `test_overlap_prefetch_depth[4]` | 68.62 ms |
-| `test_bench_real_world.py` | `test_local_files[0]` | 17.09 ms |
-| `test_bench_real_world.py` | `test_local_files[4]` | 6.16 ms |
-| `test_bench_real_world.py` | `test_image_augment[0]` | 20.89 ms |
-| `test_bench_real_world.py` | `test_image_augment[4]` | 10.33 ms |
-| `test_bench_real_world.py` | `test_remote_threads` | 325.30 ms |
-| `test_bench_real_world.py` | `test_remote_item_concurrency` | 40.68 ms |
-| `test_bench_sampler.py` | `test_sampler_sequential` | 0.28 ms |
-| `test_bench_sampler.py` | `test_sampler_shuffle` | 0.29 ms |
-| `test_bench_workers.py` | `test_num_workers[0]` | 118.20 ms |
-| `test_bench_workers.py` | `test_num_workers[1]` | 113.91 ms |
-| `test_bench_workers.py` | `test_num_workers[2]` | 58.27 ms |
-| `test_bench_workers.py` | `test_num_workers[4]` | 37.55 ms |
-
-The guards run with the allocator pinned, as in CI. The first-batch and overlap guards mirror
-the Rust suites: 4 item lanes cut the first batch from 14 to 3.7 ms; with 2 workers, 16 batches
-overlap with 4 ms steps (69 ms, against 118 ms sequentially, 64 ms of steps).
-`test_batch_size_parallel[1]` shows the Python path's per-batch cost: 1.1 ms for 4 096
-single-item batches, 0.3 µs each (about 45 µs before
-[#53](https://github.com/AzHicham/dataloader-rs/pull/53), section 8).
-
-## 7. Reading the results: choosing settings
-
-- **`num_workers`**: 0 when a batch costs about as much as handing it over: well under a
-  microsecond in Rust, a few microseconds through Python. Otherwise up to the number of cores for
-  CPU-bound items; beyond that threads only compete for the cores.
-- **`item_concurrency`**: for datasets that wait (object stores, HTTP, databases): requests in
-  flight are `num_workers × item_concurrency`, and the pool has that many threads. Also for the
-  first batch, and for epochs with fewer batches than workers.
-- **`prefetch_depth`**: the default 2 is enough when loading keeps up with the step; a deeper
-  prefetch only absorbs uneven batch times, at the cost of memory.
-- **Python**: on the GIL build, threads help when the dataset releases the GIL (I/O, NumPy, most C
-  extensions). For pure-Python preprocessing use free-threaded 3.14t or 3.15t and keep hot lookup
-  tables per thread (`threading.local`). If that is not possible, torch's processes are faster.
-- **Array samples on Linux**: start the process with the allocator settings of section 8, the
-  ones the benchmarks run with: `GLIBC_TUNABLES` on 3.13 and 3.14t, `MIMALLOC_PURGE_DELAY=-1` on
-  3.15t. A Rust program can use the same glibc setting, or another global allocator.
-
-## 8. Caveats and known bottlenecks
-
-- **The allocator and array samples.** With default settings, the allocator behind NumPy returns
-  the memory of freed batches to the system and faults it back in for the next ones; with worker
-  threads, those page faults and the system calls behind them serialise the workers. It is a
-  process-wide setting, so it belongs to the application, not to the loader. The benchmarks pin
-  it for both loaders (section 3.3), and it is what we recommend:
-
-  ```bash
-  # CPython 3.13 and 3.14t: NumPy allocates with glibc's malloc
-  GLIBC_TUNABLES=glibc.malloc.trim_threshold=67108864:glibc.malloc.mmap_threshold=33554432 python train.py
-  # CPython 3.15t: NumPy's buffers come from CPython's mimalloc
-  MIMALLOC_PURGE_DELAY=-1 python train.py
-  ```
-
-  What the defaults cost on the workloads of this page (`compare_torch.py --default-allocator`
-  against the pinned run; 3.15t is not affected at these sizes, and its differences are noise):
-
-  | workload | interpreter | `dataloader_rs`, 4 workers | best torch |
-  |---|---|---:|---:|
-  | `local_files` | 3.13 | 41.2 k → 39.9 k items/s | 47.0 k → 54.3 k |
-  | `local_files` | 3.14t | 104.5 k → 180.4 k items/s | 38.8 k → 51.3 k |
-  | `local_files` | 3.15t | 196.5 k → 192.6 k items/s | 53.5 k → 56.5 k |
-  | `image_augment` | 3.13 | 25.9 k → 33.5 k items/s | 21.5 k → 22.0 k |
-  | `image_augment` | 3.14t | 28.7 k → 58.8 k items/s | 21.0 k → 22.5 k |
-  | `image_augment` | 3.15t | 61.0 k → 57.0 k items/s | 20.6 k → 22.9 k |
-
-  *glibc (3.13, 3.14t).* Both thresholds have to move: setting either one turns off glibc's
-  dynamic adjustment of the other, and one alone is slower than the defaults. Measured with the
-  earlier, larger samples (512–588 KB, batches of 16–18 MiB) on 3.14t with 4 workers:
-
-  | `malloc` settings | `local_files` | `image_augment` | RSS after the epochs |
-  |---|---:|---:|---:|
-  | glibc defaults | 9.8–10.8 k items/s | 5.2–6.8 k | 416–425 MB |
-  | trim threshold 1 GiB only | 3.7–3.8 k | 2.8–2.9 k | 262 MB |
-  | mmap threshold 32 MiB only | 5.3–6.6 k | 4.7–4.8 k | 338–355 MB |
-  | both, trim 64 MiB (recommended) | 14.3–14.4 k | 11.7 k | 503–517 MB |
-  | both, trim 1 GiB | 14.0–14.5 k | 11.8 k | 508–523 MB |
-  | jemalloc (`LD_PRELOAD`) | 8.0 k | 5.9 k | 340 MB |
-
-  *mimalloc (3.15t).* On 3.15t a NumPy array does not come from glibc at all (a 16 MB array leaves
-  glibc's heap untouched), so `GLIBC_TUNABLES` has no effect there. The consumer thread frees
-  each batch a worker allocated: for blocks of 16 MiB and more, mimalloc resets the whole block
-  on such a cross-thread free (`MADV_FREE`), and it purges freed segments 10 ms later
-  (`MADV_DONTNEED`). With the earlier 18.4 MiB batches of `image_augment`, purges returned 1.3 GB
-  per run to the system against 0.5 GB with 16.1 MiB batches, and 4 workers dropped from 11–12 k
-  to 8.5–9.8 k items/s at that boundary; `MIMALLOC_PURGE_DELAY=-1` brought them back to
-  10.6–11.1 k. The reset itself has no option, so the benchmarks keep batches far below 16 MiB.
-
-  The cost is memory kept for reuse: about 100 MB more with glibc, 80–90 MB with mimalloc, with
-  the earlier samples. Pure-Python work is unaffected: its objects come from CPython's own
-  allocator either way.
-- **Per-batch cost of the Python parallel path.** About 0.3–4 µs per batch on 3.14t, against
-  25–45 µs before [#53](https://github.com/AzHicham/dataloader-rs/pull/53): each worker thread
-  keeps one Python thread state, where every attach used to create and destroy one. What remains
-  is the hand-off itself and, without `collate_fn`, building the batch `list` on the consumer
-  thread, whose objects belong to the workers: a few µs per 32 items on free-threaded builds.
-- **One machine, one session.** A laptop with turbo clocks: ratios measured in the same session
-  are more reliable than absolute numbers, and a 4-vCPU runner is slower per core. Some
-  workloads also spread from run to run: with default settings, `python_cpu_local` with 4
-  workers measured 71–95 k items/s for `dataloader_rs` and 68–85 k for torch's persistent workers
-  across runs of the same code, a 0.94–1.23× ratio.
-- **Workload sizes favour neither loader**, with one exception: the `remote` epoch has 16 batches,
-  so torch keeps only 16 of its 64 processes busy. With more batches than processes it would
-  approach the same 64-in-flight ceiling, with 64 Python processes.
-- **Page cache.** `local_files` reads files that sit in memory: the file API and the copy, not a
-  disk.
-- **CI numbers are noisy.** Shared runners vary by 1.5× and more between runs; the 1.5× alert
-  catches large regressions only. Measure a change with an interleaved local A/B (section 9.4).
-
-## 9. Running it again
-
-### 9.1 Rust (Criterion)
-
-```bash
-taskset -c 0,2,4,6 cargo bench                            # every suite, pinned like the runner
-cargo bench --bench bench_num_workers                     # one suite
-cargo bench --bench bench_real_world -- local_files       # filter inside a suite
-cargo bench --bench bench_first_batch -- --output-format bencher   # CI's output format
-```
-
-HTML reports land in `target/criterion/`.
-
-### 9.2 Python regression guards (as in CI)
+## Reproduce
 
 ```bash
 uv sync --group dev
-uv run maturin develop --release --features python
-GLIBC_TUNABLES=glibc.malloc.trim_threshold=67108864:glibc.malloc.mmap_threshold=33554432 \
-MIMALLOC_PURGE_DELAY=-1 \
-uv run python -X gil=0 -m pytest bench/ -m bench --benchmark-enable --benchmark-warmup=on \
-  --benchmark-min-rounds=5
+uv run maturin develop --release
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# The Rust loader alone (Criterion); reports in target/criterion/
+taskset -c 0,2,4,6 cargo bench --features http,image
+
+# Against PyTorch: in-memory, files, augmentation, network calls, pure Python
+taskset -c 0,2,4,6 uv run python -X gil=0 bench/compare_torch.py --workers 4 --repeats 5 --json torch.json
+# HTTP tiles (a local tile server on CPUs 12-19, the loaders on 0-11)
+uv run python -X gil=0 bench/compare_async.py --rounds 7 --json async.json
+# PNG tiles (writes the tiles under --dir first)
+taskset -c 0,2,4,6 uv run python bench/compare_image.py --dir ~/tiles --rounds 5 --json image.json
+
+# Charts, from bench/results/summary.json
+python bench/charts.py
 ```
 
-The variables pin the allocator as CI does; pytest's header says whether it is pinned.
-
-### 9.3 Python against PyTorch
-
-```bash
-uv pip install torch --index-url https://download.pytorch.org/whl/cpu
-taskset -c 0,2,4,6 uv run python -X gil=0 bench/compare_torch.py --workers 4 --repeats 5 --json out.json
-uv run --python 3.13 python bench/compare_torch.py     # with the GIL
-```
-
-`--workloads` runs a subset; without torch installed, only `dataloader_rs` runs. The script
-pins the allocator settings of section 8 for both loaders by re-executing itself with them;
-`--default-allocator` measures the defaults instead (section 8's table).
-
-### 9.4 Comparing two versions
-
-Run both builds alternately in the same session (A, B, A, B, …) and compare medians: the machine
-drifts more between sessions than between two interleaved runs. For Criterion, delete
-`target/criterion` between builds so it does not compare against the other build's baseline.
+Run the same commands with `uv run --python 3.13 python ...` (without `-X gil=0`) for the GIL
+build. Each `--json` file holds every measurement of a run; the values plotted here are in
+[bench/results/summary.json](bench/results/summary.json). The CI runs the regression benchmarks
+on every pull request and plots them per commit for
+[Rust](https://azhicham.github.io/dataloader-rs/benchmarks/rust/) and
+[Python 3.14t](https://azhicham.github.io/dataloader-rs/benchmarks/python-3.14t/).
+[bench/README.md](bench/README.md) and [benches/README.md](benches/README.md) describe every
+benchmark.

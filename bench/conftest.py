@@ -18,5 +18,5 @@ from real_world import PINNED_ALLOCATOR  # noqa: E402
 def pytest_report_header(config):
     pinned = all(os.environ.get(k) == v for k, v in PINNED_ALLOCATOR.items())
     if pinned:
-        return "allocator: pinned (BENCH.md, section 8)"
+        return "allocator: pinned (bench/README.md, Allocator settings)"
     return "allocator: defaults; set real_world.PINNED_ALLOCATOR in the environment to pin it"

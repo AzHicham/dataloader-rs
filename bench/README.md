@@ -12,7 +12,7 @@ Both are sized for a 4-vCPU machine, the CI runner: at most 4 workers, except wh
 the network is the point. Both run with the allocator settings of `real_world.PINNED_ALLOCATOR`
 (glibc's thresholds, mimalloc's purge delay), so they measure the loaders rather than the
 allocators' defaults: `compare_torch.py` re-executes itself with them, and CI sets them for the
-guards. Method, results and caveats: [BENCH.md](../BENCH.md).
+guards ([Allocator settings](#allocator-settings)). Results: [BENCH.md](../BENCH.md).
 
 ## Regression guards (pytest-benchmark)
 
@@ -68,7 +68,7 @@ installed only `dataloader_rs` runs. Array samples stay small (64 and 147 KB, ba
 
 `compare_async.py` fetches 2 048 tiles of 64 KiB over HTTP (a mock tile server, `aiohttp.web`
 answering after 10 ms with keep-alive, in its own processes on `--server-cpus`) in batches of 64,
-through torch with 8 and 16 worker processes and through `dataloader_rs` with a sync `PyDataset`
+through torch with 8, 16, 32 and 64 worker processes and through `dataloader_rs` with a sync `PyDataset`
 on threads (both with a `requests.Session` per thread or process, as a real client would), a
 `PyAsyncDataset` (an `aiohttp.ClientSession` closed in `aclose()`) and the Rust `HttpDataset`.
 Each measurement builds a fresh loader, then reports the median epoch time, first-batch time and
@@ -101,3 +101,23 @@ batch of each `dataloader_rs` loader is checked bit for bit against torch's.
 ```bash
 taskset -c 0,2,4,6 python bench/compare_image.py --dir ~/tiles --rounds 5   # Pillow + torchvision for torch
 ```
+
+## Allocator settings
+
+With their default settings, the allocators behind NumPy give the memory of every freed batch
+back to the system, and the next batch faults it in again. With worker threads, those page faults
+serialise the workers: with 4 workers on 3.14t, `local_files` and `image_augment` run about half
+as fast as with the settings below. The setting belongs to the process, so it is the
+application's choice; the benchmarks pin it for both loaders, and it is what we recommend:
+
+```bash
+# CPython 3.13 and 3.14t: NumPy allocates with glibc's malloc. Set both thresholds:
+# setting one alone turns off glibc's adjustment of the other and is slower than the defaults.
+GLIBC_TUNABLES=glibc.malloc.trim_threshold=67108864:glibc.malloc.mmap_threshold=33554432 python train.py
+# CPython 3.15t: NumPy's buffers come from CPython's mimalloc
+MIMALLOC_PURGE_DELAY=-1 python train.py
+```
+
+The cost is memory kept for reuse, about 100 MB in these benchmarks. A Rust program can call
+`mallopt` with the same thresholds (`benches/bench_real_world.rs` does), or use another global
+allocator. `compare_torch.py --default-allocator` measures the defaults instead.

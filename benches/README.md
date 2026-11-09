@@ -3,8 +3,8 @@
 Each suite answers one question about the loader, without Python. One Criterion iteration is a
 whole epoch, iterator creation included; the loader is built once, outside the timed loop. The
 suites are sized for a 4-vCPU machine, the CI runner: at most 4 threads, except where waiting on
-the network is the point. Results and their reading:
-[BENCH.md, section 4](../BENCH.md#4-results-rust).
+the network is the point. [Reference results](#reference-results) below; the comparison with
+PyTorch is in [BENCH.md](../BENCH.md).
 
 | Suite | Question | Dataset | Swept | Fixed |
 |---|---|---|---|---|
@@ -27,6 +27,24 @@ the network is the point. Results and their reading:
 | `spin(n)` | `n` steps of a xorshift-multiply chain, ≈ 1.1 ns each; unlike an LCG, the compiler can neither shorten nor vectorise it |
 | `SumCollator`, `CatCollator` | sum `u64`s; concatenate byte vectors |
 
+## Reference results
+
+Criterion estimates from one run on an Intel Core i9-13900H laptop pinned to 4 performance cores
+(`bench_async` on 12 hardware threads, `bench_image` on 8):
+
+- **Loader overhead**: 27 ns per batch without workers, 0.7 to 1 G items per second from
+  `batch_size` 512; with workers, about 0.5 µs of scheduling per batch.
+- **CPU-bound items**: 1.95× with 2 workers, 3.1× with 4. With only 2 batches per epoch,
+  `item_concurrency` 4 reaches 3.4× where 4 batch workers stop at 2.0×; it also cuts the wait for
+  the first batch 3.7×.
+- **Overlap**: `prefetch_depth = 1` already hides loading behind the consumer's step.
+- **Sampler**: 2.4 ns per index in order, 3.7 ns shuffled.
+- **Waiting items**: throughput follows the requests in flight, 12.6× from 4 to 64. Futures and
+  blocking threads cost about the same in Rust at 64 in flight (futures 1 % slower to 19 % faster).
+- **Images**: 506 µs per tile through the chain, 314 µs of it decoding. Collating 64 tiles takes
+  13.8 ms into fresh memory and 3.6 ms into a reused buffer, so `reuse_buffers` makes an epoch
+  19 to 33 % faster.
+
 ## Running
 
 ```bash
@@ -37,7 +55,8 @@ cargo bench -- depth/4                    # one case
 
 Criterion is built with its minimum features: results go to the console (and `target/criterion`
 for its comparisons); HTML reports need its `html_reports` and `plotters` features. To compare
-two versions, delete `target/criterion` between builds and alternate them ([BENCH.md, section 9.4](../BENCH.md#94-comparing-two-versions)).
+two versions, delete `target/criterion` between builds and run the two builds alternately in one
+session (A, B, A, B, …): the machine drifts more between sessions than between interleaved runs.
 
 ## In CI
 

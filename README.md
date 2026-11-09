@@ -65,7 +65,7 @@ faster on array samples with free-threaded Python (see [Performance](#performanc
 > image decoding) and on the free-threaded builds of CPython (3.14t, 3.15t). Even there, threads
 > that all read the same Python dict or list slow each other down on its reference count, and
 > PyTorch is 2.5 to 2.9 times faster unless each thread gets its own copy (with
-> `threading.local`). The measurements are in [BENCH.md](BENCH.md#1-summary).
+> `threading.local`). The measurements are in [BENCH.md](BENCH.md#when-pytorch-is-faster).
 
 ## Installation
 
@@ -347,7 +347,7 @@ Every setting is a method of the builder; the Python argument of the same name d
 An invalid value (a `batch_size`, `item_concurrency` or `prefetch_depth` of 0, too many runtime
 threads, or both runtime settings) makes the builder panic.
 
-Some rules of thumb, all measured in [BENCH.md](BENCH.md#4-results-rust):
+Some rules of thumb, all measured by the [Rust benchmarks](benches/README.md#reference-results):
 
 - **Cheap items** (in memory, a few microseconds each): keep `num_workers = 0`. Handing a batch
   between threads costs about half a microsecond in Rust, and a few microseconds through Python,
@@ -434,23 +434,14 @@ details are in the [Python guide](python/README.md#image-transforms-in-rust), in
 
 ## Performance
 
-Measured on an Intel Core i9-13900H pinned to 4 cores (the size of the CI runners), on CPython
-3.13 (with the GIL), 3.14t and 3.15t, against `torch.utils.data.DataLoader` with the best
-configuration of each loader. The method, every table and the caveats are in
-[BENCH.md](BENCH.md); results for every commit are plotted on the dashboards for
-[Rust](https://azhicham.github.io/dataloader-rs/benchmarks/rust/) and
-[Python 3.14t](https://azhicham.github.io/dataloader-rs/benchmarks/python-3.14t/).
+<picture><source media="(prefers-color-scheme: dark)" srcset="bench/charts/speedup-dark.svg"><img alt="Horizontal bar chart of how many times faster dataloader-rs is than the PyTorch DataLoader, on CPython 3.13 and 3.14t: items already in memory 4.9 and 6.0 times, local files with NumPy 1.0 and 3.5 times, image augmentation with NumPy 1.5 and 2.6 times, PNG tiles with the Rust transforms 2.4 times on 3.13, HTTP tiles with HttpDataset 3.2 and 2.8 times, network calls of 10 ms 3.9 and 3.2 times, and pure-Python CPU work 0.4 and 0.3 times, where PyTorch is faster." src="bench/charts/speedup-light.svg"></picture>
 
-| Python workload | Result against PyTorch |
-|---|---|
-| Loader overhead (items already in memory) | **4.9 to 6.6 times faster** |
-| Network-bound items (10 ms each), with `item_concurrency` | **3.2 to 3.9 times faster**; the first batch in 21 ms instead of 320 ms or more |
-| 2,048 HTTP tiles of 64 KiB (10 ms each): `HttpDataset` against PyTorch with 8 or 16 worker processes | **4.3 to 7.8 times faster** (0.38 s instead of 1.64 to 2.99 s), on 3.13 and 3.14t |
-| 2,048 PNG tiles decoded, padded and normalised: the Rust image transforms against Pillow and torchvision in 4 worker processes | **2.4 times faster**, with 2.4 times less CPU time, and the same values |
-| The first batch of an epoch | **a few milliseconds**, instead of 11 to 334 ms for PyTorch's fresh worker processes |
-| Array items (read and normalise a file, augment an image), 4 workers | **2.5 to 3.5 times faster** on 3.14t and 3.15t, 1.0 to 1.5 times on 3.13, with the allocator settings of [BENCH.md, section 8](BENCH.md#8-caveats-and-known-bottlenecks) |
-| Pure-Python CPU work, with per-thread tables, on 3.14t and 3.15t | **about 1.2 times faster** |
-| Pure-Python CPU work on shared objects, or with the GIL | PyTorch is 2.4 to 2.9 times faster (its processes share nothing) |
+Against `torch.utils.data.DataLoader` on the same dataset code, dataloader-rs is 2.4 to 6 times
+faster when the work happens outside the Python interpreter (the loading itself, image decoding,
+network I/O), and 2.6 to 3.5 times faster with NumPy work on free-threaded CPython (1.0 to 1.5
+times with the GIL). PyTorch's worker processes stay faster for pure-Python work in
+`__getitem__`. [BENCH.md](BENCH.md) has the setup, more charts, the cases where PyTorch wins and
+the commands to run the benchmarks again.
 
 ## Examples
 
@@ -464,7 +455,7 @@ operations mixed, and tiles of a large image fetched by coordinates. They all ru
 | Document | Content |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the loader works inside: the paths of an epoch, threads, ordering, bounded memory, failures, the Python binding, and the design choices. |
-| [BENCH.md](BENCH.md) | What is measured and how, the results, the comparison with PyTorch, caveats, and how to run the benchmarks again. |
+| [BENCH.md](BENCH.md) | The comparison with PyTorch, in charts, and how to run the benchmarks again. |
 | [python/README.md](python/README.md) | The guide to the Python package (also its page on PyPI). |
 | [src/README.md](src/README.md) | A map of the crate's code, and the `Dataset` and `AsyncDataset` contracts. |
 | [src/loader](src/loader/README.md), [src/sampler](src/sampler/README.md), [src/collator](src/collator/README.md), [src/image](src/image/README.md), [src/python](src/python/README.md) | One guide per module (also on docs.rs). |
@@ -495,7 +486,7 @@ uv run pytest                                  # tests/ (the benchmarks are dese
 CI=1 prek run --all-files                      # ruff, ty, cargo fmt, clippy with -D warnings
 ```
 
-Running the benchmarks is described in [BENCH.md, section 9](BENCH.md#9-running-it-again).
+Running the benchmarks is described in [BENCH.md](BENCH.md#reproduce).
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/). Releases, the
 changelog, the crate and the wheels are published by semantic-release from the `main` branch.

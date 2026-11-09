@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" role="img" aria-labelledby="title desc" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+<title id="title">HTTP tiles: seconds per epoch (lower is better)</title>
+<desc id="desc">PyTorch, 8 worker processes: 2.99 s; PyTorch, 16 worker processes: 1.64 s; PyTorch, 32 worker processes: 1.21 s; PyTorch, 64 worker processes: 1.49 s; PyDataset, 64 threads: 1.04 s; PyAsyncDataset + aiohttp: 0.45 s; HttpDataset: 0.38 s.</desc>
+<rect width="760" height="340" rx="6" fill="#fcfcfb"/>
+<text x="24" y="30" fill="#0b0b0b" font-size="16" font-weight="600" text-anchor="start" dominant-baseline="central">HTTP tiles: seconds per epoch (lower is better)</text>
+<text x="24" y="52" fill="#52514e" font-size="13" font-weight="400" text-anchor="start" dominant-baseline="central">2,048 tiles of 64 KiB, 10 ms per request, batches of 64, CPython 3.13</text>
+<text x="260" y="294" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">0</text>
+<line x1="397.33" y1="80" x2="397.33" y2="280" stroke="#e1e0d9" stroke-width="1"/>
+<text x="397.33" y="294" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">1</text>
+<line x1="534.67" y1="80" x2="534.67" y2="280" stroke="#e1e0d9" stroke-width="1"/>
+<text x="534.67" y="294" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">2</text>
+<line x1="672" y1="80" x2="672" y2="280" stroke="#e1e0d9" stroke-width="1"/>
+<text x="672" y="294" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">3</text>
+<line x1="260" y1="80" x2="260" y2="280" stroke="#c3c2b7" stroke-width="1"/>
+<text x="466" y="316" fill="#52514e" font-size="12" font-weight="400" text-anchor="middle" dominant-baseline="central">seconds per epoch</text>
+<text x="248" y="96" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyTorch, 8 worker processes</text>
+<path d="M260 88H666.35A4 4 0 0 1 670.35 92V100A4 4 0 0 1 666.35 104H260Z" fill="#898781"/>
+<text x="676.35" y="96" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">2.99 s</text>
+<text x="248" y="124" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyTorch, 16 worker processes</text>
+<path d="M260 116H481.5A4 4 0 0 1 485.5 120V128A4 4 0 0 1 481.5 132H260Z" fill="#898781"/>
+<text x="491.5" y="124" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">1.64 s</text>
+<text x="248" y="152" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyTorch, 32 worker processes</text>
+<path d="M260 144H422.31A4 4 0 0 1 426.31 148V156A4 4 0 0 1 422.31 160H260Z" fill="#898781"/>
+<text x="432.31" y="152" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">1.21 s</text>
+<text x="248" y="180" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyTorch, 64 worker processes</text>
+<path d="M260 172H461.18A4 4 0 0 1 465.18 176V184A4 4 0 0 1 461.18 188H260Z" fill="#898781"/>
+<text x="471.18" y="180" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">1.49 s</text>
+<text x="248" y="208" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyDataset, 64 threads</text>
+<path d="M260 200H399.38A4 4 0 0 1 403.38 204V212A4 4 0 0 1 399.38 216H260Z" fill="#2a78d6"/>
+<text x="409.38" y="208" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">1.04 s</text>
+<text x="248" y="236" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">PyAsyncDataset + aiohttp</text>
+<path d="M260 228H317.11A4 4 0 0 1 321.11 232V240A4 4 0 0 1 317.11 244H260Z" fill="#2a78d6"/>
+<text x="327.11" y="236" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">0.45 s</text>
+<text x="248" y="264" fill="#0b0b0b" font-size="13" font-weight="400" text-anchor="end" dominant-baseline="central">HttpDataset</text>
+<path d="M260 256H308.46A4 4 0 0 1 312.46 260V268A4 4 0 0 1 308.46 272H260Z" fill="#2a78d6"/>
+<text x="318.46" y="264" fill="#0b0b0b" font-size="12" font-weight="400" text-anchor="start" dominant-baseline="central">0.38 s</text>
+</svg>

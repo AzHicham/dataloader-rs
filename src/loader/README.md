@@ -139,4 +139,4 @@ The threads, the bounded prefetch and the reorder ring are described in
 | Blocking I/O (network, remote storage) | `num_workers × item_concurrency` is the number of requests in flight: `num_workers(4).item_concurrency(16)` keeps 64 in flight. For many more, use an async dataset. |
 | Many nearly free batches (8 in-memory items or fewer per batch) | `num_workers(0)`, or a larger `batch_size`: scheduling a batch costs about half a microsecond. |
 
-Measurements behind these rules: [BENCH.md](../../BENCH.md#4-results-rust).
+Measurements behind these rules: [benches/README.md](../../benches/README.md#reference-results).

@@ -7,7 +7,7 @@
 //!   remote       2 ms blocking network round trip        (I/O-bound)
 //!
 //! The suite pins glibc's malloc thresholds first, like the Python harnesses
-//! (BENCH.md, section 8): with the defaults, glibc returns the memory of every
+//! (bench/README.md, "Allocator settings"): with the defaults, glibc returns the memory of every
 //! dropped batch to the system and the next batch faults it in again, so the
 //! suite would measure the allocator (3.4x at 16 KB per file) instead of the
 //! loader. Small files keep an epoch within this machine's memory bandwidth.
@@ -81,7 +81,7 @@ impl Dataset for Remote {
     }
 }
 
-/// Raise glibc's mmap and trim thresholds to the values of BENCH.md section 8,
+/// Raise glibc's mmap and trim thresholds to the values of bench/README.md,
 /// so dropped batches stay mapped for reuse.
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
 fn pin_allocator() {

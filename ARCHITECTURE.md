@@ -142,7 +142,7 @@ and the ring never grows.
 **Cost.** Claiming a batch, publishing the consumer's position and restarting tasks cost a few
 atomic operations and, now and then, a task spawn: about half a microsecond per batch. That is
 negligible once a batch does real work, but it dominates for nearly free batches (8 in-memory
-items or fewer per batch, see [BENCH.md](BENCH.md)), where the direct path is faster.
+items or fewer per batch, see [benches/README.md](benches/README.md#reference-results)), where the direct path is faster.
 
 ### 2.5 Item lanes (`item_concurrency`)
 
