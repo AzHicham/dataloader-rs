@@ -316,6 +316,9 @@ for batch, batch_coords in loader:  # ImageBatch, list of 64 coordinate rows
 The first form keeps the interpreter out entirely; the second attaches once per item for the
 lambda.
 
+Runnable versions, offline (they write their own tiles): [`examples/python/`](../examples/python/)
+— all Rust, Rust and torch mixed, and torchvision transforms on Rust-fetched bytes.
+
 **Back from numpy or torch.** `Image.from_array(obj, layout="hwc")` makes an `Image` of a numpy
 array, a CPU torch tensor or anything `np.asarray` takes, so a Python transform can mix Rust and
 torch steps: Rust decode, a torch op on `torch.from_dlpack(image)` (a view), `Image.from_array`,
