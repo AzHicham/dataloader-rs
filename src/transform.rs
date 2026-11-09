@@ -6,7 +6,8 @@ use crate::error::Result;
 /// an image. Set with [`DataLoaderBuilder::transform`](crate::DataLoaderBuilder::transform).
 ///
 /// A dataset only fetches; the transform runs on the loader's threads, with the index of the
-/// item: right after `get` on the worker for a [`Dataset`](crate::Dataset).
+/// item: right after `get` on the worker for a [`Dataset`](crate::Dataset), on the loader's
+/// rayon pool once the item is fetched for an `AsyncDataset` (feature `async`).
 ///
 /// Closures `Fn(usize, In) -> Result<Out>` are transforms; [`then`](Self::then) chains two. A
 /// closure passed where a transform is expected needs its types written out, as Rust does not
@@ -25,6 +26,12 @@ pub trait Transform<In>: Send + Sync + 'static {
 
     /// Transform `item`, the item at `index`. Called concurrently from several threads.
     fn apply(&self, index: usize, item: In) -> Result<Self::Output>;
+
+    /// Whether [`apply`](Self::apply) returns its input as is: the async path then applies
+    /// it where the item is fetched instead of handing it to the pool. Default: `false`.
+    fn is_identity(&self) -> bool {
+        false
+    }
 
     /// Apply `self`, then `next` to its output.
     fn then<T>(self, next: T) -> Then<Self, T>
@@ -75,6 +82,10 @@ impl<In: Send + 'static> Transform<In> for Identity {
 
     fn apply(&self, _index: usize, item: In) -> Result<In> {
         Ok(item)
+    }
+
+    fn is_identity(&self) -> bool {
+        true
     }
 }
 
@@ -135,7 +146,8 @@ mod tests {
         let t =
             AddOne.then(|index: usize, x: u32| -> Result<String> { Ok(format!("{index}<{x}>")) });
         assert_eq!(t.apply(3, 1).unwrap(), "3<2>");
-        assert_eq!(Transform::<u32>::apply(&Identity, 0, 7).unwrap(), 7);
+        assert!(!t.is_identity());
+        assert!(Transform::<u32>::is_identity(&Identity));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::loader as core_loader;
+use crate::loader::{self as core_loader, SyncSource};
 use crate::sampler::RandomSampler;
 use pyo3::exceptions::{PyDeprecationWarning, PyValueError};
 use pyo3::prelude::*;
@@ -10,7 +10,7 @@ use crate::python::iterator::{PyDataloaderIter, PyIterInner};
 use crate::python::pool::{run_attached, track};
 use crate::python::sampler::PySampler;
 
-type CorePyLoader = core_loader::DataLoader<PyDataset, PySampler, PyCollator>;
+type CorePyLoader = core_loader::DataLoader<SyncSource<PyDataset>, PySampler, PyCollator>;
 
 #[pyclass(name = "PyDataloader", module = "dataloader_rs")]
 pub struct PyDataloader {

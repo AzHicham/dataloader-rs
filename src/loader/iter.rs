@@ -10,13 +10,16 @@ use crate::{
     collator::Collator,
     dataset::Dataset,
     error::{Error, Result},
-    loader::worker::{Epoch, WorkerMsg, process_batch},
+    loader::{
+        source::{EpochSettings, LoaderSource},
+        worker::{Epoch, WorkerMsg, process_batch},
+    },
     transform::{Identity, Transform},
 };
 
 /// The error of an epoch used in a process `fork()`ed after it started: the
 /// pool's threads do not exist there, so its batches would never arrive.
-fn forked() -> Error {
+pub(super) fn forked() -> Error {
     "this epoch was started before fork(); start a new one in this process (iter())".into()
 }
 
@@ -27,7 +30,7 @@ fn forked() -> Error {
 // and does not borrow the loader. Dropping (or leaking) the iterator never
 // waits on them: a task in flight finishes its batch and exits.
 
-struct ParallelCore<D, T, C>
+pub struct ParallelCore<D, T, C>
 where
     D: Dataset,
     T: Transform<D::Item>,
@@ -191,9 +194,25 @@ where
     }
 }
 
-// ── DataLoaderIter ────────────────────────────────────────────────────────────
+// ── SyncEpoch ─────────────────────────────────────────────────────────────────
 
-enum Inner<D, T, C>
+/// What an epoch of a loader yields its batches through: [`SyncEpoch`] for a
+/// [`Dataset`], `AsyncEpoch` for an `AsyncDataset`.
+pub trait BatchStream<B> {
+    /// The next batch in epoch order, `None` at the end of the epoch.
+    fn next(&mut self) -> Option<Result<B>>;
+
+    /// Batches left in the epoch.
+    fn len(&self) -> usize;
+
+    /// The next batch if it arrives by `deadline`, or (`None`) if it has
+    /// already arrived; `None` if not, so that the caller can wait again.
+    #[cfg(feature = "python")]
+    fn next_until(&mut self, deadline: Option<Instant>) -> Option<Option<Result<B>>>;
+}
+
+/// One epoch of a [`Dataset`].
+pub enum SyncEpoch<D, T, C>
 where
     D: Dataset,
     T: Transform<D::Item>,
@@ -216,39 +235,27 @@ where
     Parallel(ParallelCore<D, T, C>),
 }
 
-/// Iterator over one epoch of a [`DataLoader`](crate::DataLoader).
-///
-/// Owns shared handles to the dataset, transform and collator, so it does not
-/// borrow the loader and can be stored, sent to another thread, or outlive it.
-pub struct DataLoaderIter<D, C, T = Identity>
+impl<D, T, C> SyncEpoch<D, T, C>
 where
     D: Dataset,
     T: Transform<D::Item>,
     C: Collator<T::Output>,
 {
-    inner: Inner<D, T, C>,
-}
-
-impl<D, C, T> DataLoaderIter<D, C, T>
-where
-    D: Dataset,
-    T: Transform<D::Item>,
-    C: Collator<T::Output>,
-    C::Batch: Send + 'static,
-{
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn new(
+    pub(super) fn start(
         dataset: &Arc<D>,
         transform: &Arc<T>,
         collator: &Arc<C>,
         pool: Option<&Arc<rayon::ThreadPool>>,
-        item_concurrency: usize,
-        num_workers: usize,
-        prefetch_depth: usize,
+        settings: EpochSettings,
         chunks: Vec<Vec<usize>>,
     ) -> Self {
-        let inner = match pool {
-            Some(pool) if num_workers > 0 => Inner::Parallel(ParallelCore::new(
+        let EpochSettings {
+            num_workers,
+            item_concurrency,
+            prefetch_depth,
+        } = settings;
+        match pool {
+            Some(pool) if num_workers > 0 => Self::Parallel(ParallelCore::new(
                 dataset,
                 transform,
                 collator,
@@ -258,7 +265,7 @@ where
                 prefetch_depth,
                 chunks,
             )),
-            _ => Inner::Direct {
+            _ => Self::Direct {
                 chunks: chunks.into_iter(),
                 dataset: Arc::clone(dataset),
                 transform: Arc::clone(transform),
@@ -267,40 +274,19 @@ where
                 pool: pool.cloned(),
                 pid: std::process::id(),
             },
-        };
-        Self { inner }
-    }
-
-    /// The next item if it is ready by `deadline`, or (`None`) right away;
-    /// `None` if not. Lets the Python binding keep the interpreter when a
-    /// batch is already there, and wait in slices that signals can end.
-    ///
-    /// The direct path fetches the batch itself: it never has one ready, and
-    /// given a deadline it does the work, which no deadline can cut short.
-    #[cfg(feature = "python")]
-    pub(crate) fn next_until(
-        &mut self,
-        deadline: Option<Instant>,
-    ) -> Option<Option<Result<C::Batch>>> {
-        if let Inner::Parallel(core) = &mut self.inner {
-            return core.next_until(deadline);
         }
-        deadline.map(|_| self.next())
     }
 }
 
-impl<D, C, T> Iterator for DataLoaderIter<D, C, T>
+impl<D, T, C> BatchStream<C::Batch> for SyncEpoch<D, T, C>
 where
     D: Dataset,
     T: Transform<D::Item>,
     C: Collator<T::Output>,
-    C::Batch: Send + 'static,
 {
-    type Item = Result<C::Batch>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match &mut self.inner {
-            Inner::Direct {
+    fn next(&mut self) -> Option<Result<C::Batch>> {
+        match self {
+            Self::Direct {
                 chunks,
                 dataset,
                 transform,
@@ -323,24 +309,87 @@ where
                     pool.as_deref(),
                 ))
             }
-            Inner::Parallel(core) => core.next(),
+            Self::Parallel(core) => core.next(),
         }
     }
 
+    fn len(&self) -> usize {
+        match self {
+            Self::Direct { chunks, .. } => chunks.len(),
+            Self::Parallel(core) => core.len(),
+        }
+    }
+
+    /// The direct path fetches the batch itself: it never has one ready, and
+    /// given a deadline it does the work, which no deadline can cut short.
+    #[cfg(feature = "python")]
+    fn next_until(&mut self, deadline: Option<Instant>) -> Option<Option<Result<C::Batch>>> {
+        match self {
+            Self::Parallel(core) => core.next_until(deadline),
+            Self::Direct { .. } => deadline.map(|_| self.next()),
+        }
+    }
+}
+
+// ── DataLoaderIter ────────────────────────────────────────────────────────────
+
+/// Iterator over one epoch of a [`DataLoader`](crate::DataLoader).
+///
+/// Owns shared handles to the dataset, transform and collator, so it does not
+/// borrow the loader and can be stored, sent to another thread, or outlive it.
+pub struct DataLoaderIter<Src, C, T = Identity>
+where
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
+    C: Collator<T::Output>,
+{
+    epoch: Src::Epoch<T, C, T::Output>,
+}
+
+impl<Src, C, T> DataLoaderIter<Src, C, T>
+where
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
+    C: Collator<T::Output>,
+{
+    pub(super) fn new(epoch: Src::Epoch<T, C, T::Output>) -> Self {
+        Self { epoch }
+    }
+
+    /// The next item if it is ready by `deadline`, or (`None`) right away;
+    /// `None` if not. Lets the Python binding keep the interpreter when a
+    /// batch is already there, and wait in slices that signals can end.
+    #[cfg(feature = "python")]
+    pub(crate) fn next_until(
+        &mut self,
+        deadline: Option<Instant>,
+    ) -> Option<Option<Result<C::Batch>>> {
+        self.epoch.next_until(deadline)
+    }
+}
+
+impl<Src, C, T> Iterator for DataLoaderIter<Src, C, T>
+where
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
+    C: Collator<T::Output>,
+{
+    type Item = Result<C::Batch>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.epoch.next()
+    }
+
     fn size_hint(&self) -> (usize, Option<usize>) {
-        let n = match &self.inner {
-            Inner::Direct { chunks, .. } => chunks.len(),
-            Inner::Parallel(core) => core.len(),
-        };
+        let n = self.epoch.len();
         (n, Some(n))
     }
 }
 
-impl<D, C, T> ExactSizeIterator for DataLoaderIter<D, C, T>
+impl<Src, C, T> ExactSizeIterator for DataLoaderIter<Src, C, T>
 where
-    D: Dataset,
-    T: Transform<D::Item>,
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
     C: Collator<T::Output>,
-    C::Batch: Send + 'static,
 {
 }
