@@ -42,7 +42,7 @@ pub(crate) fn track(pool: Weak<rayon::ThreadPool>) {
 /// reference to every live pool, so that a loader freed during shutdown
 /// (module teardown, a reference cycle collected last) does not wake its
 /// threads. A woken thread re-attaches to the finalizing interpreter, which
-/// CPython 3.13 answers with `pthread_exit`; that unwinds through Rust
+/// CPython ≤ 3.13 answers with `pthread_exit`; that unwinds through Rust
 /// frames, and the process aborts. The process is exiting: nothing is lost.
 #[pyfunction]
 #[pyo3(name = "_keep_pools_alive")]

@@ -87,7 +87,7 @@ jobs:
           PYO3_PYTHON: ${{ steps.python.outputs.python-path }}
         run: cargo test --all-features
 
-  # ── Python tests (3.13 · 3.14 · 3.15 · 3.14t · 3.15t) ────────────────────
+  # ── Python tests (3.11 · 3.12 · 3.13 · 3.14 · 3.15 · 3.14t · 3.15t) ──────
   test-python:
     name: Python tests (${{ matrix.python }})
     runs-on: ubuntu-26.04
@@ -97,6 +97,8 @@ jobs:
         include:
           # Every interpreter with a wheel. On the GIL builds the workers take
           # turns running Python code, which the free-threaded builds never do.
+          - python: "3.11"
+          - python: "3.12"
           - python: "3.13"
           - python: "3.14"
           - python: "3.15"
