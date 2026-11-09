@@ -43,9 +43,11 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # Raw pixel fixtures are binary, whatever their bytes look like.
       - id: trailing-whitespace
-        exclude: ^bench/.*\.md$
+        exclude: ^(bench/.*\.md|tests/fixtures/image/.*\.(u8|f32))$
       - id: end-of-file-fixer
+        exclude: ^tests/fixtures/image/.*\.(u8|f32)$
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict

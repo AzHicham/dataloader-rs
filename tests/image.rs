@@ -8,8 +8,8 @@ use bytes::Bytes;
 use dataloader_rs::Transform;
 use dataloader_rs::error::Error;
 use dataloader_rs::image::{
-    CenterCrop, Crop, Decode, DecodeLimits, Fill, Filter, HFlip, Image, ImageError, Pad, PadMode,
-    PadTo, Resize, Rotate90, ToGray, ToRgb, ToRgba, VFlip,
+    CenterCrop, Chw, Crop, Decode, DecodeLimits, Fill, Filter, HFlip, Image, ImageError, Normalize,
+    Pad, PadMode, PadTo, Resize, Rotate90, ToChw, ToFloat, ToGray, ToRgb, ToRgba, VFlip,
 };
 
 /// Width and height of the fixtures.
@@ -394,6 +394,72 @@ fn resize_is_close_to_pillow_and_torch() {
         assert!(
             max <= max_diff && mean <= mean_diff,
             "{name}: max {max}, mean {mean:.3}"
+        );
+    }
+}
+
+// ── Floats: torchvision's ToTensor and Normalize, bit for bit ────────────────
+
+fn f32_fixture(name: &str) -> Vec<f32> {
+    let bytes = fixture(name);
+    let (floats, rest) = bytes.as_chunks::<4>();
+    assert!(rest.is_empty(), "{name}");
+    floats.iter().map(|&b| f32::from_le_bytes(b)).collect()
+}
+
+/// Equal bit for bit (so `-0.0 != 0.0` and NaNs compare by payload).
+fn assert_bits(actual: &[f32], expected: &[f32], case: &str) {
+    assert_eq!(actual.len(), expected.len(), "{case}");
+    let differ = actual
+        .iter()
+        .zip(expected)
+        .filter(|(a, b)| a.to_bits() != b.to_bits())
+        .count();
+    assert_eq!(differ, 0, "{case}: {differ} values differ");
+}
+
+#[test]
+fn to_float_and_normalize_are_torchvision_bit_for_bit() {
+    let to_tensor = ToChw.then(ToFloat::default());
+    let chw: Image<f32, Chw> = to_tensor.apply(0, rgb()).unwrap();
+    assert_eq!(chw.shape(), [3, H, W]);
+    assert_bits(chw.data(), &f32_fixture("to_tensor.f32"), "ToTensor");
+    let normalized = Normalize::imagenet().apply(0, chw).unwrap();
+    assert_bits(
+        normalized.data(),
+        &f32_fixture("to_tensor_normalize.f32"),
+        "Normalize",
+    );
+
+    // The other order: float and normalize in HWC, then CHW.
+    let float = ToFloat::default().apply(0, rgb()).unwrap();
+    let normalized = Normalize::imagenet().apply(0, float).unwrap();
+    let hwc = ToChw.apply(0, normalized).unwrap();
+    assert_bits(
+        hwc.data(),
+        &f32_fixture("to_tensor_normalize.f32"),
+        "HWC first",
+    );
+}
+
+/// msintuit-ec's feature pass: prime_dx's `ConstantFill2d(48)` + `ToTensor` + `Normalize` on
+/// PIL images converted to RGB, against the same chain in Rust, from the PNG bytes.
+#[test]
+fn the_msintuit_chain_is_prime_dx_bit_for_bit() {
+    let chain = Decode::new()
+        .then(ToRgb)
+        .then(PadTo::new(48, 48, 0.0))
+        .then(ToFloat::default())
+        .then(Normalize::imagenet())
+        .then(ToChw);
+    for name in ["tile_full", "rgb", "rgba", "gray", "palette"] {
+        let png = Bytes::from(fixture(&format!("{name}.png")));
+        let tensor = chain.apply(0, png).unwrap();
+        assert_eq!(tensor.shape(), [3, 48, 48], "{name}");
+        assert_bits(
+            tensor.data(),
+            &f32_fixture(&format!("msintuit_{name}.f32")),
+            name,
         );
     }
 }
