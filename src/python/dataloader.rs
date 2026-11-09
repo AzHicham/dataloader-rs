@@ -11,7 +11,7 @@ use crate::python::collator::PyCollator;
 use crate::python::dataset::{
     DatasetKind, Fetcher, PyAsyncItems, PyDataset, RustSource, dataset_kind, len_py,
 };
-use crate::python::iterator::{AsyncIter, PyDataloaderIter, PyIterInner};
+use crate::python::iterator::{AsyncIter, BatchIndices, PyDataloaderIter, PyIterInner};
 use crate::python::pool::{attach_global_pool, run_attached, track};
 use crate::python::sampler::PySampler;
 use crate::python::transform::{PyItem, PyTransform};
@@ -116,12 +116,19 @@ fn core_for(py: Python<'_>, dataset: &Bound<'_, PyAny>, options: Options) -> PyR
     }
 }
 
-/// Start an epoch of an async loader.
+/// The epoch's indices, batch by batch, for `__next__` to return with each batch; `None`
+/// unless `return_indices` is set.
+fn batch_indices(return_indices: bool, chunks: &[Vec<usize>]) -> Option<BatchIndices> {
+    return_indices.then(|| chunks.to_vec()).map(Vec::into_iter)
+}
+
+/// Start an epoch of an async loader, with its indices if `return_indices` is set.
 fn start_async<A>(
     py: Python<'_>,
     loader: &mut AsyncLoader<A>,
     dataset: &Py<PyAny>,
-) -> PyResult<AsyncIter<A>>
+    return_indices: bool,
+) -> PyResult<(AsyncIter<A>, Option<BatchIndices>)>
 where
     A: AsyncDataset,
     PyTransform: Transform<A::Item, Output = PyItem>,
@@ -131,11 +138,12 @@ where
     if let Some(err) = loader.sampler_mut().take_error() {
         return Err(err);
     }
+    let indices = batch_indices(return_indices, &chunks);
     let epoch = loader.iter_chunks(chunks);
     if let Some(pool) = loader.pool_handle() {
         track(pool);
     }
-    Ok(epoch)
+    Ok((epoch, indices))
 }
 
 /// The Python objects an async loader holds.
@@ -172,6 +180,8 @@ where
 #[pyclass(name = "PyDataloader", module = "dataloader_rs")]
 pub struct PyDataloader {
     inner: Core,
+    /// Each batch is `(batch, indices)`.
+    return_indices: bool,
 }
 
 /// An async dataset's `aclose()` is awaited here, on the thread that drops the
@@ -202,7 +212,8 @@ impl PyDataloader {
         item_concurrency=1,
         items_in_parallel=None,
         runtime_threads=None,
-        transform=None
+        transform=None,
+        return_indices=false
     ))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -220,6 +231,7 @@ impl PyDataloader {
         items_in_parallel: Option<usize>,
         runtime_threads: Option<usize>,
         transform: Option<Bound<'_, PyAny>>,
+        return_indices: bool,
     ) -> PyResult<Self> {
         if let Some(n) = items_in_parallel {
             PyErr::warn(
@@ -286,12 +298,14 @@ impl PyDataloader {
         };
         Ok(Self {
             inner: core_for(py, &dataset, options)?,
+            return_indices,
         })
     }
 
     fn __iter__(slf: Py<Self>, py: Python<'_>) -> PyResult<PyDataloaderIter> {
         let mut loader = slf.borrow_mut(py);
-        let inner = match &mut loader.inner {
+        let return_indices = loader.return_indices;
+        let (inner, indices) = match &mut loader.inner {
             Core::Sync(core) => {
                 // `Dataset::len` cannot fail; surface a raising `__len__` here instead
                 // of letting the core panic on it.
@@ -300,7 +314,8 @@ impl PyDataloader {
                 if let Some(err) = core.sampler_mut().take_error() {
                     return Err(err);
                 }
-                if core.has_pool() {
+                let indices = batch_indices(return_indices, &chunks);
+                let inner = if core.has_pool() {
                     // Core iterator: batch tasks on the loader's pool (one Python::attach
                     // per batch via get_batch), or with item_concurrency > 1 one attach
                     // per item in the batch's lanes. `__next__` waits with the interpreter
@@ -320,15 +335,20 @@ impl PyDataloader {
                         transform: core.transform().clone_ref(py),
                         collator: core.collator().clone_ref(py),
                     }
-                }
+                };
+                (inner, indices)
             }
             Core::Async { loader, dataset } => {
-                PyIterInner::Async(start_async(py, loader, dataset)?)
+                let (epoch, indices) = start_async(py, loader, dataset, return_indices)?;
+                (PyIterInner::Async(epoch), indices)
             }
-            Core::Rust { loader, dataset } => PyIterInner::Rust(start_async(py, loader, dataset)?),
+            Core::Rust { loader, dataset } => {
+                let (epoch, indices) = start_async(py, loader, dataset, return_indices)?;
+                (PyIterInner::Rust(epoch), indices)
+            }
         };
         drop(loader);
-        Ok(PyDataloaderIter::new(slf, inner))
+        Ok(PyDataloaderIter::new(slf, inner, indices))
     }
 
     /// Tell the garbage collector which Python objects this loader holds, so

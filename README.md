@@ -347,6 +347,10 @@ Every setting is a method of the builder; the Python argument of the same name d
 An invalid value (a `batch_size`, `item_concurrency` or `prefetch_depth` of 0, too many runtime
 threads, or both runtime settings) makes the builder panic.
 
+To know which items each batch holds, iterate with `loader.iter_with_indices()` instead of
+`loader.iter()` (in Python, `PyDataloader(..., return_indices=True)`): each batch comes with the
+dataset indices of its items, in the order the sampler drew them.
+
 Some rules of thumb, all measured by the [Rust benchmarks](benches/README.md#reference-results):
 
 - **Cheap items** (in memory, a few microseconds each): keep `num_workers = 0`. Handing a batch

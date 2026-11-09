@@ -384,7 +384,9 @@ class PyDataloaderIter:
     """
 
     def __iter__(self) -> PyDataloaderIter: ...
-    def __next__(self) -> Any: ...
+    def __next__(self) -> Any:
+        """The next batch; ``(batch, indices)`` with ``return_indices=True``."""
+        ...
     def __len__(self) -> int:
         """Return the number of batches not yet consumed in this epoch."""
         ...
@@ -456,6 +458,13 @@ class PyDataloader:
         its type. A :mod:`dataloader_rs.transforms` ``Transform`` (or
         ``Compose``) instead runs in Rust, without the interpreter, on
         ``bytes`` items. Default: ``None``, items as fetched.
+    return_indices:
+        If ``True``, each batch comes as the tuple ``(batch, indices)``:
+        ``indices`` is a ``list`` of the dataset indices of the batch's items,
+        in the order the sampler drew them (``indices[k]`` is the index of the
+        batch's ``k``-th item), so ``coords[indices]`` gives their coordinates
+        with NumPy. Works with every dataset and *collate_fn*; the list is made
+        once per batch, when it is returned. Default: ``False``.
 
     Example
     -------
@@ -464,7 +473,7 @@ class PyDataloader:
     ...     for batch in loader:
     ...         train(batch)
 
-    Tiles fetched in Rust, decoded on the loader's threads, with their coordinates:
+    Tiles fetched, decoded and batched in Rust, with the indices of each batch:
 
     >>> tiles = HttpDataset.from_template(
     ...     "https://images.example/slide/tile?x={x}&y={y}&size=224", {"x": xs, "y": ys}
@@ -475,11 +484,12 @@ class PyDataloader:
     ...     batch_size=64,
     ...     num_workers=4,
     ...     item_concurrency=16,
-    ...     transform=lambda i, png: (decode(png), coords[i]),
-    ...     collate_fn=lambda items: tuple(map(np.stack, zip(*items))),
+    ...     transform=transforms.Compose([transforms.Decode(), transforms.ToRgb()]),
+    ...     collate_fn=ImageCollator(),
+    ...     return_indices=True,
     ... )
-    >>> for images, tile_coords in loader:
-    ...     predict(images, tile_coords)
+    >>> for images, indices in loader:
+    ...     predict(images, coords[indices])
     """
 
     def __init__(
@@ -497,6 +507,7 @@ class PyDataloader:
         items_in_parallel: int | None = None,
         runtime_threads: int | None = None,
         transform: Callable[[int, Any], Any] | transforms.Transform | None = None,
+        return_indices: bool = False,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""

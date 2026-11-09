@@ -151,6 +151,7 @@ the dataset read-only, or protect the state it changes with a lock.
 | `collate_fn` | `None` | A function `list[sample] -> batch`. Without it, a batch is a `list`. |
 | `drop_last` | `False` | Drops the last batch of an epoch when it is smaller than `batch_size`. |
 | `item_concurrency` | `1` | The number of items of one batch fetched in parallel, with one `__getitem__` call each (see [I/O-bound datasets](#io-bound-datasets)). Its former name, `items_in_parallel`, is still accepted with a `DeprecationWarning`. |
+| `return_indices` | `False` | Each batch comes as `(batch, indices)`: `indices` is a `list` of the dataset indices of the batch's items, in the order the sampler drew them (see [Per-item metadata](#per-item-metadata)). |
 | `runtime_threads` | `None` | For async and Rust datasets only: the number of threads of the loader's tokio runtime, from 1 to 1024. `None` means one per CPU available to the process. It raises `ValueError` with a `PyDataset`. |
 
 `len(loader)` is the number of batches per epoch, and `len(iterator)` is the number of batches
@@ -295,7 +296,9 @@ batches and writes the next ones into them: a fresh 38.5 MB float32 batch spends
 of its collation on page faults. It never waits for a buffer, so holding batches only costs
 memory.
 
-**Per-item metadata.** Batches follow the sampler's order (sequential by default), so batch `k`
+### Per-item metadata
+
+Batches follow the sampler's order (sequential by default), so batch `k`
 holds the items from `k * batch_size` on, and you can slice your coordinates the same way. You
 can also pair each image with its metadata in a Python transform; `ImageCollator` then returns
 `(batch, [metadata])`:
