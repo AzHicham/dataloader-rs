@@ -9,13 +9,13 @@
 | `sampler/` | `Sampler`, `SequentialSampler`, `RandomSampler`, `DistributedSampler` and `BatchSampler`. | [sampler/README.md](sampler/README.md) |
 | `collator/` | `Collator`, `VecCollator`, `DefaultCollator` and its `DefaultCollate` trait, `TorchPinnedCollator`, and `ImageCollator` with its `ImageBatch` (feature `image`). | [collator/README.md](collator/README.md) |
 | `image/` | Feature `image`: the `Image<T, L>` type, `Decode`, and the colour, crop, pad, resize, flip, rotate, float conversion, normalisation and layout transforms; `ImageError`. | [image/README.md](image/README.md) |
-| `loader/` | `DataLoader`, `DataLoaderBuilder`, `DataLoaderIter`, `SyncSource` and `AsyncSource`, and the worker threads. | [loader/README.md](loader/README.md) |
+| `loader/` | `DataLoader`, `DataLoaderBuilder`, `DataLoaderIter`, `IndexedIter`, `SyncSource` and `AsyncSource`, and the worker threads. | [loader/README.md](loader/README.md) |
 | `python/` | The PyO3 module behind the Python package (feature `python`). | [python/README.md](python/README.md) |
 
 Top-level re-exports: `Dataset`, `IterableDataset`, `Sampler`, `SequentialSampler`,
 `RandomSampler`, `DistributedSampler`, `BatchSampler`, `Collator`, `VecCollator`, `DataLoader`,
-`DataLoaderBuilder`, `DataLoaderIter`, `SyncSource`, `Transform`, `Identity`, `Error`, `Result`;
-feature `async`: `AsyncDataset`, `AsyncSource`, `MAX_RUNTIME_THREADS`.
+`DataLoaderBuilder`, `DataLoaderIter`, `IndexedIter`, `SyncSource`, `Transform`, `Identity`,
+`Error`, `Result`; feature `async`: `AsyncDataset`, `AsyncSource`, `MAX_RUNTIME_THREADS`.
 
 ## The `Dataset` contract
 

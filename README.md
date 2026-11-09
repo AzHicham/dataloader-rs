@@ -187,7 +187,7 @@ transforms, async datasets, the built-in datasets, errors, and how threads and t
 | Sampler | Chooses the order of the indices in each epoch. | `SequentialSampler` (the default), `RandomSampler`, `DistributedSampler` |
 | Transform | Turns each item into what the collator needs (decoding, augmentation). It receives the item and its index, and runs on the loader's threads. | `Identity` (the default), any closure `Fn(usize, Item) -> Result<Output>`, the image operations |
 | Collator | Turns the items of a batch into one batch value. | `VecCollator` (the default: a `Vec`), `DefaultCollator` (like PyTorch's `default_collate`), `ImageCollator`, `TorchPinnedCollator` |
-| Loader | Holds the pieces and the settings. Each `iter()` runs one epoch and yields the batches in order, each as a `Result`. | `DataLoader`, built with `DataLoader::builder` or `DataLoader::builder_async` |
+| Loader | Holds the pieces and the settings. Each `iter()` runs one epoch and yields the batches in order, each as a `Result`; `iter_with_indices()` yields `(indices, batch)`, the dataset indices of each batch's items. | `DataLoader`, built with `DataLoader::builder` or `DataLoader::builder_async` |
 
 In one epoch, the sampler produces the indices, the loader cuts them into batches of
 `batch_size`, and each batch is fetched, transformed item by item, and collated. The iterator

@@ -81,6 +81,6 @@ pub use dataset::{Dataset, IterableDataset};
 pub use error::{Error, Result};
 #[cfg(feature = "async")]
 pub use loader::{AsyncSource, MAX_RUNTIME_THREADS};
-pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter, SyncSource};
+pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter, IndexedIter, SyncSource};
 pub use sampler::{BatchSampler, DistributedSampler, RandomSampler, Sampler, SequentialSampler};
 pub use transform::{Identity, Transform};

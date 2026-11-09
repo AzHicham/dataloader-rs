@@ -13,7 +13,7 @@ mod sync;
 pub use asynchronous::MAX_RUNTIME_THREADS;
 pub use builder::DataLoaderBuilder;
 pub use dataloader::DataLoader;
-pub use iter::DataLoaderIter;
+pub use iter::{DataLoaderIter, IndexedIter};
 #[cfg(feature = "async")]
 pub use source::AsyncSource;
 pub use source::{LoaderSource, SyncSource};
