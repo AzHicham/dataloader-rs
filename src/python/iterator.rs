@@ -3,12 +3,13 @@ use std::time::{Duration, Instant};
 use pyo3::prelude::*;
 use pyo3::{PyTraverseError, PyVisit};
 
+use crate::loader::{DataLoaderIter, SyncSource};
 use crate::python::collator::PyCollator;
 use crate::python::dataloader::PyDataloader;
 use crate::python::dataset::{Fetcher, PyDataset};
 use crate::python::into_py_err;
 
-type CorePyDataloaderIter = crate::loader::DataLoaderIter<PyDataset, PyCollator>;
+type CorePyDataloaderIter = DataLoaderIter<SyncSource<PyDataset>, PyCollator>;
 
 /// How long `__next__` waits with the interpreter released before it runs
 /// signal handlers: Ctrl-C ends a wait within this.

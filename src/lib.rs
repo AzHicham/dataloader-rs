@@ -67,8 +67,12 @@ pub mod transform;
 // ── Top-level re-exports ──────────────────────────────────────────────────────
 
 pub use collator::{Collator, VecCollator};
+#[cfg(feature = "async")]
+pub use dataset::AsyncDataset;
 pub use dataset::{Dataset, IterableDataset};
 pub use error::{Error, Result};
-pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter};
+#[cfg(feature = "async")]
+pub use loader::{AsyncSource, MAX_RUNTIME_THREADS};
+pub use loader::{DataLoader, DataLoaderBuilder, DataLoaderIter, SyncSource};
 pub use sampler::{BatchSampler, DistributedSampler, RandomSampler, Sampler, SequentialSampler};
 pub use transform::{Identity, Transform};

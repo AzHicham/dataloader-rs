@@ -1,3 +1,9 @@
+#[cfg(feature = "async")]
+mod async_dataset;
+
+#[cfg(feature = "async")]
+pub use async_dataset::AsyncDataset;
+
 use crate::error::Result;
 
 /// Map-style dataset: random access by index.

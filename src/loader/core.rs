@@ -4,18 +4,26 @@ use crate::{
     collator::{Collator, VecCollator},
     dataset::Dataset,
     error::Result,
-    loader::{builder::DataLoaderBuilder, iter::DataLoaderIter},
+    loader::{
+        builder::DataLoaderBuilder,
+        iter::DataLoaderIter,
+        source::{EpochSettings, LoaderSource, SyncSource},
+    },
     sampler::{BatchSampler, Sampler, SequentialSampler},
     transform::{Identity, Transform},
 };
+#[cfg(feature = "async")]
+use crate::{dataset::AsyncDataset, loader::source::AsyncSource};
 
 /// High-performance DataLoader with a PyTorch-like interface.
 ///
 /// The dataset fetches items; the loader applies its [`Transform`] to each one
 /// (`T`, [`Identity`] unless set with
 /// [`transform`](DataLoaderBuilder::transform)), then collates them with `C`.
-pub struct DataLoader<D, S: Sampler, C, T = Identity> {
-    pub(super) dataset: Arc<D>,
+/// `Src` holds the dataset: [`SyncSource`] for a [`Dataset`], `AsyncSource` for
+/// an `AsyncDataset` (feature `async`).
+pub struct DataLoader<Src, S: Sampler, C, T = Identity> {
+    pub(super) source: Src,
     pub(super) batch_sampler: BatchSampler<S>,
     pub(super) transform: Arc<T>,
     pub(super) collator: Arc<C>,
@@ -102,54 +110,69 @@ impl LoaderPool {
     }
 }
 
-impl<D: Dataset> DataLoader<D, SequentialSampler, VecCollator> {
+impl<D: Dataset> DataLoader<SyncSource<D>, SequentialSampler, VecCollator> {
     /// Create a [`DataLoaderBuilder`] starting with [`SequentialSampler`] and
     /// [`VecCollator`] as defaults.
-    pub fn builder(dataset: D) -> DataLoaderBuilder<D, SequentialSampler, VecCollator> {
-        DataLoaderBuilder::new(dataset)
+    pub fn builder(dataset: D) -> DataLoaderBuilder<SyncSource<D>, SequentialSampler, VecCollator> {
+        DataLoaderBuilder::new(SyncSource::new(dataset))
     }
 }
 
-impl<D, S, C, T> DataLoader<D, S, C, T>
+#[cfg(feature = "async")]
+impl<A: AsyncDataset> DataLoader<AsyncSource<A>, SequentialSampler, VecCollator> {
+    /// Create a [`DataLoaderBuilder`] for an [`AsyncDataset`], with the same options and
+    /// defaults as [`builder`](DataLoader::builder).
+    ///
+    /// Items are fetched by futures on a tokio runtime (the loader's own, one thread per CPU
+    /// by default, see [`runtime_threads`](DataLoaderBuilder::runtime_threads); or the
+    /// caller's through [`runtime`](DataLoaderBuilder::runtime)) and collated on the loader's
+    /// thread pool, then returned in epoch order by the same iterator. `num_workers` batches
+    /// (at least one) are fetched at once, each with `item_concurrency` items in flight: at
+    /// most `num_workers × item_concurrency` fetches run at a time.
+    pub fn builder_async(
+        dataset: A,
+    ) -> DataLoaderBuilder<AsyncSource<A>, SequentialSampler, VecCollator> {
+        DataLoaderBuilder::new(AsyncSource::new(dataset))
+    }
+}
+
+impl<Src, S, C, T> DataLoader<Src, S, C, T>
 where
-    D: Dataset,
+    Src: LoaderSource,
     S: Sampler,
-    T: Transform<D::Item>,
+    T: Transform<Src::Item>,
     C: Collator<T::Output>,
 {
     /// Start one epoch of iteration.
     ///
     /// Advances the sampler (hence `&mut self`); the returned iterator does
     /// not borrow the loader.
-    pub fn iter(&mut self) -> DataLoaderIter<D, C, T>
-    where
-        C::Batch: Send + 'static,
-    {
-        let chunks = self.batch_sampler.batch_indices(self.dataset.len());
+    pub fn iter(&mut self) -> DataLoaderIter<Src, C, T> {
+        let chunks = self.batch_sampler.batch_indices(self.source.len());
         self.iter_chunks(chunks)
     }
 
     /// Start one epoch over `chunks`, the batches of indices of
     /// [`epoch_chunks`](Self::epoch_chunks).
-    pub(crate) fn iter_chunks(&mut self, chunks: Vec<Vec<usize>>) -> DataLoaderIter<D, C, T>
-    where
-        C::Batch: Send + 'static,
-    {
-        DataLoaderIter::new(
-            &self.dataset,
+    pub(crate) fn iter_chunks(&mut self, chunks: Vec<Vec<usize>>) -> DataLoaderIter<Src, C, T> {
+        let settings = EpochSettings {
+            num_workers: self.num_workers,
+            item_concurrency: self.item_concurrency,
+            prefetch_depth: self.prefetch_depth,
+        };
+        let pool = self.pool.as_mut().map(LoaderPool::get);
+        DataLoaderIter::new(self.source.epoch(
             &self.transform,
             &self.collator,
-            self.pool.as_mut().map(LoaderPool::get),
-            self.item_concurrency,
-            self.num_workers,
-            self.prefetch_depth,
+            pool,
+            settings,
             chunks,
-        )
+        ))
     }
 
     /// Reference to the underlying dataset.
-    pub fn dataset(&self) -> &D {
-        &self.dataset
+    pub fn dataset(&self) -> &Src::Dataset {
+        self.source.dataset()
     }
 
     /// Reference to the transform.
@@ -188,7 +211,7 @@ where
     /// Generate batch index chunks for one epoch, advancing the sampler.
     #[cfg(feature = "python")]
     pub(crate) fn epoch_chunks(&mut self) -> Vec<Vec<usize>> {
-        self.batch_sampler.batch_indices(self.dataset.len())
+        self.batch_sampler.batch_indices(self.source.len())
     }
 
     /// Number of batches `n_indices` sampled indices are grouped into, for a
@@ -200,7 +223,7 @@ where
 
     /// Total number of samples in the dataset.
     pub fn len(&self) -> usize {
-        self.dataset.len()
+        self.source.len()
     }
 
     /// Total number of batches for one epoch with current batch settings.
@@ -208,25 +231,24 @@ where
     /// Counts what the sampler yields, so a sharding or subsampling sampler
     /// (e.g. [`DistributedSampler`](crate::DistributedSampler)) is accounted for.
     pub fn batch_len(&self) -> usize {
-        self.batch_sampler.len(self.dataset.len())
+        self.batch_sampler.len(self.source.len())
     }
 
     /// Returns `true` when the dataset is empty.
     pub fn is_empty(&self) -> bool {
-        self.dataset.is_empty()
+        self.source.len() == 0
     }
 }
 
-impl<D, S, C, T> IntoIterator for &mut DataLoader<D, S, C, T>
+impl<Src, S, C, T> IntoIterator for &mut DataLoader<Src, S, C, T>
 where
-    D: Dataset,
+    Src: LoaderSource,
     S: Sampler,
-    T: Transform<D::Item>,
+    T: Transform<Src::Item>,
     C: Collator<T::Output>,
-    C::Batch: Send + 'static,
 {
     type Item = Result<C::Batch>;
-    type IntoIter = DataLoaderIter<D, C, T>;
+    type IntoIter = DataLoaderIter<Src, C, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -247,7 +269,7 @@ mod tests {
         collator::{Collator, VecCollator},
         dataset::Dataset,
         error::Result,
-        loader::{DataLoader, core::LoaderPool},
+        loader::{DataLoader, SyncSource, core::LoaderPool},
         sampler::{RandomSampler, Sampler, SequentialSampler},
     };
 
@@ -327,7 +349,7 @@ mod tests {
         }
     }
 
-    fn counting(len: usize) -> DataLoader<CountingDs, SequentialSampler, VecCollator> {
+    fn counting(len: usize) -> DataLoader<SyncSource<CountingDs>, SequentialSampler, VecCollator> {
         DataLoader::builder(CountingDs { len }).build()
     }
 
@@ -887,7 +909,9 @@ mod tests {
         assert!(names.len() <= 6, "pool must have 2 x 3 threads: {names:?}");
     }
 
-    fn pool_threads<S: Sampler, C>(loader: &DataLoader<CountingDs, S, C>) -> Option<usize> {
+    fn pool_threads<S: Sampler, C>(
+        loader: &DataLoader<SyncSource<CountingDs>, S, C>,
+    ) -> Option<usize> {
         loader.pool.as_ref().map(LoaderPool::threads)
     }
 
