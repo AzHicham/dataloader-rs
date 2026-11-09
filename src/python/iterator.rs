@@ -8,6 +8,7 @@ use crate::python::collator::{PyBatch, PyCollator};
 use crate::python::dataloader::PyDataloader;
 use crate::python::dataset::{Fetcher, PyAsyncItems, PyDataset, RustSource};
 use crate::python::error::into_py_err;
+use crate::python::pool::exiting;
 use crate::python::transform::PyTransform;
 use crate::transform::Transform;
 
@@ -65,19 +66,45 @@ where
     Ok(next.map(|batch| batch.map_err(into_py_err)))
 }
 
+/// How long dropping an iterator waits for the batches in flight.
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[pyclass(name = "PyDataloaderIter", module = "dataloader_rs")]
 pub struct PyDataloaderIter {
+    /// Dropped first: the epoch ends before its loader is freed.
+    inner: PyIterInner,
     /// Keeps the `PyDataloader` alive while the iterator exists.
     _owner: Py<PyDataloader>,
-    inner: PyIterInner,
+}
+
+/// Stop the epoch before it is dropped: wait, with the interpreter released,
+/// for the tasks in flight to finish their batch (at most [`STOP_TIMEOUT`]).
+/// They hold the dataset, transform and collator; once they are gone, this
+/// thread drops the last references the epoch has, so a reference cycle
+/// through them is freed by the `gc.collect()` that frees the iterator.
+/// Not while the interpreter shuts down: the tasks cannot attach any more.
+impl Drop for PyDataloaderIter {
+    fn drop(&mut self) {
+        if exiting() {
+            return;
+        }
+        Python::try_attach(|py| {
+            py.detach(|| match &mut self.inner {
+                PyIterInner::Direct { .. } => true,
+                PyIterInner::Threaded(inner) => inner.stop(STOP_TIMEOUT),
+                PyIterInner::Async(inner) => inner.stop(STOP_TIMEOUT),
+                PyIterInner::Rust(inner) => inner.stop(STOP_TIMEOUT),
+            })
+        });
+    }
 }
 
 impl PyDataloaderIter {
     /// An epoch of `owner`.
     pub(crate) fn new(owner: Py<PyDataloader>, inner: PyIterInner) -> Self {
         Self {
-            _owner: owner,
             inner,
+            _owner: owner,
         }
     }
 

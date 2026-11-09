@@ -223,7 +223,8 @@ Dropping an iterator mid-epoch (a `break`, an error, `drop`) marks the epoch can
 tasks stop claiming. A task in the middle of a batch finishes it in the background and its
 result is discarded; `drop` itself **does not wait**. On the async path, dropping the iterator
 aborts the driver task, which drops (and so aborts) every batch task and their futures: requests
-in flight are cancelled, not finished.
+in flight are cancelled, not finished. The Python binding waits for those tasks before it drops
+an iterator (section 6.5).
 
 ### 4.4 `fork()`
 
@@ -323,12 +324,15 @@ raise.
 
 ### 6.5 Dropping an iterator
 
-Dropping a `PyDataloaderIter` cancels its epoch without waiting (section 4.3), so it never holds
-the interpreter while waiting on a worker: a `break` or a garbage-collected iterator cannot
-deadlock. A batch already running keeps calling the dataset in the background until it
-completes. Loaders and iterators are not tied to a thread: any thread may use or drop them (one at
-a time; PyO3's borrow check refuses concurrent use), and they report the Python objects they hold
-to the garbage collector (`__traverse__`), so reference cycles through a loader are freed.
+Dropping a `PyDataloaderIter` cancels its epoch (section 4.3), then waits, with the interpreter
+released, for the batch tasks in flight to finish their batch and exit, at most 5 s: they hold
+the dataset, transform and collator, so a `break` or a garbage-collected iterator cannot
+deadlock, and once the drop returns nothing but the loader refers to them. Loaders and iterators
+are not tied to a thread: any thread may use or drop them (one at a time; PyO3's borrow check
+refuses concurrent use), and they report the Python objects they hold to the garbage collector
+(`__traverse__`), so a reference cycle through a loader is freed by one `gc.collect()` once no
+batch is running Python code on it. While the interpreter shuts down (after `atexit`), drops do
+not wait: the pool's threads can no longer attach.
 
 ## 7. Design choices
 

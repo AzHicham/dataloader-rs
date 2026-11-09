@@ -250,7 +250,11 @@ def test_transform_picks_coordinates_by_index():
 
 @pytest.mark.parametrize("num_workers", [0, 2])
 def test_loader_with_a_transform_in_a_reference_cycle_is_collected(num_workers):
-    """A loader kept by an object that its transform is bound to is freed by gc."""
+    """A loader kept by an object that its transform is bound to is freed by gc.
+
+    The iterator has every batch, so no transform call is running (see
+    test_loader_in_a_reference_cycle_is_collected).
+    """
 
     class Pipeline:
         def __init__(self):
@@ -264,7 +268,7 @@ def test_loader_with_a_transform_in_a_reference_cycle_is_collected(num_workers):
     pipeline = Pipeline()
     assert list(pipeline.loader) == [[0, 2, 4, 6], [8, 10, 12, 14]]
     pipeline.it = iter(pipeline.loader)
-    next(pipeline.it)
+    assert [next(pipeline.it), next(pipeline.it)] == [[0, 2, 4, 6], [8, 10, 12, 14]]
     ref = weakref.ref(pipeline)
     del pipeline
     gc.collect()

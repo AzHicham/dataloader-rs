@@ -1,17 +1,18 @@
 //! [`AsyncEpoch`]: an [`AsyncDataset`] fetched on a tokio runtime, transformed and collated
 //! on the loader's rayon pool, delivered to the consumer through a bounded channel.
 
+use std::convert::Infallible;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::thread;
 #[cfg(feature = "python")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "python")]
 use crossbeam_channel::RecvTimeoutError;
-use crossbeam_channel::{Receiver, unbounded};
+use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use futures_util::stream::{self, StreamExt, TryStreamExt};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 use tokio::task::{JoinError, JoinHandle};
@@ -59,11 +60,15 @@ type Delivery<B> = (thread::Result<Result<B>>, OwnedSemaphorePermit);
 /// task, so its fetches progress while the driver waits for room in the channel.
 ///
 /// Dropping the epoch aborts the driver, which drops (and so aborts) every batch task and
-/// their fetches; it never waits for them.
+/// their fetches; it never waits for them. The Python binding does (`stop`).
 pub struct AsyncEpoch<B> {
     rx: Receiver<Delivery<B>>,
     remaining: usize,
     _driver: AbortOnDrop<()>,
+    /// Disconnected once the driver, every batch task and every job they put on the pool
+    /// are gone: each holds a clone of its sender.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    exited: Receiver<Infallible>,
     /// Keeps the loader's runtime alive while the epoch runs.
     _runtime: LoaderRuntime,
     /// The process that started the epoch: a `fork()`ed child has no runtime threads.
@@ -91,6 +96,7 @@ impl<B: Send + 'static> AsyncEpoch<B> {
         } = settings;
         let remaining = chunks.len();
         let (tx, rx) = unbounded();
+        let (alive, exited) = bounded(0);
         let room = Arc::new(Semaphore::new(prefetch_depth));
         let dataset = Arc::clone(&source.dataset);
         let transform = Arc::clone(transform);
@@ -106,6 +112,7 @@ impl<B: Send + 'static> AsyncEpoch<B> {
                         Arc::clone(&transform),
                         Arc::clone(&collator),
                         Arc::clone(&pool),
+                        alive.clone(),
                         indices,
                         item_concurrency,
                     );
@@ -134,6 +141,7 @@ impl<B: Send + 'static> AsyncEpoch<B> {
             rx,
             remaining,
             _driver: AbortOnDrop(driver),
+            exited,
             _runtime: runtime.clone(),
             pid: std::process::id(),
         }
@@ -194,6 +202,19 @@ impl<B: Send + 'static> BatchStream<B> for AsyncEpoch<B> {
         };
         Some(Some(self.take(delivery)))
     }
+
+    /// Abort the driver, which aborts the batch tasks, and wait for them and their pool jobs.
+    #[cfg(feature = "python")]
+    fn stop(&mut self, timeout: Duration) -> bool {
+        self.remaining = 0;
+        self._driver.0.abort();
+        // A forked child has no runtime threads: nothing there ever exits.
+        self.pid == std::process::id()
+            && matches!(
+                self.exited.recv_timeout(timeout),
+                Err(RecvTimeoutError::Disconnected)
+            )
+    }
 }
 
 /// One batch: fetch its items (`get_batch`, or `get` with `item_concurrency` in flight),
@@ -205,6 +226,7 @@ async fn load_batch<A, T, C>(
     transform: Arc<T>,
     collator: Arc<C>,
     pool: Arc<rayon::ThreadPool>,
+    alive: Sender<Infallible>,
     indices: Vec<usize>,
     item_concurrency: usize,
 ) -> Result<C::Batch>
@@ -215,39 +237,42 @@ where
 {
     if item_concurrency == 1 {
         let items = dataset.get_batch(&indices).await?;
-        return on_pool(&pool, move || {
+        return on_pool(&pool, &alive, move || {
             collator.collate(apply_all(&*transform, &indices, items)?)
         })
         .await;
     }
     let items: Vec<T::Output> = stream::iter(indices.iter().copied())
         .map(|index| {
-            let (dataset, transform, pool) = (&dataset, &transform, &pool);
+            let (dataset, transform, pool, alive) = (&dataset, &transform, &pool, &alive);
             async move {
                 let item = dataset.get(index).await?;
                 if transform.is_identity() {
                     return transform.apply(index, item);
                 }
                 let transform = Arc::clone(transform);
-                on_pool(pool, move || transform.apply(index, item)).await
+                on_pool(pool, alive, move || transform.apply(index, item)).await
             }
         })
         .buffered(item_concurrency)
         .try_collect()
         .await?;
-    on_pool(&pool, move || collator.collate(items)).await
+    on_pool(&pool, &alive, move || collator.collate(items)).await
 }
 
-/// Run `job` on the rayon pool and await its result. A panic in `job` is resumed here.
-async fn on_pool<R, F>(pool: &rayon::ThreadPool, job: F) -> Result<R>
+/// Run `job` on the rayon pool and await its result. A panic in `job` is resumed here. The
+/// job holds a clone of `alive` (see [`AsyncEpoch`]) until it has run.
+async fn on_pool<R, F>(pool: &rayon::ThreadPool, alive: &Sender<Infallible>, job: F) -> Result<R>
 where
     R: Send + 'static,
     F: FnOnce() -> Result<R> + Send + 'static,
 {
     let (tx, rx) = oneshot::channel();
+    let alive = alive.clone();
     pool.spawn(move || {
         // A panic must not escape: rayon aborts the process on a panicking `spawn`.
         let _ = tx.send(catch_unwind(AssertUnwindSafe(job)));
+        drop(alive);
     });
     match rx.await {
         Ok(Ok(result)) => result,

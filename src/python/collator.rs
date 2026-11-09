@@ -1,4 +1,4 @@
-use crate::{collator::Collator, error::Result};
+use crate::{collator::Collator, error::Result, python::pool::attach};
 use pyo3::{prelude::*, types::PyList};
 
 pub(crate) enum PyBatch {
@@ -56,7 +56,7 @@ impl Collator<Py<PyAny>> for PyCollator {
             // Fast path: keep raw items and convert to Python list in __next__,
             // avoiding Python API work in the worker thread.
             None => Ok(PyBatch::Items(items)),
-            Some(_) => Python::attach(|py| self.collate_with_py(py, items)),
+            Some(_) => attach(|py| self.collate_with_py(py, items)),
         }
     }
 }

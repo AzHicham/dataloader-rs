@@ -1,7 +1,7 @@
 //! [`DataLoaderIter`]: one epoch of a loader, whatever its source.
 
 #[cfg(feature = "python")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::{
     collator::Collator,
@@ -29,6 +29,11 @@ pub trait BatchStream<B> {
     /// already arrived; `None` if not, so that the caller can wait again.
     #[cfg(feature = "python")]
     fn next_until(&mut self, deadline: Option<Instant>) -> Option<Option<Result<B>>>;
+
+    /// End the epoch and wait up to `timeout` for its background work to
+    /// exit; `true` if it did, so that nothing it held is left.
+    #[cfg(feature = "python")]
+    fn stop(&mut self, timeout: Duration) -> bool;
 }
 
 // ── DataLoaderIter ────────────────────────────────────────────────────────────
@@ -65,6 +70,14 @@ where
         deadline: Option<Instant>,
     ) -> Option<Option<Result<C::Batch>>> {
         self.epoch.next_until(deadline)
+    }
+
+    /// End the epoch and wait up to `timeout` for the tasks in flight, so that
+    /// the Python objects they hold are released on the caller's thread.
+    /// Called with the interpreter released: the tasks may need it to finish.
+    #[cfg(feature = "python")]
+    pub(crate) fn stop(&mut self, timeout: Duration) -> bool {
+        self.epoch.stop(timeout)
     }
 }
 

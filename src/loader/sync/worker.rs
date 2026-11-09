@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
     Arc, Mutex, PoisonError,
@@ -209,17 +210,25 @@ where
 
     /// Start batch tasks until `max_tasks` run or nothing is claimable.
     /// Costs a few atomic loads when all tasks are running.
-    pub(super) fn spawn_tasks(self: &Arc<Self>) {
+    ///
+    /// Each task holds a clone of `alive` and drops it after its share of the
+    /// epoch: the receiver disconnects once no task holds the epoch any more.
+    pub(super) fn spawn_tasks(self: &Arc<Self>, alive: &Sender<Infallible>) {
         while self.reserve_task() {
             let epoch = Arc::clone(self);
-            self.pool.spawn(move || epoch.run());
+            let alive = alive.clone();
+            self.pool.spawn(move || {
+                epoch.run();
+                drop(epoch);
+                drop(alive);
+            });
         }
     }
 
     /// Publish the consumer's position, opening the window for more batches.
-    pub(super) fn advance(self: &Arc<Self>, next_out: usize) {
+    pub(super) fn advance(self: &Arc<Self>, next_out: usize, alive: &Sender<Infallible>) {
         self.next_out.store(next_out, Ordering::SeqCst);
-        self.spawn_tasks();
+        self.spawn_tasks(alive);
     }
 
     pub(super) fn cancel(&self) {

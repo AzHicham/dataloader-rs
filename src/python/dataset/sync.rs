@@ -1,6 +1,6 @@
 use std::slice;
 
-use crate::{dataset::Dataset, error::Result};
+use crate::{dataset::Dataset, error::Result, python::pool::attach};
 use pyo3::exceptions::{PyNotImplementedError, PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
@@ -136,7 +136,7 @@ impl Dataset for PyDataset {
     type Item = Py<PyAny>;
 
     fn get(&self, index: usize) -> Result<Self::Item> {
-        Python::attach(|py| get_item_py(self, py, index).map_err(|e| e.into()))
+        Ok(attach(|py| get_item_py(self, py, index))?)
     }
 
     /// Acquire the Python thread state once for the entire batch rather than
@@ -146,7 +146,7 @@ impl Dataset for PyDataset {
     /// Uses `__getitems__` when the dataset defines it, else a cached bound
     /// `__getitem__` (one attribute lookup per batch, not per item).
     fn get_batch(&self, indices: &[usize]) -> Result<Vec<Py<PyAny>>> {
-        Python::attach(|py| Fetcher::new(self, py)?.fetch(py, indices)).map_err(Into::into)
+        Ok(attach(|py| Fetcher::new(self, py)?.fetch(py, indices))?)
     }
 
     fn len(&self) -> usize {

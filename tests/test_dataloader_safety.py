@@ -207,7 +207,13 @@ def test_loader_iterated_and_dropped_on_other_threads():
 
 @pytest.mark.parametrize("num_workers", [0, 2])
 def test_loader_in_a_reference_cycle_is_collected(num_workers):
-    """A loader and iterator kept by an object that its collate_fn is bound to are freed by gc."""
+    """A loader and iterator kept by an object that its collate_fn is bound to are freed by gc.
+
+    The iterator has every batch but is not exhausted. A batch still being collated is not
+    garbage: the pool thread's frame refers to the object until collate_fn returns. Batch
+    tasks may still hold the epoch after delivering it: dropping the iterator waits for them,
+    so this collect frees everything.
+    """
 
     class Pipeline:
         def __init__(self):
@@ -224,7 +230,7 @@ def test_loader_in_a_reference_cycle_is_collected(num_workers):
     pipeline = Pipeline()
     assert list(pipeline.loader) == [[0, 1, 2, 3], [4, 5, 6, 7]]
     pipeline.it = iter(pipeline.loader)
-    next(pipeline.it)
+    assert [next(pipeline.it), next(pipeline.it)] == [[0, 1, 2, 3], [4, 5, 6, 7]]
     ref = weakref.ref(pipeline)
     del pipeline
     gc.collect()

@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import warnings
+import weakref
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -665,6 +666,34 @@ def test_aclose_is_awaited_once_on_the_loop_when_the_loader_is_dropped(num_worke
     del loader
     gc.collect()
     assert dataset.session.closed_on == [dataset.session.loop]
+
+
+@pytest.mark.parametrize("num_workers", [0, 2])
+def test_async_loader_in_a_reference_cycle_is_collected(num_workers):
+    """An async loader and its iterator kept by an object that its collate_fn is bound to are
+    freed by gc, after aclose: dropping the iterator waits for its batch tasks and pool jobs,
+    dropping the loader awaits aclose (see test_loader_in_a_reference_cycle_is_collected)."""
+
+    class Pipeline:
+        def __init__(self):
+            self.dataset = WithSession(8)
+            self.loader = DataLoader(
+                self.dataset, batch_size=4, num_workers=num_workers, collate_fn=self.collate
+            )
+
+        def collate(self, items):
+            return items
+
+    pipeline = Pipeline()
+    session = pipeline.dataset.session
+    assert list(pipeline.loader) == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    pipeline.it = iter(pipeline.loader)
+    assert [next(pipeline.it), next(pipeline.it)] == [[0, 1, 2, 3], [4, 5, 6, 7]]
+    ref = weakref.ref(pipeline)
+    del pipeline
+    gc.collect()
+    assert ref() is None
+    assert session.closed_on == [session.loop]
 
 
 def test_aclose_is_awaited_when_no_item_was_loaded():

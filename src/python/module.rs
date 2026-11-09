@@ -14,6 +14,10 @@ use crate::python::{
 
 #[pymodule(gil_used = false)]
 fn dataloader_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // PyO3 asserts, on the first attach from a thread that is not attached, that the
+    // interpreter is initialized. Do that first attach here: a pool thread attaching while
+    // the interpreter finishes shutting down would panic on it instead of being refused.
+    m.py().detach(|| Python::try_attach(|_| ()));
     m.add_class::<PyDataloader>()?;
     m.add_class::<PyDataloaderIter>()?;
     m.add_class::<PyDatasetBase>()?;

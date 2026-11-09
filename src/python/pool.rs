@@ -7,9 +7,11 @@
 //! loop detached, so attaching from a task only re-activates their thread
 //! state.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once, PoisonError, Weak};
 use std::thread;
 
+use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 /// Main function of the loader's pool threads.
@@ -26,6 +28,18 @@ pub(crate) fn run_attached(thread: rayon::ThreadBuilder) {
     }
 }
 
+/// [`Python::attach`] for the loader's tasks, with an error instead of a panic once the
+/// interpreter is finalizing: a pool thread that started too late to attach for its whole
+/// life may still run a task of an epoch left unfinished at exit.
+pub(crate) fn attach<R, E>(f: impl for<'py> FnOnce(Python<'py>) -> Result<R, E>) -> Result<R, E>
+where
+    E: From<PyErr>,
+{
+    Python::try_attach(f).unwrap_or_else(|| {
+        Err(PyRuntimeError::new_err("the Python interpreter is shutting down").into())
+    })
+}
+
 /// The pools of the loaders this process created, for [`keep_pools_alive`].
 static POOLS: Mutex<Vec<Weak<rayon::ThreadPool>>> = Mutex::new(Vec::new());
 
@@ -38,6 +52,15 @@ pub(crate) fn track(pool: Weak<rayon::ThreadPool>) {
     }
 }
 
+/// Set by [`keep_pools_alive`]: the interpreter is shutting down.
+static EXITING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the interpreter is shutting down (`atexit` has run): pool threads
+/// can no longer attach, so nothing should wait for them.
+pub(crate) fn exiting() -> bool {
+    EXITING.load(Ordering::SeqCst)
+}
+
 /// Run by `atexit`, before the interpreter starts shutting down: leak a
 /// reference to every live pool, so that a loader freed during shutdown
 /// (module teardown, a reference cycle collected last) does not wake its
@@ -47,6 +70,7 @@ pub(crate) fn track(pool: Weak<rayon::ThreadPool>) {
 #[pyfunction]
 #[pyo3(name = "_keep_pools_alive")]
 pub(crate) fn keep_pools_alive() {
+    EXITING.store(true, Ordering::SeqCst);
     let pools = std::mem::take(&mut *POOLS.lock().unwrap_or_else(PoisonError::into_inner));
     for pool in pools.iter().filter_map(Weak::upgrade) {
         std::mem::forget(pool);

@@ -1,12 +1,13 @@
 //! [`ParallelCore`]: batch tasks on the loader's pool, their results put back in epoch order.
 
+use std::convert::Infallible;
 use std::sync::Arc;
 #[cfg(feature = "python")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "python")]
 use crossbeam_channel::RecvTimeoutError;
-use crossbeam_channel::{Receiver, TryRecvError, unbounded};
+use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 
 use super::worker::{Epoch, WorkerMsg};
 use crate::{
@@ -16,7 +17,9 @@ use crate::{
 // Batch tasks run on the loader's rayon pool and share the dataset,
 // transform and collator through `Arc` clones, so the iterator owns everything they touch
 // and does not borrow the loader. Dropping (or leaking) the iterator never
-// waits on them: a task in flight finishes its batch and exits.
+// waits on them: a task in flight finishes its batch and exits. The Python
+// binding waits for them first (`stop`), so that the Python objects they hold
+// are released before the iterator is gone.
 
 pub struct ParallelCore<D, T, C>
 where
@@ -33,6 +36,11 @@ where
     next_out: usize,
     /// The process that started the epoch (see [`forked`]).
     pid: u32,
+    /// Cloned into each batch task; `None` once the epoch is stopped.
+    alive: Option<Sender<Infallible>>,
+    /// Disconnected once every batch task has exited.
+    #[cfg_attr(not(feature = "python"), allow(dead_code))]
+    exited: Receiver<Infallible>,
 }
 
 impl<D, T, C> ParallelCore<D, T, C>
@@ -71,14 +79,33 @@ where
             num_workers,
             result_tx,
         ));
-        epoch.spawn_tasks();
+        let (alive, exited) = bounded(0);
+        epoch.spawn_tasks(&alive);
         Self {
             epoch,
             result_rx,
             reorder: std::iter::repeat_with(|| None).take(window).collect(),
             next_out: 0,
             pid: std::process::id(),
+            alive: Some(alive),
+            exited,
         }
+    }
+
+    /// End the epoch: no batch starts any more, and wait up to `timeout` for
+    /// the tasks in flight to finish their batch and exit, so that none holds
+    /// the dataset, transform or collator after this returns `true`.
+    #[cfg(feature = "python")]
+    pub(super) fn stop(&mut self, timeout: Duration) -> bool {
+        self.epoch.cancel();
+        self.next_out = self.epoch.len();
+        self.alive = None;
+        // A forked child has none of the parent's tasks: they never exit there.
+        self.pid == std::process::id()
+            && matches!(
+                self.exited.recv_timeout(timeout),
+                Err(RecvTimeoutError::Disconnected)
+            )
     }
 
     /// End the epoch with [`forked`] if this process is not the one that
@@ -100,7 +127,9 @@ where
         loop {
             if let Some(batch) = self.reorder[self.next_out % window].take() {
                 self.next_out += 1;
-                self.epoch.advance(self.next_out);
+                if let Some(alive) = &self.alive {
+                    self.epoch.advance(self.next_out, alive);
+                }
                 return Some(batch);
             }
             let msg = match self.result_rx.try_recv() {
