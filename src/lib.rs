@@ -41,14 +41,16 @@
 //! | [`transform`] | [`Transform`]: per-item CPU work the loader applies, closures included |
 //! | [`sampler`] | index order: sequential, random, distributed, batching |
 //! | [`collator`] | batch assembly: `Vec`, PyTorch-like `DefaultCollator`, pinned tensors |
+//! | `image` | image transforms: decode, color, crop, pad, resize, ... (feature `image`) |
 //! | [`loader`] | [`DataLoader`], its builder and iterator, the worker threads |
 //! | [`error`] | [`Error`] and [`Result`] |
 //!
 //! Features: `ndarray` and `torch-rs` add collation of `ndarray::Array` and `tch::Tensor`;
 //! `async` adds `AsyncDataset` and `DataLoader::builder_async` (items fetched by futures on
 //! tokio), with `FileDataset`; `http` adds `HttpDataset` and `object-store` adds
-//! `ObjectStoreDataset` (in `dataset`); `python` builds the PyO3 module behind the
-//! `dataloader-rs` Python package and enables the three.
+//! `ObjectStoreDataset` (in `dataset`); `image` adds the `image` module (pure-Rust decoders and
+//! image transforms); `python` builds the PyO3 module behind the `dataloader-rs` Python package
+//! and enables the four.
 //!
 //! Design, threads and failure handling:
 //! [ARCHITECTURE.md](https://github.com/AzHicham/dataloader-rs/blob/dev/ARCHITECTURE.md).
@@ -62,6 +64,8 @@
 pub mod collator;
 pub mod dataset;
 pub mod error;
+#[cfg(feature = "image")]
+pub mod image;
 pub mod loader;
 #[cfg(feature = "python")]
 pub mod python;
