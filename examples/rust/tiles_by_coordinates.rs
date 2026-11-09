@@ -1,5 +1,5 @@
-//! Tiles of a large image, fetched over HTTP by their (x, y) coordinates, decoded and batched
-//! together with their coordinates: each batch is `(images, coordinates)`.
+//! Tiles of a large image, fetched over HTTP by their (x, y) coordinates, decoded and batched;
+//! each batch comes with the indices of its tiles, which give their coordinates.
 //!
 //! This is the usual way to run a model over a very large image (a satellite image, a
 //! scanned microscope slide): a tile server cuts it into tiles on request, and the results are
@@ -16,13 +16,11 @@
 mod local_server;
 
 use std::io::Cursor;
-use std::sync::Arc;
 
-use bytes::Bytes;
-use dataloader_rs::collator::{ImageBatch, ImageCollator};
+use dataloader_rs::collator::ImageCollator;
 use dataloader_rs::dataset::{Column, HttpDataset};
-use dataloader_rs::image::{Chw, Decode, Image, Normalize, PadTo, ToChw, ToFloat, ToRgb};
-use dataloader_rs::{Collator, DataLoader, Transform, error::Result};
+use dataloader_rs::image::{Decode, Normalize, PadTo, ToChw, ToFloat, ToRgb};
+use dataloader_rs::{DataLoader, Transform, error::Result};
 
 const TILE: u32 = 224;
 /// The large image: 560 x 448 pixels, so 3 x 2 tiles, the last column only 112 pixels wide.
@@ -54,19 +52,6 @@ fn tile(path: &str) -> Option<Vec<u8>> {
         .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
         .ok()?;
     Some(png)
-}
-
-/// Collates `(image, coordinates)` items: the images into one `ImageBatch` buffer, the
-/// coordinates into a `Vec`, in the same order.
-struct TilesWithCoords(ImageCollator);
-
-impl Collator<(Image<f32, Chw>, Coords)> for TilesWithCoords {
-    type Batch = (ImageBatch<f32>, Vec<Coords>);
-
-    fn collate(&self, items: Vec<(Image<f32, Chw>, Coords)>) -> Result<Self::Batch> {
-        let (images, coords): (Vec<_>, Vec<_>) = items.into_iter().unzip();
-        Ok((self.0.collate(images)?, coords))
-    }
 }
 
 fn main() -> Result<()> {
@@ -102,30 +87,26 @@ fn main() -> Result<()> {
             [("x", xs), ("y", ys)],
         )?;
 
-    // The transform gets each item with its index, whatever order the sampler chose, so it
-    // can look up the item's coordinates and return them with the image.
     let decode = Decode::new()
         .then(ToRgb)
         .then(PadTo::new(TILE as usize, TILE as usize, 0.0)) // edge tiles padded at the right
         .then(ToFloat::default())
         .then(Normalize::imagenet())
         .then(ToChw);
-    let coords = Arc::new(coords);
-    let lookup = Arc::clone(&coords);
-    let transform = move |index: usize, png: Bytes| -> Result<(Image<f32, Chw>, Coords)> {
-        Ok((decode.apply(index, png)?, lookup[index]))
-    };
 
     let mut loader = DataLoader::builder_async(dataset)
         .batch_size(4)
         .num_workers(2)
         .item_concurrency(4) // 8 tile requests in flight
-        .transform(transform)
-        .collator(TilesWithCoords(ImageCollator::default()))
+        .transform(decode)
+        .collator(ImageCollator::default())
         .build();
 
-    for batch in &mut loader {
-        let (images, tile_coords) = batch?;
+    // Each batch comes with the dataset indices of its tiles, in the order the sampler drew
+    // them, so the coordinates are looked up here: nothing is carried through the transform.
+    for batch in loader.iter_with_indices() {
+        let (indices, images) = batch?;
+        let tile_coords: Vec<Coords> = indices.iter().map(|&i| coords[i]).collect();
         // A model would run on `images` here; the coordinates say where each result belongs.
         println!("images {:?} at {tile_coords:?}", images.shape());
     }
