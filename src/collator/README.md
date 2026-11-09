@@ -9,6 +9,7 @@ with `DataLoaderBuilder::collator`; the default is `VecCollator`.
 | `VecCollator` | `Vec<Item>`, unchanged | |
 | `DefaultCollator` | column-wise, like PyTorch's `default_collate` (below) | `ndarray` / `torch-rs` for arrays and tensors |
 | `TorchPinnedCollator<C>` | `C`'s `tch::Tensor` batch, pinned in host memory when CUDA or MPS is available | `torch-rs` |
+| `ImageCollator` | `ImageBatch<T>`: images of one shape in one buffer, `NCHW` or `NHWC`; optional buffer reuse | `image` |
 
 ## The `Collator` trait
 
@@ -91,3 +92,50 @@ the copy to a GPU. Pinning is skipped when neither CUDA nor MPS is available.
 
 `collate_fn=` takes any callable `list[sample] -> batch`; without it a batch is a `list`. It runs
 on the worker thread that fetched the batch ([python/README.md](../../python/README.md)).
+
+## `ImageCollator` (feature `image`)
+
+Collates `Image<T, L>` items (`u8` or `f32`, HWC or CHW, from the transforms of
+[`image`](../image/README.md)) into an `ImageBatch<T>`: one contiguous buffer, `NCHW` (default)
+or `NHWC`, each item copied once (transposed if its layout differs). Images of different shapes
+are an error for their batch.
+
+`reuse_buffers(n)` keeps the buffers of up to `n` dropped batches and writes the next batches
+into them. A fresh buffer costs a page fault per 4 KiB on first write: for 64 × 3 × 224 × 224
+`f32` (38.5 MB) collation takes 13.8 ms fresh and 3.6 ms reused, and a 512-tile epoch of PNG
+decoding + collation runs 19–33 % faster ([BENCH.md](../../BENCH.md)). The pool never waits:
+when no kept buffer fits, one is allocated, so a consumer holding many batches costs memory,
+never a deadlock. A batch's buffer goes back to the pool when the batch is dropped (`into_vec`
+takes it out for good).
+
+```rust
+use dataloader_rs::{DataLoader, Dataset, Transform, error::Result};
+use dataloader_rs::collator::ImageCollator;
+use dataloader_rs::image::{Decode, Normalize, PadTo, ToFloat, ToRgb};
+
+struct Tiles(Vec<bytes::Bytes>);
+
+impl Dataset for Tiles {
+    type Item = bytes::Bytes;
+    fn get(&self, index: usize) -> Result<bytes::Bytes> {
+        Ok(self.0[index].clone())
+    }
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+let loader = DataLoader::builder(Tiles(Vec::new()))
+    .batch_size(64)
+    .num_workers(4)
+    .transform(
+        Decode::new()
+            .then(ToRgb)
+            .then(PadTo::new(224, 224, 0.0))
+            .then(ToFloat::default())
+            .then(Normalize::imagenet()),
+    )
+    .collator(ImageCollator::default().reuse_buffers(8))
+    .build();
+# drop(loader);
+```

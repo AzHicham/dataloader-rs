@@ -1,16 +1,18 @@
 //! Image transforms against Pillow, numpy and torchvision (golden files made by
-//! `tests/fixtures/image/make_fixtures.py`), and against hostile input (feature `image`).
+//! `tests/fixtures/image/make_fixtures.py`), against hostile input, and through a loader with
+//! `ImageCollator` (feature `image`).
 #![cfg(feature = "image")]
 
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use dataloader_rs::Transform;
+use dataloader_rs::collator::{BatchLayout, ImageCollator};
 use dataloader_rs::error::Error;
 use dataloader_rs::image::{
     CenterCrop, Chw, Crop, Decode, DecodeLimits, Fill, Filter, HFlip, Image, ImageError, Normalize,
     Pad, PadMode, PadTo, Resize, Rotate90, ToChw, ToFloat, ToGray, ToRgb, ToRgba, VFlip,
 };
+use dataloader_rs::{DataLoader, Dataset, Transform};
 
 /// Width and height of the fixtures.
 const W: usize = 37;
@@ -462,4 +464,77 @@ fn the_msintuit_chain_is_prime_dx_bit_for_bit() {
             name,
         );
     }
+}
+
+// ── ImageCollator through a loader ───────────────────────────────────────────
+
+/// The PNG fixtures as a dataset of `Bytes`.
+struct Pngs(Vec<Bytes>);
+
+impl Dataset for Pngs {
+    type Item = Bytes;
+
+    fn get(&self, index: usize) -> dataloader_rs::Result<Bytes> {
+        Ok(self.0[index].clone())
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+#[test]
+fn the_loader_transforms_in_parallel_and_collates_one_buffer() {
+    let names = ["tile_full", "rgb", "rgba", "gray", "palette"];
+    let pngs = Pngs(
+        names
+            .iter()
+            .map(|n| Bytes::from(fixture(&format!("{n}.png"))))
+            .collect(),
+    );
+    let chain = Decode::new()
+        .then(ToRgb)
+        .then(PadTo::new(48, 48, 0.0))
+        .then(ToFloat::default())
+        .then(Normalize::imagenet());
+    for (workers, buffers) in [(0, 0), (2, 0), (2, 2)] {
+        let mut loader = DataLoader::builder(Pngs(pngs.0.clone()))
+            .batch_size(2)
+            .num_workers(workers)
+            .item_concurrency(2)
+            .transform(chain.clone())
+            .collator(ImageCollator::default().reuse_buffers(buffers))
+            .build();
+        for _epoch in 0..2 {
+            let batches: Vec<_> = loader.iter().map(Result::unwrap).collect();
+            let shapes: Vec<_> = batches.iter().map(|b| b.shape()).collect();
+            assert_eq!(shapes, [[2, 3, 48, 48], [2, 3, 48, 48], [1, 3, 48, 48]]);
+            let values: Vec<f32> = batches.iter().flat_map(|b| b.data().to_vec()).collect();
+            let expected: Vec<f32> = names
+                .iter()
+                .flat_map(|n| f32_fixture(&format!("msintuit_{n}.f32")))
+                .collect();
+            assert_bits(
+                &values,
+                &expected,
+                &format!("workers {workers}, buffers {buffers}"),
+            );
+        }
+    }
+}
+
+#[test]
+fn a_bad_image_fails_its_batch_only() {
+    let mut items: Vec<Bytes> = (0..4).map(|_| Bytes::from(fixture("rgb.png"))).collect();
+    items[2] = Bytes::from_static(b"not an image");
+    let mut loader = DataLoader::builder(Pngs(items))
+        .batch_size(2)
+        .num_workers(2)
+        .transform(Decode::new())
+        .collator(ImageCollator::new(BatchLayout::Nhwc))
+        .build();
+    let results: Vec<_> = loader.iter().collect();
+    assert_eq!(results[0].as_ref().unwrap().shape(), [2, H, W, 3]);
+    let err = results[1].as_ref().unwrap_err();
+    assert!(matches!(image_error(err), ImageError::Decode(_)), "{err}");
 }

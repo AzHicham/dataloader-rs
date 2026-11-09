@@ -14,6 +14,7 @@ mod resize;
 mod rotate;
 
 pub use buffer::{Image, MAX_CHANNELS, Sample};
+pub(crate) use buffer::{invalid, sample_count, with_capacity};
 pub use color::{ToGray, ToRgb, ToRgba};
 pub use crop::{CenterCrop, Crop};
 pub use decode::{Decode, DecodeLimits};

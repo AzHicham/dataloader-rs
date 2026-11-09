@@ -18,6 +18,9 @@ pub trait Layout:
     /// `"HWC"` or `"CHW"`.
     const NAME: &'static str;
 
+    /// Whether each channel is a plane of its own ([`Chw`]).
+    const PLANAR: bool;
+
     /// The shape of a `height × width × channels` image in this layout.
     fn shape(height: usize, width: usize, channels: usize) -> [usize; 3];
 }
@@ -37,6 +40,7 @@ impl sealed::Sealed for Chw {}
 
 impl Layout for Hwc {
     const NAME: &'static str = "HWC";
+    const PLANAR: bool = false;
 
     fn shape(height: usize, width: usize, channels: usize) -> [usize; 3] {
         [height, width, channels]
@@ -45,6 +49,7 @@ impl Layout for Hwc {
 
 impl Layout for Chw {
     const NAME: &'static str = "CHW";
+    const PLANAR: bool = true;
 
     fn shape(height: usize, width: usize, channels: usize) -> [usize; 3] {
         [channels, height, width]
