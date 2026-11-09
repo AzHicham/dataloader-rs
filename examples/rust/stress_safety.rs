@@ -1,9 +1,13 @@
-// Stress-test the safety invariants:
-// 1. Early drop with channel FULL (workers blocked on send)
-// 2. Early drop with prefetch_depth=1 (maximum backpressure)
-// 3. Multiple sequential early drops
-// 4. Drop during active parallel processing
-// 5. Reuse after panic-like early drop
+//! A stress test of early exits: iterators dropped before the end of an epoch, many times
+//! over, with workers, with a shallow prefetch and with item-level parallelism. Each case
+//! checks that dropping an iterator never hangs and that the loader still runs a full epoch
+//! afterwards.
+//!
+//! Run it with (in release mode, as it repeats each case many times):
+//!
+//! ```text
+//! cargo run --release --example stress_safety
+//! ```
 
 use dataloader_rs::{DataLoader, Dataset, error::Result};
 use std::time::Duration;
@@ -15,7 +19,7 @@ struct SlowDs {
 impl Dataset for SlowDs {
     type Item = usize;
     fn get(&self, i: usize) -> Result<usize> {
-        // Spin to simulate work
+        // Busy-wait to stand for real work.
         let target = std::time::Instant::now() + Duration::from_micros(self.delay_us);
         while std::time::Instant::now() < target {
             std::hint::spin_loop();
@@ -28,7 +32,8 @@ impl Dataset for SlowDs {
 }
 
 fn main() {
-    // Test 1: drop with channel full (depth=1, slow consumer never drains it)
+    // Test 1: drop an iterator while finished batches wait for the consumer
+    // (`prefetch_depth(1)`, and the consumer reads only one batch).
     println!("Test 1: early drop with prefetch_depth=1...");
     for _ in 0..100 {
         let mut loader = DataLoader::builder(SlowDs {
@@ -40,15 +45,15 @@ fn main() {
         .prefetch_depth(1)
         .build();
         let mut iter = loader.iter();
-        let _ = iter.next(); // consume 1, now channel is full
-        drop(iter); // must not deadlock
-        // verify reuse
+        let _ = iter.next(); // read one batch; the next ones are ready and waiting
+        drop(iter); // must not hang
+        // The loader is still usable: a full epoch follows.
         let count = loader.iter().count();
         assert_eq!(count, 20);
     }
     println!("  OK");
 
-    // Test 2: drop with 0 batches consumed (all workers potentially blocked on send)
+    // Test 2: drop an iterator before reading any batch, with 8 workers busy.
     println!("Test 2: zero-consume drop with deep prefetch...");
     for _ in 0..100 {
         let mut loader = DataLoader::builder(SlowDs {
@@ -60,13 +65,13 @@ fn main() {
         .prefetch_depth(2)
         .build();
         let iter = loader.iter();
-        drop(iter); // drop before consuming anything
+        drop(iter); // dropped before reading anything
         let count = loader.iter().count();
         assert_eq!(count, 20);
     }
     println!("  OK");
 
-    // Test 3: multiple sequential early drops
+    // Test 3: 50 early drops in a row on the same loader.
     println!("Test 3: 50 sequential early drops...");
     let mut loader = DataLoader::builder(SlowDs {
         len: 100,
@@ -78,18 +83,18 @@ fn main() {
     .build();
     for i in 0..50 {
         let mut iter = loader.iter();
-        // Alternate: drop with 0 consumed or 1 consumed
+        // Every other time, read one batch before dropping the iterator.
         if i % 2 == 0 {
             let _ = iter.next();
         }
         drop(iter);
     }
-    // Final full epoch
+    // A full epoch still follows.
     let count = loader.iter().count();
     assert_eq!(count, 20);
     println!("  OK");
 
-    // Test 4: concurrent stress — 8 workers racing on 8 batches
+    // Test 4: 8 workers on 8 batches, one batch each: every item comes out exactly once.
     println!("Test 4: 8 workers on 8 batches (1 batch/worker)...");
     for _ in 0..50 {
         let mut loader = DataLoader::builder(SlowDs {
@@ -108,7 +113,7 @@ fn main() {
     }
     println!("  OK");
 
-    // Test 5: item_concurrency + early drop
+    // Test 5: early drops while the items of each batch are fetched in parallel.
     println!("Test 5: item_concurrency drop safety...");
     for _ in 0..50 {
         let mut loader = DataLoader::builder(SlowDs {
@@ -124,7 +129,7 @@ fn main() {
         let _ = iter.next();
         drop(iter);
         let count = loader.iter().count();
-        assert_eq!(count, 7); // ceil(100/16)
+        assert_eq!(count, 7); // 100 items in batches of 16: 7 batches
     }
     println!("  OK");
 
