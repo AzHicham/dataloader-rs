@@ -453,3 +453,39 @@ fn runtime_and_runtime_threads_are_exclusive() {
         );
     }
 }
+
+#[test]
+fn iter_with_indices_pairs_items_with_their_indices() {
+    let mut dataset = Sleepy::new(30, Duration::from_millis(1));
+    dataset.jitter = true;
+    dataset.fail_at = Some(29);
+    let mut loader = DataLoader::builder_async(dataset)
+        .batch_size(4)
+        .num_workers(3)
+        .item_concurrency(2)
+        .sampler(RandomSampler::new(5))
+        .drop_last(true)
+        .build();
+    let mut seen = Vec::new();
+    let mut failed = 0;
+    for batch in loader.iter_with_indices() {
+        match batch {
+            Ok((indices, items)) => {
+                assert_eq!(items, indices);
+                seen.extend(indices);
+            }
+            Err(_) => failed += 1,
+        }
+    }
+    // 7 full batches of 4 out of 30 items; the one with item 29, if drawn, fails alone.
+    assert!(failed <= 1);
+    assert_eq!(seen.len(), 28 - 4 * failed);
+    assert_ne!(
+        seen,
+        (0..seen.len()).collect::<Vec<_>>(),
+        "the sampler shuffles"
+    );
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(seen.len(), 28 - 4 * failed);
+}

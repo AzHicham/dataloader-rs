@@ -10,9 +10,9 @@ one `Result<C::Batch>` per batch, in epoch order. The source is a `SyncSource<D>
 | File | What |
 |---|---|
 | `builder.rs` | `DataLoaderBuilder`: the settings, `sampler`, `transform` and `collator` (which change the loader's type), and `build`. |
-| `dataloader.rs` | `DataLoader`: `iter`, `len`, `batch_len` and accessors. `&mut DataLoader` implements `IntoIterator`. |
+| `dataloader.rs` | `DataLoader`: `iter`, `iter_with_indices`, `len`, `batch_len` and accessors. `&mut DataLoader` implements `IntoIterator`. |
 | `source/` | The sealed `LoaderSource` trait (`loader_source.rs`, `sealed.rs`), and its two implementations, `SyncSource` (`sync.rs`) and `AsyncSource` (`asynchronous.rs`). Each starts its own kind of epoch and sizes the thread pool (`threads.rs`). `EpochSettings` (`settings.rs`) carries the settings into an epoch. |
-| `iter.rs` | `DataLoaderIter`, the iterator over the epoch of either source. |
+| `iter.rs` | `DataLoaderIter`, the iterator over the epoch of either source, and `IndexedIter`, the same with the indices of each batch. |
 | `pool.rs` | `LoaderPool`: the loader's rayon pool, rebuilt after `fork()`. |
 | `sync/epoch.rs` | `SyncEpoch`: the direct path, or the batch tasks on the pool. |
 | `sync/worker.rs` | `process_batch`, which fetches, transforms and collates one batch, and `Epoch`: the batch tasks, the claim window and the item lanes. |

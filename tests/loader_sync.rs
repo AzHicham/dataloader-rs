@@ -1200,3 +1200,94 @@ fn items_in_parallel_is_a_deprecated_alias() {
     let batches: Vec<Vec<usize>> = loader.iter().map(|b| b.unwrap()).collect();
     assert_eq!(batches, vec![vec![0, 1, 2], vec![3, 4, 5]]);
 }
+
+// ── iter_with_indices ─────────────────────────────────────────────────────────
+
+/// Item `i` is `i * 10`, so a batch's items say which indices they came from.
+struct TimesTen(usize);
+
+impl Dataset for TimesTen {
+    type Item = usize;
+    fn get(&self, index: usize) -> Result<usize> {
+        Ok(index * 10)
+    }
+    fn len(&self) -> usize {
+        self.0
+    }
+}
+
+/// Every `(indices, batch)` of an epoch, checked against the items, and the indices in
+/// sampling order.
+fn indexed_epoch(workers: usize, item_concurrency: usize, drop_last: bool) -> Vec<Vec<usize>> {
+    let mut loader = DataLoader::builder(TimesTen(23))
+        .batch_size(4)
+        .drop_last(drop_last)
+        .num_workers(workers)
+        .item_concurrency(item_concurrency)
+        .sampler(RandomSampler::new(3))
+        .build();
+    let iter = loader.iter_with_indices();
+    assert_eq!(iter.len(), if drop_last { 5 } else { 6 });
+    iter.map(|batch| {
+        let (indices, items) = batch.unwrap();
+        assert_eq!(items, indices.iter().map(|i| i * 10).collect::<Vec<_>>());
+        indices
+    })
+    .collect()
+}
+
+#[test]
+fn iter_with_indices_pairs_items_with_their_indices() {
+    for (workers, item_concurrency) in [(0, 1), (2, 1), (0, 3), (3, 2)] {
+        let chunks = indexed_epoch(workers, item_concurrency, false);
+        let mut seen: Vec<usize> = chunks.iter().flatten().copied().collect();
+        assert_ne!(seen, (0..23).collect::<Vec<_>>(), "the sampler shuffles");
+        seen.sort_unstable();
+        assert_eq!(seen, (0..23).collect::<Vec<_>>());
+        assert_eq!(chunks.last().unwrap().len(), 3);
+    }
+}
+
+#[test]
+fn iter_with_indices_drop_last() {
+    for workers in [0, 2] {
+        let chunks = indexed_epoch(workers, 1, true);
+        assert_eq!(chunks.len(), 5);
+        assert!(chunks.iter().all(|c| c.len() == 4));
+    }
+}
+
+#[test]
+fn iter_with_indices_same_order_as_iter() {
+    let build = || {
+        DataLoader::builder(RangeDs(17))
+            .batch_size(5)
+            .num_workers(2)
+            .sampler(RandomSampler::new(11))
+            .build()
+    };
+    let plain: Vec<Vec<usize>> = build().iter().map(|b| b.unwrap()).collect();
+    let indexed: Vec<Vec<usize>> = build().iter_with_indices().map(|b| b.unwrap().0).collect();
+    assert_eq!(plain, indexed);
+}
+
+#[test]
+fn iter_with_indices_keeps_alignment_after_a_failed_batch() {
+    for workers in [0, 2] {
+        let mut loader = DataLoader::builder(PartialErrDs {
+            fail_at: 5,
+            len: 12,
+        })
+        .batch_size(3)
+        .num_workers(workers)
+        .build();
+        let batches: Vec<_> = loader.iter_with_indices().collect();
+        assert_eq!(batches.len(), 4);
+        assert!(batches[1].is_err());
+        for (k, batch) in batches.iter().enumerate().filter(|(k, _)| *k != 1) {
+            let (indices, items) = batch.as_ref().unwrap();
+            assert_eq!(indices, &(3 * k..3 * k + 3).collect::<Vec<_>>());
+            assert_eq!(items, indices);
+        }
+    }
+}

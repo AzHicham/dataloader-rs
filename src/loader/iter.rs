@@ -106,3 +106,62 @@ where
     C: Collator<T::Output>,
 {
 }
+
+// ── IndexedIter ───────────────────────────────────────────────────────────────
+
+/// Iterator over one epoch of a [`DataLoader`](crate::DataLoader) that pairs
+/// each batch with the dataset indices of its items; see
+/// [`DataLoader::iter_with_indices`](crate::DataLoader::iter_with_indices).
+pub struct IndexedIter<Src, C, T = Identity>
+where
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
+    C: Collator<T::Output>,
+{
+    indices: std::vec::IntoIter<Vec<usize>>,
+    batches: DataLoaderIter<Src, C, T>,
+}
+
+impl<Src, C, T> IndexedIter<Src, C, T>
+where
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
+    C: Collator<T::Output>,
+{
+    /// `batches`, whose epoch runs over `indices`.
+    pub(super) fn new(indices: Vec<Vec<usize>>, batches: DataLoaderIter<Src, C, T>) -> Self {
+        Self {
+            indices: indices.into_iter(),
+            batches,
+        }
+    }
+}
+
+impl<Src, C, T> Iterator for IndexedIter<Src, C, T>
+where
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
+    C: Collator<T::Output>,
+{
+    type Item = Result<(Vec<usize>, C::Batch)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Every path yields its batches in epoch order, a failed one included, so the
+        // i-th batch is the i-th chunk of indices.
+        let batch = self.batches.next()?;
+        let indices = self.indices.next()?;
+        Some(batch.map(|batch| (indices, batch)))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.batches.size_hint()
+    }
+}
+
+impl<Src, C, T> ExactSizeIterator for IndexedIter<Src, C, T>
+where
+    Src: LoaderSource,
+    T: Transform<Src::Item>,
+    C: Collator<T::Output>,
+{
+}

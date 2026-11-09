@@ -6,7 +6,7 @@ use crate::{
     error::Result,
     loader::{
         builder::DataLoaderBuilder,
-        iter::DataLoaderIter,
+        iter::{DataLoaderIter, IndexedIter},
         pool::LoaderPool,
         source::{EpochSettings, LoaderSource, SyncSource},
     },
@@ -80,6 +80,37 @@ where
     pub fn iter(&mut self) -> DataLoaderIter<Src, C, T> {
         let chunks = self.batch_sampler.batch_indices(self.source.len());
         self.iter_chunks(chunks)
+    }
+
+    /// Start one epoch, like [`iter`](Self::iter), whose batches come with
+    /// the dataset indices of their items: `(indices, batch)`, `indices[k]`
+    /// being the index of the batch's `k`-th item as the sampler drew it. A
+    /// failed batch is still one step of the epoch: the next batch gets the
+    /// next indices.
+    ///
+    /// ```rust
+    /// use dataloader_rs::{DataLoader, Dataset, RandomSampler, error::Result};
+    ///
+    /// struct Squares;
+    ///
+    /// impl Dataset for Squares {
+    ///     type Item = usize;
+    ///     fn get(&self, index: usize) -> Result<usize> { Ok(index * index) }
+    ///     fn len(&self) -> usize { 10 }
+    /// }
+    ///
+    /// let mut loader = DataLoader::builder(Squares)
+    ///     .batch_size(4)
+    ///     .sampler(RandomSampler::new(7))
+    ///     .build();
+    /// for batch in loader.iter_with_indices() {
+    ///     let (indices, squares) = batch.unwrap();
+    ///     assert!(indices.iter().zip(squares).all(|(i, s)| i * i == s));
+    /// }
+    /// ```
+    pub fn iter_with_indices(&mut self) -> IndexedIter<Src, C, T> {
+        let chunks = self.batch_sampler.batch_indices(self.source.len());
+        IndexedIter::new(chunks.clone(), self.iter_chunks(chunks))
     }
 
     /// Start one epoch over `chunks`, the batches of indices of
