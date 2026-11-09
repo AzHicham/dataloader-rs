@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792940039002,
+  "lastUpdate": 1794238270581,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -4403,6 +4403,354 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 290638,
             "range": "± 6378",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "d8decabc6b91ff94c2023936bee7e85bba122cc6",
+          "message": "fix(python): dropping an iterator waits for its batches in flight\n\nThe batch tasks of a parallel or async epoch hold the dataset, transform\nand collator until they exit, which can be after the consumer has taken\ntheir batch or dropped the iterator. The last references to these Python\nobjects then went away later, on a pool thread, so a reference cycle\nthrough a loader (a collate_fn or transform bound to the object that keeps\nit) survived the gc.collect() that freed the iterator.\n\nDropping a PyDataloaderIter now ends its epoch and waits, with the\ninterpreter released and for at most 5 s, for its tasks to exit: the batch\ntasks of a parallel epoch; the driver, batch tasks and pool jobs of an\nasync one. Each holds a sender of a channel nothing is sent on; the\nreceiver disconnects when the last one is gone. A forked child, where\nthose tasks do not exist, does not wait, nor does anything once atexit\nhas run: pool threads can no longer attach then.\n\nInterpreter shutdown with an epoch left unfinished\n(test_par_interpreter_exits_cleanly_with_live_loaders, debug builds, about\n1 run in 200): a pool thread that started too late to attach for its\nwhole life ran a task whose Python::attach panicked (\"cannot attach while\nit is finalizing\"); the tasks' attaches now fail the batch with a\nRuntimeError instead. A pool thread could also be the process's first\nattach from a detached thread and trip PyO3's \"is initialized\" assertion\nwhile the interpreter finished shutting down: the module makes that first\nattach at import.\n\nThe cycle tests take every batch before the collect: a batch still being\ncollated is not garbage, the pool thread's frame refers to the object\nuntil collate_fn returns. An async variant is added.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-09T15:22:35Z",
+          "tree_id": "9191cdf49bdab8fc6164ae8ded3d3ac01cecb7a8",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/d8decabc6b91ff94c2023936bee7e85bba122cc6"
+        },
+        "date": 1794238269969,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "async_http/futures/w1_c64",
+            "value": 106214838,
+            "range": "± 1107057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w1_c64",
+            "value": 106375810,
+            "range": "± 942443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/futures/w2_c32",
+            "value": 101959228,
+            "range": "± 982010",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w2_c32",
+            "value": 111716539,
+            "range": "± 7321968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/futures/w4_c16",
+            "value": 99023895,
+            "range": "± 659206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w4_c16",
+            "value": 119772887,
+            "range": "± 14399130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/futures/w8_c1",
+            "value": 723988802,
+            "range": "± 2750086",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w8_c1",
+            "value": 727498367,
+            "range": "± 2223840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 160487,
+            "range": "± 4060",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 46253,
+            "range": "± 195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 24284,
+            "range": "± 191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 12561,
+            "range": "± 58",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 7117,
+            "range": "± 147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 6002,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 4879,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1239150,
+            "range": "± 85036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 140807,
+            "range": "± 3234",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 45401,
+            "range": "± 1372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 27114,
+            "range": "± 1287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 20921,
+            "range": "± 636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 23449,
+            "range": "± 412",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 14779,
+            "range": "± 408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items1",
+            "value": 5643839,
+            "range": "± 4917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items1",
+            "value": 5679962,
+            "range": "± 11736",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items2",
+            "value": 2869303,
+            "range": "± 7349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items4",
+            "value": 1470198,
+            "range": "± 101492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items4",
+            "value": 1491150,
+            "range": "± 75894",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w1_items1",
+            "value": 14270207,
+            "range": "± 14875",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w1_items2",
+            "value": 7176333,
+            "range": "± 8055",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w1_items4",
+            "value": 3732820,
+            "range": "± 131565",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w2_items2",
+            "value": 3672551,
+            "range": "± 190795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w4_items1",
+            "value": 7153739,
+            "range": "± 616389",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/0",
+            "value": 35020183,
+            "range": "± 4766",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/1",
+            "value": 35161502,
+            "range": "± 43977",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/2",
+            "value": 17620102,
+            "range": "± 23561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/4",
+            "value": 9128447,
+            "range": "± 235946",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/sequential",
+            "value": 13120623,
+            "range": "± 4097",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 4954604,
+            "range": "± 2843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 4954029,
+            "range": "± 2562",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 4954450,
+            "range": "± 4837",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 4953966,
+            "range": "± 3135",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/0",
+            "value": 35252744,
+            "range": "± 126332",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/1",
+            "value": 36598000,
+            "range": "± 714420",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/2",
+            "value": 18033488,
+            "range": "± 315211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/4",
+            "value": 13588272,
+            "range": "± 429348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/4",
+            "value": 264282629,
+            "range": "± 204710",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/16",
+            "value": 78315623,
+            "range": "± 2970999",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/64",
+            "value": 20748149,
+            "range": "± 402044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 1776,
+            "range": "± 133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 3250,
+            "range": "± 84",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 16455,
+            "range": "± 818",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 30921,
+            "range": "± 2696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 151780,
+            "range": "± 14089",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 296812,
+            "range": "± 15333",
             "unit": "ns/iter"
           }
         ]
