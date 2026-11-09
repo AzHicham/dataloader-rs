@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Poll};
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::ffi::c_str;
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::{PyCFunction, PyDict, PyString, PyTuple};
@@ -41,84 +42,7 @@ impl PyAsyncDatasetBase {
 /// stopped loop cancels the coroutines still pending and waits for them before it closes.
 /// `stop()` runs once; `submit` refuses coroutines from then on, so that none is scheduled
 /// after the loop has cancelled what was pending.
-const EVENT_LOOP: &CStr = cr#"
-import asyncio, concurrent.futures, logging, threading
-
-# How long the loader waits for PyAsyncDataset.aclose() before it stops the loop without it.
-ACLOSE_TIMEOUT = 5.0
-
-logger = logging.getLogger("dataloader_rs")
-
-async def close(aclose):
-    try:
-        task = asyncio.ensure_future(aclose())
-        done, _ = await asyncio.wait({task}, timeout=ACLOSE_TIMEOUT)
-        if not done:
-            task.cancel()
-            logger.error(
-                f"PyAsyncDataset.aclose() did not finish in {ACLOSE_TIMEOUT} s; "
-                "the event loop stops without it"
-            )
-        elif not task.cancelled() and task.exception() is not None:
-            error = task.exception()
-            logger.error(f"PyAsyncDataset.aclose() failed: {error!r}", exc_info=error)
-    except Exception as error:
-        logger.error(f"PyAsyncDataset.aclose() failed: {error!r}", exc_info=error)
-
-def start(aclose):
-    loop = asyncio.new_event_loop()
-
-    def run():
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_forever()
-            # Let the coroutines still pending end before the loop closes: run what was
-            # queued before the stop, cancel what is left and wait for it, for at most
-            # ACLOSE_TIMEOUT seconds. A coroutine left unstarted is never awaited.
-            loop.run_until_complete(asyncio.sleep(0))
-            tasks = asyncio.all_tasks(loop)
-            for task in tasks:
-                task.cancel()
-            if tasks:
-                loop.run_until_complete(asyncio.wait(tasks, timeout=ACLOSE_TIMEOUT))
-        finally:
-            loop.close()
-
-    thread = threading.Thread(target=run, name="dataloader-asyncio", daemon=True)
-    thread.start()
-    lock = threading.Lock()
-    stopped = False
-
-    def stop():
-        nonlocal stopped
-        with lock:
-            if stopped:
-                return
-            stopped = True
-        if not thread.is_alive():
-            return
-        if aclose is None:
-            loop.call_soon_threadsafe(loop.stop)
-            return
-        future = asyncio.run_coroutine_threadsafe(close(aclose), loop)
-        future.add_done_callback(lambda _: loop.call_soon_threadsafe(loop.stop))
-        if threading.current_thread() is not thread:
-            concurrent.futures.wait([future], timeout=ACLOSE_TIMEOUT + 1)
-
-    def submit(coroutine):
-        try:
-            with lock:
-                if stopped:
-                    raise RuntimeError("the loader's event loop is stopped")
-                return asyncio.run_coroutine_threadsafe(coroutine, loop)
-        except BaseException:
-            # Not scheduled: close it so that it is not left unawaited.
-            if asyncio.iscoroutine(coroutine):
-                coroutine.close()
-            raise
-
-    return submit, stop
-"#;
+const EVENT_LOOP: &CStr = c_str!(include_str!("event_loop.py"));
 
 /// The loader's event loop: stopped, after `aclose()`, when the loader is dropped
 /// ([`PyAsyncItems::close`]), or else when the last user drops it. Stopping twice does nothing.

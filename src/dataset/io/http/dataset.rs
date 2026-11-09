@@ -1,4 +1,4 @@
-//! [`HttpDataset`]: one HTTP GET per item, on a shared async client.
+//! [`HttpDataset`] and its builder.
 
 use std::fmt::{self, Debug};
 use std::result::Result as StdResult;
@@ -6,24 +6,23 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, RETRY_AFTER, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, USER_AGENT};
 use reqwest::redirect::Policy;
 use reqwest::tls::Certificate;
-use reqwest::{Client, Error as ReqwestError, Response, StatusCode, Url};
+use reqwest::{Client, Response, Url};
 
+use super::attempt::Attempt;
 use crate::{
     dataset::{
-        AsyncDataset, Column, DEFAULT_MAX_BYTES, FetchError, Retry,
-        location::Locations,
-        retry::Transient,
-        template::{Escape, Template},
-        tls::{install_ring_provider, mozilla_roots},
+        AsyncDataset, Column, DEFAULT_MAX_BYTES, Retry,
+        io::{
+            location::Locations,
+            template::{Escape, Template},
+            tls::{install_ring_provider, mozilla_roots},
+        },
     },
     error::Result,
 };
-
-/// Statuses worth another attempt: timeout, rate limit and the transient server errors.
-const TRANSIENT_STATUS: [u16; 6] = [408, 429, 500, 502, 503, 504];
 
 /// Capacity reserved for a body before its bytes arrive: an announced length is trusted only
 /// up to this, so a lying `Content-Length` cannot make the dataset allocate.
@@ -302,76 +301,6 @@ fn redact_str(url: &str) -> String {
     Url::parse(url).map_or_else(|_| "<unparsable>".to_owned(), |url| redact(&url))
 }
 
-/// How one attempt failed.
-enum Attempt {
-    Status {
-        status: StatusCode,
-        retry_after: Option<Duration>,
-    },
-    TooLarge(Option<u64>),
-    Request(ReqwestError),
-}
-
-impl Attempt {
-    /// A response with a status other than 2xx.
-    fn status(response: &Response) -> Self {
-        Self::Status {
-            status: response.status(),
-            retry_after: retry_after(response),
-        }
-    }
-
-    /// The error of the item, at `location` (redacted), after `attempts` attempts.
-    fn into_error(self, location: String, attempts: u32, limit: u64) -> FetchError {
-        match self {
-            Self::Status { status, .. } => FetchError::Status {
-                url: location,
-                status: status.as_u16(),
-                attempts,
-            },
-            Self::TooLarge(size) => FetchError::TooLarge {
-                location,
-                limit,
-                size,
-            },
-            Self::Request(error) => FetchError::Io {
-                location,
-                attempts,
-                timeout: error.is_timeout(),
-                // reqwest's message repeats the full URL: keep its cause only.
-                source: error.without_url().into(),
-            },
-        }
-    }
-}
-
-impl Transient for Attempt {
-    /// A connection error, a timeout, a body cut short, or status 408, 429, 500, 502, 503
-    /// or 504.
-    fn is_transient(&self) -> bool {
-        match self {
-            Self::Status { status, .. } => TRANSIENT_STATUS.contains(&status.as_u16()),
-            Self::TooLarge(_) => false,
-            Self::Request(error) => {
-                error.is_timeout() || error.is_connect() || error.is_request() || error.is_body()
-            }
-        }
-    }
-
-    fn retry_after(&self) -> Option<Duration> {
-        match self {
-            Self::Status { retry_after, .. } => *retry_after,
-            _ => None,
-        }
-    }
-}
-
-/// A `Retry-After` in seconds, if the response has one.
-fn retry_after(response: &Response) -> Option<Duration> {
-    let value = response.headers().get(RETRY_AFTER)?.to_str().ok()?;
-    value.trim().parse::<u64>().ok().map(Duration::from_secs)
-}
-
 impl HttpDataset {
     /// Settings with their defaults: no header, 30 s per attempt, 10 s to connect,
     /// [`Retry::default`], [`DEFAULT_MAX_BYTES`].
@@ -446,7 +375,7 @@ mod tests {
         DataLoader,
         dataset::{
             AsyncDataset, Column, FetchError,
-            test_server::{CA_PEM, TestServer},
+            io::test_server::{CA_PEM, TestServer},
         },
         error::{Error, Result},
     };

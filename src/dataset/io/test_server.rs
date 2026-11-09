@@ -27,9 +27,9 @@ use tokio::runtime::Builder;
 use tokio::time::sleep;
 use tokio_rustls::TlsAcceptor;
 
-pub(crate) const CA_PEM: &[u8] = include_bytes!("../../tests/fixtures/tls/ca.pem");
-const CERT_PEM: &[u8] = include_bytes!("../../tests/fixtures/tls/localhost.pem");
-const KEY_PEM: &[u8] = include_bytes!("../../tests/fixtures/tls/localhost.key");
+pub(crate) const CA_PEM: &[u8] = include_bytes!("../../../tests/fixtures/tls/ca.pem");
+const CERT_PEM: &[u8] = include_bytes!("../../../tests/fixtures/tls/localhost.pem");
+const KEY_PEM: &[u8] = include_bytes!("../../../tests/fixtures/tls/localhost.key");
 
 pub(crate) struct TestServer {
     pub(crate) addr: SocketAddr,

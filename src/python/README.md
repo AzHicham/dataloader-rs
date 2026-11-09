@@ -5,16 +5,19 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 
 | File | What |
 |---|---|
-| `mod.rs` | the `#[pymodule]` (`gil_used = false`: loads on free-threaded CPython), `into_py_err` |
-| `dataset.rs` | `PyDatasetBase` (the `PyDataset` base class), `Dataset` for `Py<PyDatasetBase>`, `Fetcher` (`__getitems__` or `__getitem__`) |
+| `module.rs` | the `#[pymodule]` (`gil_used = false`: loads on free-threaded CPython) |
+| `error.rs` | `into_py_err`: core errors back into Python exceptions |
+| `dataset/sync.rs` | `PyDatasetBase` (the `PyDataset` base class), `Dataset` for `Py<PyDatasetBase>`, `Fetcher` (`__getitems__` or `__getitem__`) |
 | `dataloader.rs` | `PyDataloader`: arguments, validation, `__iter__`, `__len__` |
 | `iterator.rs` | `PyDataloaderIter`: the direct, threaded and async epochs, `__next__` |
 | `transform.rs` | `PyTransform`: `transform=f`, called as `f(index, item)`, the loader's `Transform` for Python items and for a Rust dataset's `Bytes` |
 | `sampler.rs` | `PySampler`: sequential, random, or a Python iterable, and the exception it raised |
 | `collator.rs` | `PyCollator`: `collate_fn`, or a plain `list` |
 | `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread; `attach_global_pool` does the same for rayon's global pool |
-| `async_dataset.rs` | `PyAsyncDatasetBase` (the `PyAsyncDataset` base class), `PyAsyncItems`: coroutines on an asyncio loop thread, submitted from the global pool |
-| `rust_dataset.rs` | `RustDataset` and its `HttpDataset` / `FileDataset` / `ObjectStoreDataset` subclasses |
+| `dataset/asynchronous.rs` | `PyAsyncDatasetBase` (the `PyAsyncDataset` base class), `PyAsyncItems`: coroutines on an asyncio loop thread, submitted from the global pool |
+| `dataset/event_loop.py` | that loop: `start(aclose)` returns `submit(coroutine)` and `stop()`; compiled into the module |
+| `dataset/rust.rs` | `RustDataset` and its `HttpDataset` / `FileDataset` / `ObjectStoreDataset` subclasses |
+| `dataset/kind.rs` | a dataset's kind from its base class, and the checks its methods must pass |
 
 ## How a Python epoch runs
 

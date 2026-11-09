@@ -7,7 +7,8 @@ package. Unit tests live next to the code (`#[cfg(test)]` modules in `src/`).
 
 | File | Covers | Feature |
 |---|---|---|
-| `integration.rs` | the public API end to end: sequential, parallel and item-level paths give the same items; batch sizes and `drop_last`; random and distributed samplers; collators; errors per batch; early drop; reuse across epochs | |
+| `loader_sync.rs` | the public API end to end: sequential, parallel and item-level paths give the same items; batch sizes and `drop_last`; random and distributed samplers; collators; transforms; errors per batch; early drop; reuse across epochs | |
+| `loader_async.rs` | `builder_async`: order, futures in flight, transforms, errors and panics per batch, early drop, the runtime settings | `async` |
 | `integration_collate_default.rs` | `DefaultCollator` on nested structures through a loader | |
 | `integration_collate_ndarray.rs` | `DefaultCollator` stacking `ndarray::Array` | `ndarray` |
 | `integration_collate_torch.rs` | `DefaultCollator` stacking `tch::Tensor`, `pin_memory` | `torch-rs` |
@@ -30,6 +31,8 @@ cargo test --all-features            # as CI does; torch-rs downloads libtorch
 | `test_dataloader_getitems.py` | batched fetching with `__getitems__` |
 | `test_dataloader_safety.py` | early drop, garbage collection and cancellation under load: no hang, no deadlock |
 | `test_dataloader_integration.py` | end-to-end scenarios: batches without `collate_fn`, `drop_last`, `collate_fn` sequential and parallel, a Python sampler's order |
+| `test_dataset_async.py` | `PyAsyncDataset` and the Rust datasets (`HttpDataset`, `FileDataset`, `ObjectStoreDataset`): base-class checks, order, cancellation, `aclose`, errors, templates, retry settings |
+| `test_transform.py` | `transform=f`, called as `f(index, item)`, on every kind of dataset |
 | `py_dataloader_test_utils.py` | shared datasets (`ListDataset`, `ToyDataset`) and helpers |
 
 ```bash

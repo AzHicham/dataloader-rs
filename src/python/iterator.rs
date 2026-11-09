@@ -4,12 +4,10 @@ use pyo3::prelude::*;
 use pyo3::{PyTraverseError, PyVisit};
 
 use crate::loader::{AsyncSource, DataLoaderIter, LoaderSource, SyncSource};
-use crate::python::async_dataset::PyAsyncItems;
 use crate::python::collator::{PyBatch, PyCollator};
 use crate::python::dataloader::PyDataloader;
-use crate::python::dataset::{Fetcher, PyDataset};
-use crate::python::into_py_err;
-use crate::python::rust_dataset::RustSource;
+use crate::python::dataset::{Fetcher, PyAsyncItems, PyDataset, RustSource};
+use crate::python::error::into_py_err;
 use crate::python::transform::PyTransform;
 use crate::transform::Transform;
 
