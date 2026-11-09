@@ -20,8 +20,8 @@ Contents:
 1. [Summary](#1-summary)
 2. [Setup and calibration](#2-setup-and-calibration)
 3. [Method: what is measured and why](#3-method-what-is-measured-and-why)
-4. [Results: Rust](#4-results-rust) (async datasets: 4.8)
-5. [Results: Python against PyTorch](#5-results-python-against-pytorch) (async datasets: 5.5)
+4. [Results: Rust](#4-results-rust) (async datasets: 4.8, image transforms: 4.9)
+5. [Results: Python against PyTorch](#5-results-python-against-pytorch) (async datasets: 5.5, image tiles: 5.6)
 6. [Results: Python regression guards](#6-results-python-regression-guards)
 7. [Reading the results: choosing settings](#7-reading-the-results-choosing-settings)
 8. [Caveats and known bottlenecks](#8-caveats-and-known-bottlenecks)
@@ -82,6 +82,11 @@ epochs):
 | `remote` | 20.8 ms (items=16) | 334 ms | 323 ms |
 | `python_cpu` | 9.0 ms | 13.0 ms | 2.9 ms |
 | `python_cpu_local` | 1.3 ms | 13.6 ms | 1.9 ms |
+
+Image tiles (section 5.6), msintuit-ec's feature pass on 2 048 local PNGs, 4 cores: the Rust
+image transforms with `ImageCollator` read an epoch in 0.49 s on 3.13 and 0.47 s on 3.14t,
+against 1.17 s for torch with 4 Pillow + torchvision worker processes (**2.4×**, with 2.4× less
+CPU), the same values bit for bit.
 
 Rust, without Python (section 4): up to 1 G items/s through the sequential path, about 0.5 µs of
 scheduling per batch with workers, 3.1× with 4 workers and 3.4–3.5× with 4 item lanes on
@@ -338,6 +343,33 @@ much as 64 futures: futures are 1 % slower to 19 % faster, and steadier (the thr
 up to ±14 ms at (4, 16), the futures' under ±1.4 ms). Their gain is in Python (section 5.5). The
 suite is sized for CI (about 35 s); an earlier run of 1 024 GETs gave the same picture.
 
+### 4.9 Image transforms: `bench_image`
+
+msintuit-ec's tile chain (`Decode` → `ToRgb` → `PadTo(224)` → `ToFloat` → `Normalize` → `ToChw`)
+on 224 × 224 RGB PNGs of gradients and noise held in memory (every eighth one 224 × 150), 9
+November 2026, branch `feat/image-transforms`, features `image`, pinned to CPUs 0–7 (performance cores).
+Criterion estimates (`--output-format bencher`) of three runs:
+
+| case | run 1 | run 2 | run 3 |
+|---|---:|---:|---:|
+| one tile through the chain | 506 µs | 510 µs | 505 µs |
+| one tile, `Decode` only | 314 µs | 317 µs | 315 µs |
+| collate 64 × 3 × 224 × 224 `f32`, NCHW, fresh buffer | 13.93 ms | 13.77 ms | 13.79 ms |
+| the same, `reuse_buffers(4)` | 3.64 ms | 3.66 ms | 3.69 ms |
+| the same, NHWC (transposed), fresh buffer | 15.51 ms | 15.64 ms | 15.72 ms |
+| epoch of 512 tiles, 1 worker × 4 items, fresh buffers | 229.2 ms | 234.5 ms | 232.8 ms |
+| the same, `reuse_buffers(8)` | 152.3 ms | 156.6 ms | 155.6 ms |
+| epoch of 512 tiles, 4 workers × 1 item, fresh buffers | 147.2 ms | 149.4 ms | 148.9 ms |
+| the same, `reuse_buffers(8)` | 118.7 ms | 119.9 ms | 120.9 ms |
+
+Decoding is 60 % of a tile's work; the float conversion, normalisation and layout change the
+rest. A batch of 64 such tiles is 32 ms of CPU, spread over the loader's threads, then one serial
+copy into the 38.5 MB batch buffer. Into fresh memory that copy is 13.8 ms, three quarters of it
+page faults (glibc maps buffers this large with `mmap` and returns them on free); into a reused
+buffer 3.6 ms. Through the loader, reuse makes an epoch 33 % faster when one batch is collated at
+a time (1 worker) and 19 % with 4 batches in parallel. Hence `reuse_buffers`, off by default
+(the kept buffers stay allocated).
+
 ## 5. Results: Python against PyTorch
 
 `bench/compare_torch.py`, 4 workers, `batch_size` 32. `w` is `num_workers`, `items` is
@@ -509,6 +541,31 @@ rotated order, (min–max):
 - First batch: torch starts its worker processes for every fresh loader (0.79–0.89 s);
   `dataloader_rs` builds its threads and runtime in milliseconds (0.03–0.06 s, one batch of
   requests; 0.15 s for `requests` threads under the GIL).
+
+### 5.6 Image tiles: `compare_image.py`
+
+`bench/compare_image.py`, 9 November 2026, branch `feat/image-transforms`: msintuit-ec's
+feature pass (prime_dx's `ConstantFill2d(224)` + `ToTensor` + `Normalize`) on 2 048 local PNG
+tiles of 224 × 224 (every eighth 224 × 150), `batch_size` 64, every batch made a torch tensor
+(`torch.from_dlpack` for `dataloader_rs`, no copy). Pinned to 4 cores, glibc's malloc thresholds
+pinned; 3.13 with a release wheel (torch 2.15, torchvision 0.29, Pillow 13), 3.14t with
+`maturin develop --release` (no Pillow there: `dataloader_rs` loaders only). A fresh loader per
+epoch, medians of 5 rounds in a rotated order (min–max):
+
+| loader | 3.13 epoch s | 3.14t epoch s | tiles/s (3.13) | CPU s (3.13) |
+|---|---:|---:|---:|---:|
+| torch, 4 workers, Pillow + torchvision | 1.170 (1.112–1.258) | — | 1 751 | 4.17 |
+| torch, 8 workers, Pillow + torchvision | 1.384 (1.242–1.698) | — | 1 479 | 4.76 |
+| `FileDataset` 4 × 4, the same Pillow code as `transform=` | 1.282 (1.265–1.336) | — | 1 598 | 4.21 |
+| `FileDataset` 4 × 4, `transforms.Compose` + `ImageCollator(buffers=8)` | **0.489** (0.479–0.519) | **0.472** (0.469–0.562) | 4 191 | 1.76 |
+| the same, `ImageCollator()` (no buffer reuse) | 0.565 (0.558–0.581) | 0.557 (0.542–0.579) | 3 625 | 2.06 |
+
+- The Rust transforms are **2.4× faster** than torch's best configuration and use 2.4× less
+  CPU; the first batch of every `dataloader_rs` loader equals torch's bit for bit.
+- Pillow code as a Python `transform` on 3.13 is no faster than torch's processes: decoding
+  releases the GIL, the rest of the per-item Python does not. The Rust chain never takes it, so
+  3.13 and 3.14t are the same.
+- Reusing batch buffers saves 13–15 % of the epoch (section 4.9).
 
 ## 6. Results: Python regression guards
 

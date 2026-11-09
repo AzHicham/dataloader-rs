@@ -30,6 +30,13 @@ library, with a Python binding that runs the same pipeline on threads instead of
   template with per-item values or a function of the index, with retries, timeouts and a size
   cap. In Python, `PyAsyncDataset` takes `async def __getitem__`, and the Rust datasets fetch
   without the GIL: 2 048 HTTP tiles in 0.38 s against 1.6–3.0 s for torch's worker processes.
+- **Image transforms** (feature `image`): `Decode` (PNG, JPEG, WebP, TIFF, BMP; pure-Rust
+  decoders, decompression-bomb limits), `ToRgb`, `Crop`, `Pad`, `PadTo`, `Resize`, `HFlip`,
+  `Rotate90`, `ToFloat`, `Normalize`, … as typed per-item transforms, Pillow / torchvision values
+  bit for bit; `ImageCollator` writes a batch into one reusable buffer. From Python, a
+  `transforms.Compose` runs without the GIL and `torch.from_dlpack(batch)` takes the batch
+  without a copy: 2 048 PNG tiles decoded, padded and normalised 2.4× faster than torch with
+  Pillow + torchvision workers.
 - **Bounded, ordered prefetch**: at most `num_workers + prefetch_depth` batches are in flight or
   waiting, even behind one slow batch; they come out in epoch order.
 - **Failures surface**: a dataset or collator error is returned for its batch, a panic is
@@ -55,6 +62,7 @@ library, with a Python binding that runs the same pipeline on threads instead of
 - [Quick start: Rust](#quick-start-rust)
 - [Quick start: Python](#quick-start-python)
 - [Async datasets](#async-datasets)
+- [Image transforms](#image-transforms)
 - [Concepts](#concepts)
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
@@ -230,6 +238,61 @@ fn datasets() -> Result<(FileDataset, ObjectStoreDataset)> {
 }
 ```
 
+## Image transforms
+
+Feature `image`: per-item image operations, each a `Transform` the loader runs on its threads,
+in parallel across a batch's items; chains are typed (`Image<u8>` → `Image<f32>`, HWC → CHW), so
+a wrong order does not compile. `ImageCollator` copies a batch's images, of one shape, into one
+`NCHW` or `NHWC` buffer, reused across batches with `reuse_buffers(n)`.
+
+```rust
+use dataloader_rs::{DataLoader, collator::ImageCollator, dataset::FileDataset, error::Result};
+use dataloader_rs::image::{Decode, Normalize, PadTo, ToChw, ToFloat, ToRgb};
+use dataloader_rs::Transform;
+
+fn main() -> Result<()> {
+    let tiles = FileDataset::new(vec!["tiles/0.png", "tiles/1.png"]);
+    let mut loader = DataLoader::builder_async(tiles)
+        .batch_size(64)
+        .num_workers(4)
+        .item_concurrency(4)
+        .transform(
+            Decode::new() // bytes::Bytes → Image<u8>, HWC, the file's channels
+                .then(ToRgb)
+                .then(PadTo::new(224, 224, 0.0))
+                .then(ToFloat::default()) // Image<f32>
+                .then(Normalize::imagenet())
+                .then(ToChw),
+        )
+        .collator(ImageCollator::default().reuse_buffers(8))
+        .build();
+    for batch in &mut loader {
+        let batch = batch?; // ImageBatch<f32>, [64, 3, 224, 224]
+        println!("{:?}", batch.shape());
+    }
+    Ok(())
+}
+```
+
+| Rust (`dataloader_rs::image`) | torchvision / Pillow / numpy | Parity |
+|---|---|---|
+| `Decode` (+ `DecodeLimits`) | `Image.open` | exact; JPEG within 3 levels |
+| `ToRgb`, `ToRgba`, `ToGray` | `convert("RGB" / "RGBA" / "L")` | exact |
+| `Crop`, `CenterCrop` | `F.crop`, `CenterCrop` | exact |
+| `Pad` (constant, edge, reflect, symmetric) | `Pad`, `numpy.pad` | exact |
+| `PadTo` | prime_dx `ConstantFill2d` | exact |
+| `Resize` (nearest, bilinear, bicubic, Lanczos3; antialias) | `Resize` | nearest exact, bilinear ±1 |
+| `HFlip`, `VFlip`, `Rotate90` | `F.hflip`, `F.vflip`, `numpy.rot90` | exact |
+| `ToFloat` | `ToTensor` values | exact |
+| `Normalize` | `Normalize` | exact |
+| `ToChw`, `ToHwc` | `ToTensor`'s permute | exact |
+
+In Python the same transforms are in `dataloader_rs.transforms` with `Compose`, and
+`ImageCollator` is a `collate_fn`; batches are viewed by numpy and `torch.from_dlpack` without a
+copy, and `Image.from_array` takes numpy arrays and torch tensors back into Rust
+([python/README.md](python/README.md#image-transforms-in-rust)). Details, limits and the
+parity tests: [src/image](src/image/README.md); buffers: [src/collator](src/collator/README.md).
+
 ## Concepts
 
 | Piece | Trait / type | Provided | Guide |
@@ -238,7 +301,8 @@ fn datasets() -> Result<(FileDataset, ObjectStoreDataset)> {
 | Async dataset | `AsyncDataset`: `async get(index)`, `len()` (feature `async`) | `HttpDataset`, `FileDataset`, `ObjectStoreDataset` | [src/README.md](src/README.md) |
 | Transform | `Transform<In>`: per-item CPU work `apply(index, item)`, set on the loader; closures; `then` | `Identity` (default) | [src/transform.rs](src/transform.rs) |
 | Sampler | `Sampler`: the index order of one epoch | `SequentialSampler`, `RandomSampler`, `DistributedSampler` | [src/sampler](src/sampler/README.md) |
-| Collator | `Collator<Item>`: merge a batch's samples | `VecCollator` (default), `DefaultCollator`, `TorchPinnedCollator` | [src/collator](src/collator/README.md) |
+| Collator | `Collator<Item>`: merge a batch's samples | `VecCollator` (default), `DefaultCollator`, `TorchPinnedCollator`, `ImageCollator` | [src/collator](src/collator/README.md) |
+| Image transforms | `Transform`s on `Image<T, L>` (feature `image`) | `Decode`, `ToRgb`, `Crop`, `Pad`, `PadTo`, `Resize`, `ToFloat`, `Normalize`, … | [src/image](src/image/README.md) |
 | Loader | `DataLoader` / `DataLoaderBuilder` / `DataLoaderIter`; the dataset held as a `SyncSource` or an `AsyncSource` | — | [src/loader](src/loader/README.md) |
 
 One epoch: the sampler produces indices, `BatchSampler` cuts them into batches of `batch_size`,
@@ -329,6 +393,9 @@ The same two paths run under the Python `PyDataloader`; what changes is who hold
 - The consumer waits for a batch **without** the GIL, so training code keeps running.
 - On a free-threaded build (3.14t) Python code in workers runs in parallel; under the GIL, only
   Rust work (fetching for the Rust datasets, waiting) and I/O release it.
+- A `dataloader_rs.transforms` transform with `collate_fn=ImageCollator()` never takes the GIL
+  for a Rust dataset: items stay Rust values from fetch to batch, and `__next__` only wraps the
+  batch buffer.
 
 ### Threads at a glance
 
@@ -389,7 +456,8 @@ microseconds through Python); for blocking I/O, `item_concurrency` so that
 | `async` | off | `AsyncDataset`, `DataLoader::builder_async`, `FileDataset` (tokio, futures-util) |
 | `http` | off | `HttpDataset`: reqwest over rustls with the *ring* provider and the bundled Mozilla roots |
 | `object-store` | off | `ObjectStoreDataset`: S3, GCS, Azure and HTTP stores of the `object_store` crate, same TLS |
-| `python` | off | the PyO3 module behind the `dataloader-rs` Python package; enables `async`, `http`, `object-store` |
+| `image` | off | `image` module: `Decode` (the `image` crate's pure-Rust PNG, JPEG, WebP, TIFF, BMP decoders), image transforms (`fast_image_resize` for `Resize`), `ImageCollator` |
+| `python` | off | the PyO3 module behind the `dataloader-rs` Python package; enables `async`, `http`, `object-store`, `image` |
 
 ## Performance
 
@@ -415,7 +483,7 @@ Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/
 | [BENCH.md](BENCH.md) | what is measured and how, results, comparison with PyTorch, caveats, how to rerun |
 | [python/README.md](python/README.md) | the Python package (also its PyPI page) |
 | [src/README.md](src/README.md) | code map, and the `Dataset` contract |
-| [src/loader](src/loader/README.md), [src/sampler](src/sampler/README.md), [src/collator](src/collator/README.md), [src/python](src/python/README.md) | one guide per module (also on docs.rs) |
+| [src/loader](src/loader/README.md), [src/sampler](src/sampler/README.md), [src/collator](src/collator/README.md), [src/image](src/image/README.md), [src/python](src/python/README.md) | one guide per module (also on docs.rs) |
 | [bench/](bench/README.md), [benches/](benches/README.md), [tests/](tests/README.md), [examples/](examples/README.md) | what each script, suite and test file covers |
 | [CHANGELOG.md](CHANGELOG.md) | release notes (generated by semantic-release) |
 
@@ -423,7 +491,7 @@ Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/
 
 | Path | What |
 |---|---|
-| [`src/`](src/README.md) | the crate: `dataset`, `sampler`, `collator`, `loader`, `python` |
+| [`src/`](src/README.md) | the crate: `dataset`, `sampler`, `collator`, `loader`, `image`, `python` |
 | [`dataloader_rs/`](dataloader_rs/__init__.pyi) | Python package: re-exports and type stubs |
 | [`python/`](python/README.md) | Python package README (PyPI) |
 | [`tests/`](tests/README.md) | Rust integration tests and the pytest suite |

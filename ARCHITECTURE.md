@@ -43,6 +43,7 @@ Contents:
 | `Sampler` | the index sequence of one epoch (`indices(dataset_len)`), and its length | `src/sampler/` |
 | `BatchSampler` | cuts the indices into `batch_size` chunks, honours `drop_last` | `src/sampler/batch_sampler.rs` |
 | `Collator<Item>` | merges a batch's `Vec<Item>` into one `Batch` value | `src/collator/` |
+| image transforms, `ImageCollator` | `Decode`, `PadTo`, `Normalize`, … as `Transform`s on `Image<T, L>`; images of one shape into one `ImageBatch` buffer (feature `image`) | `src/image/`, `src/collator/image/` |
 | `DataLoader` | owns the pieces and the settings; `iter()` starts an epoch | `src/loader/dataloader.rs` |
 | `SyncSource`, `AsyncSource` | the dataset as the loader holds it (`builder` / `builder_async`), behind the sealed `LoaderSource`; each starts its own kind of epoch | `src/loader/source.rs` |
 | `DataLoaderIter` | yields `Result<Batch>` in epoch order | `src/loader/iter.rs` |
@@ -58,6 +59,16 @@ each epoch) but the iterator it returns does not borrow the loader: it holds `Ar
 dataset, the transform and the collator. Every path yields batches in epoch order, a failed one
 included; the transform sees each item's index, so per-item metadata (coordinates, labels) is
 looked up there rather than carried through the dataset.
+
+Image work follows the same split (feature `image`): decoding, color, crop, pad, resize, float
+conversion and normalisation are each a `Transform` of one item, chained with `then` and typed
+(`Image<u8>` → `Image<f32>`, HWC → CHW), so they run in parallel on the loader's pool like any
+transform; only the copy into the batch buffer is the collator's. A batch's images are written
+once into one contiguous buffer (`ImageCollator`); with `reuse_buffers(n)` the buffers of
+dropped batches are kept for the next ones. Taking a buffer never waits: an empty pool
+allocates, so a consumer that holds many batches costs memory, not a deadlock (a pool that made
+collators wait for a free buffer would block pool threads that the batches being held would
+need).
 
 ## 3. Life of an epoch
 
@@ -257,6 +268,8 @@ Behind the `python` feature, `src/python/` builds the `dataloader_rs` extension 
 | `PyAsyncDataset` (subclass it) | `PyAsyncItems`, an `AsyncDataset` running the coroutines on an asyncio loop thread |
 | `HttpDataset`, `FileDataset`, `ObjectStoreDataset` | the Rust datasets (items `Bytes`) |
 | `transform=f` | `PyTransform`, the loader's `Transform`: `f(index, item)`; for a Rust dataset `bytes` first |
+| `transform=dataloader_rs.transforms.Compose([...])` | `PyTransform::Native`: the Rust image transforms (`python/image/ops.rs`), no interpreter |
+| `collate_fn=ImageCollator()` | `PyCollator::Images`: `ImageCollator` in Rust, batches as `ImageBatch` objects |
 
 `PyDataloader(dataset)` picks the loader from the dataset's base class: `PyDataset` → the sync
 loader; `PyAsyncDataset` → `DataLoader<AsyncSource<PyAsyncItems>, …>`; a Rust dataset →
@@ -300,7 +313,27 @@ On regular CPython the tasks' Python code is serialised by the GIL; work that re
   stopped loop cancels the coroutines still pending and waits for them (at most 5 s) before it
   closes, so that each coroutine created is awaited.
 - **Rust datasets**: fetching holds no interpreter; the conversion to `bytes` and `transform`
-  run as the loader's transform on its pool, attaching only for the calls.
+  run as the loader's transform on its pool, attaching only for the calls. With a
+  `dataloader_rs.transforms` transform and `ImageCollator`, nothing attaches until `__next__`
+  wraps the batch: the items stay Rust values (`PyItem::Native`) from fetch to collation.
+
+### 6.2.1 Image transforms and zero-copy batches
+
+`dataloader_rs.transforms` builds `Transform` objects holding a list of `Op`s, each wrapping the
+Rust transform of the same name; the image flowing through them is a `Value` (bytes, or an
+`Image` of one of four type × layout combinations), checked at each step with an error saying
+what the step takes. Passed as `transform=`, the list runs as `PyTransform::Native`: on a
+Python dataset's items it attaches only to copy the `bytes`; on a Rust dataset's `Bytes` it does
+not attach. The items reach the collator as `PyItem::Native`; `ImageCollator` collates them
+without the interpreter, any other `collate_fn` (or none) gets them as `Image` objects.
+
+`Image` and `ImageBatch` keep their values in Rust's buffer and describe it with
+`__array_interface__` (address, shape, type string, C-contiguous): `np.asarray(batch)` makes a
+view whose `base` is the batch, so the buffer lives as long as any view. `__dlpack__` delegates
+to that view's, so `torch.from_dlpack(batch)` shares the memory too. Batches are writable (a
+tensor's memory must be), images read-only; no unsafe code is involved, the buffer's address is
+an integer. A batch from a collator with `buffers=n` returns its buffer to the pool when the
+batch object and every view of it are gone.
 - The global pool is built with the first `PyAsyncDataset` loader, with the interpreter released: rayon
   waits for its threads to start, and a starting thread may wait for every attached thread to
   pause (free-threaded builds).
@@ -342,6 +375,8 @@ not wait: the pool's threads can no longer attach.
 | One pool per loader, batch tasks on it | no thread spawn per epoch; batch and item work share threads instead of oversubscribing the CPU | a fixed cost per batch that shows on nearly free batches; the pool must be rebuilt after `fork()` |
 | Generic `DataLoader<Src, S, C, T>` | monomorphized fetch, transform and collate, no boxing | the item and batch types are part of the loader's type |
 | Transform on the loader, not the dataset | a dataset is only a source; one place, one thread rule (the loader's), the item's index for free | `Transform::is_identity` lets the async path skip the pool for `Identity` |
+| Image operations as per-item transforms, the collator only copies | decoding and padding run in parallel across a batch's items; the collator, serial per batch, does one copy | `ImageCollator` cannot fuse padding into its copy |
+| Batch buffers reused through a pool that never waits | a fresh 38.5 MB buffer spends three quarters of its collation in page faults; a waiting pool can deadlock when the consumer holds batches | up to `n` idle buffers stay allocated |
 | Batches computed at `iter()` | the epoch's order is fixed before any work starts; `len()` is exact | one `Vec<Vec<usize>>` per epoch |
 | Claim window | at most `num_workers + prefetch_depth` batches in flight or buffered, even behind one slow batch | a slow batch stalls the window instead of letting later batches run far ahead |
 | Errors per batch | one bad sample does not end a Rust epoch | callers must handle `Result` per batch |

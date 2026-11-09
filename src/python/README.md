@@ -10,9 +10,14 @@ the implementation guide; the user guide is [python/README.md](../../python/READ
 | `dataset/sync.rs` | `PyDatasetBase` (the `PyDataset` base class), `Dataset` for `Py<PyDatasetBase>`, `Fetcher` (`__getitems__` or `__getitem__`) |
 | `dataloader.rs` | `PyDataloader`: arguments, validation, `__iter__`, `__len__` |
 | `iterator.rs` | `PyDataloaderIter`: the direct, threaded and async epochs, `__next__` |
-| `transform.rs` | `PyTransform`: `transform=f`, called as `f(index, item)`, the loader's `Transform` for Python items and for a Rust dataset's `Bytes` |
+| `transform.rs` | `PyTransform`: `transform=f`, called as `f(index, item)`, or the Rust image transforms (`Native`); the loader's `Transform` for Python items and for a Rust dataset's `Bytes`; `PyItem`, a Python object or a Rust value |
 | `sampler.rs` | `PySampler`: sequential, random, or a Python iterable, and the exception it raised |
-| `collator.rs` | `PyCollator`: `collate_fn`, or a plain `list` |
+| `collator.rs` | `PyCollator`: `collate_fn`, an `ImageCollator` (collated in Rust), or a plain `list` |
+| `image/ops.rs` | `Value` (bytes or an image of one type and layout) and `Op` (one Rust image transform), applied without static types |
+| `image/transforms.rs` | `dataloader_rs.transforms`: `Transform` (a list of `Op`s, callable) and its constructors `Decode`, `PadTo`, …, `Compose` |
+| `image/collator.rs` | `ImageCollator` in Python: Rust values, or `Image` objects and `(Image, …)` tuples |
+| `image/batch.rs` | `Image` and `ImageBatch`: `__array_interface__` views and `__dlpack__` |
+| `image/array.rs` | `Image.from_array`: a numpy array or CPU tensor (through `np.asarray` and the buffer protocol), checked against `Decode`'s limits, copied into an HWC image |
 | `pool.rs` | `run_attached`: the pool threads' main function, one thread state per thread; `attach_global_pool` does the same for rayon's global pool |
 | `dataset/asynchronous.rs` | `PyAsyncDatasetBase` (the `PyAsyncDataset` base class), `PyAsyncItems`: coroutines on an asyncio loop thread, submitted from the global pool |
 | `dataset/event_loop.py` | that loop: `start(aclose)` returns `submit(coroutine)` and `stop()`; compiled into the module |
