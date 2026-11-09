@@ -36,6 +36,7 @@ cargo test --all-features            # as CI does; torch-rs downloads libtorch
 | `test_dataset_async.py` | `PyAsyncDataset` and the Rust datasets (`HttpDataset`, `FileDataset`, `ObjectStoreDataset`): base-class checks, order, cancellation, `aclose`, errors, templates, retry settings |
 | `test_transform.py` | `transform=f`, called as `f(index, item)`, on every kind of dataset |
 | `test_image_transforms.py` | `dataloader_rs.transforms` and `ImageCollator`: golden files, errors, every kind of dataset, `(Image, coords)` tuples, zero-copy numpy and DLPack views, buffer reuse; `Image.from_array` (round trips, CHW and strided input, refused types, shapes and sizes, a Rust → torch → Rust loader) |
+| `test_examples.py` | the Python examples of `examples/python/` run to the end (skipped without torch / torchvision) |
 | `py_dataloader_test_utils.py` | shared datasets (`ListDataset`, `ToyDataset`) and helpers |
 
 ```bash

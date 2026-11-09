@@ -497,7 +497,7 @@ Continuous results per commit: dashboards for [Rust](https://azhicham.github.io/
 | [`tests/`](tests/README.md) | Rust integration tests and the pytest suite |
 | [`benches/`](benches/README.md) | Criterion benchmarks (Rust) |
 | [`bench/`](bench/README.md) | Python benchmarks: pytest-benchmark guards and comparisons with PyTorch |
-| [`examples/`](examples/README.md) | runnable Rust examples |
+| [`examples/`](examples/README.md) | runnable Rust examples; Python image-loading examples in `examples/python/` |
 
 ## Building and testing
 
