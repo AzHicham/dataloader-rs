@@ -19,7 +19,7 @@ crate-type = ["rlib", "cdylib"]
 default = []
 ndarray = ["dep:ndarray"]
 torch-rs = ["dep:tch"]
-python = ["dep:pyo3", "async", "http", "object-store"]
+python = ["dep:pyo3", "async", "http", "object-store", "image"]
 # AsyncDataset and DataLoader::builder_async: items fetched by futures on tokio.
 async = ["dep:tokio", "tokio/time", "dep:futures-util", "dep:bytes"]
 # HttpDataset: reqwest over rustls (ring provider, bundled Mozilla roots).
@@ -32,6 +32,8 @@ object-store = [
     "dep:rustls",
     "dep:webpki-root-certs",
 ]
+# Image transforms (decode, crop, pad, resize, ...) and ImageCollator: pure-Rust codecs.
+image = ["dep:image", "dep:fast_image_resize", "dep:bytes"]
 
 
 [profile.release]
@@ -112,6 +114,19 @@ optional         = true
 [dependencies.tch]
 version          = "0.26"
 default-features = false
+optional         = true
+
+# Pure-Rust decoders only (png, zune-jpeg, image-webp, tiff, bmp): no C library, no rayon.
+[dependencies.image]
+version          = "0.25"
+default-features = false
+features         = ["png", "jpeg", "webp", "tiff", "bmp"]
+optional         = true
+
+[dependencies.fast_image_resize]
+version          = "6"
+default-features = false
+features         = ["std"]
 optional         = true
 
 [dependencies.pyo3]
