@@ -43,7 +43,7 @@ def test_rejects_dataset_not_subclassing_pydataset():
         def __getitem__(self, index):
             return index
 
-    with pytest.raises(TypeError, match="PyDatasetBase"):
+    with pytest.raises(TypeError, match="must be a PyDataset, a PyAsyncDataset or a Rust dataset"):
         DataLoader(PlainDataset(), batch_size=1)
 
 

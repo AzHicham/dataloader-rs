@@ -3,21 +3,36 @@ dataloader-rs — high-performance DataLoader backed by a Rust core.
 
 Public surface
 --------------
+A dataset is a source: it only fetches items, synchronously (``PyDataset``)
+or asynchronously (``PyAsyncDataset`` and the Rust datasets). Per-item work
+(decoding, augmentation) is the loader's ``transform``, run on its threads.
+
 PyDataset        Base class for map-style datasets.  Subclass it and implement
                  ``__len__`` and ``__getitem__``.
+PyAsyncDataset   Base class for datasets whose ``__getitem__`` is ``async def``.
+HttpDataset, FileDataset, ObjectStoreDataset
+                 Datasets implemented in Rust (items are ``bytes``), fetched
+                 without the interpreter.
 PyDataloader     Main entry point.  Mirrors the ``torch.utils.data.DataLoader``
-                 constructor signature for the parameters it supports.
+                 constructor signature for the parameters it supports, plus
+                 ``transform``.
 PyDataloaderIter Iterator returned by ``PyDataloader.__iter__``.  Supports
                  ``len()`` (number of batches remaining in the current epoch).
 """
 
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from os import PathLike
 from typing import Any
 
 __all__ = [
+    "FileDataset",
+    "HttpDataset",
+    "ObjectStoreDataset",
+    "PyAsyncDataset",
     "PyDataset",
     "PyDataloader",
     "PyDataloaderIter",
+    "RustDataset",
 ]
 
 class PyDataset:
@@ -59,6 +74,206 @@ class PyDataset:
     # It is not declared here so that ``hasattr`` stays ``False`` for datasets
     # that do not implement it.
 
+class PyAsyncDataset:
+    """Base class for map-style datasets fetched by coroutines.
+
+    Subclass it and implement :meth:`__len__` and ``async def __getitem__``
+    (optionally ``async def __getitems__(indices)``, used when
+    ``item_concurrency=1``). The loader runs the coroutines on an asyncio event
+    loop thread of its own, with up to ``num_workers * item_concurrency`` of
+    them in flight; dropping an iterator cancels the coroutines in flight.
+
+    A subclass may also define ``async def aclose(self)`` to release what is
+    bound to that loop (an ``aiohttp`` session, pooled connections). When the
+    loader is dropped, it awaits ``aclose()`` once on its loop, then stops the
+    loop. An error, or ``aclose()`` still running after 5 seconds, is logged
+    to the ``dataloader_rs`` logger and the loop stops anyway. A plain ``def
+    aclose`` is a ``TypeError`` when the loader is built.
+
+    Example
+    -------
+    >>> class Tiles(PyAsyncDataset):
+    ...     def __init__(self, session, urls):
+    ...         super().__init__()
+    ...         self.session, self.urls = session, urls
+    ...     def __len__(self) -> int:
+    ...         return len(self.urls)
+    ...     async def __getitem__(self, index: int):
+    ...         async with self.session.get(self.urls[index]) as response:
+    ...             return await response.read()
+    ...     async def aclose(self):
+    ...         await self.session.close()
+    """
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, index: int) -> Awaitable[Any]: ...
+
+class RustDataset:
+    """A dataset implemented in Rust: :class:`HttpDataset`, :class:`FileDataset`
+    or :class:`ObjectStoreDataset`.
+
+    Items are fetched on the loader's async runtime without the interpreter, and
+    reach Python as ``bytes`` (or what the loader's ``transform`` makes of them).
+    """
+
+    def __len__(self) -> int: ...
+
+class HttpDataset(RustDataset):
+    """One HTTP GET per item: the body of the response to ``urls[i]``.
+
+    One shared client keeps connections alive. Each attempt must complete within
+    ``timeout`` seconds (body included). Connection errors, timeouts and statuses
+    408, 429, 500, 502, 503, 504 are retried up to ``retries`` times, waiting
+    ``backoff * 2**n`` seconds (with jitter, at most ``max_backoff``; a
+    ``Retry-After`` is honoured up to it). Other statuses fail at once with
+    ``OSError``; a body over ``max_bytes`` raises ``ValueError``. TLS uses the
+    bundled Mozilla root certificates.
+    """
+
+    def __init__(
+        self,
+        urls: Iterable[str],
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float = 30.0,
+        connect_timeout: float = 10.0,
+        retries: int = 3,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+    ) -> None: ...
+    @staticmethod
+    def from_template(
+        template: str,
+        columns: Mapping[str, Sequence[int] | Sequence[str] | Any] | None = None,
+        *,
+        length: int | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout: float = 30.0,
+        connect_timeout: float = 10.0,
+        retries: int = 3,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+    ) -> HttpDataset:
+        """A dataset whose URLs are made in Rust, item by item, from ``template``
+        and one value per item in each of ``columns``; no URL string is kept per
+        item.
+
+        ``{name}`` is the value of column ``name`` for the item, ``{index}`` the
+        index of the item, ``{{`` and ``}}`` literal braces. A column is a sequence
+        (or numpy array of any integer dtype) of ints, written in decimal, or of
+        strs, percent-encoded as a URL component (``.`` and ``..`` are refused).
+        The number of items is the length of the columns; ``length`` is required
+        when there is no column, and must match them otherwise.
+
+        Raises ``ValueError`` for a placeholder without a column, a column the
+        template does not use, unequal lengths, unbalanced braces, an empty
+        template or an invalid URL for the first item (an invalid URL for another
+        item fails that item), and ``TypeError`` for a column that is not ints or
+        strs. Other options are those of :class:`HttpDataset`.
+        """
+        ...
+
+class FileDataset(RustDataset):
+    """One local file per item: the content of ``paths[i]``. A file over
+    ``max_bytes`` raises ``ValueError``; a missing one ``OSError``.
+
+    By default a file is read once, for as long as the file system takes. For a
+    network file system, ``timeout`` (seconds) bounds each attempt, and attempts
+    that time out or fail with ``TimedOut``, ``Interrupted`` or ``WouldBlock``
+    I/O errors are retried up to ``retries`` times (default 0), waiting
+    ``backoff * 2**n`` seconds (with jitter, at most ``max_backoff``).
+    """
+
+    def __init__(
+        self,
+        paths: Iterable[str | PathLike[str]],
+        *,
+        timeout: float | None = None,
+        retries: int = 0,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+    ) -> None: ...
+    @staticmethod
+    def from_template(
+        template: str,
+        columns: Mapping[str, Sequence[int] | Sequence[str] | Any] | None = None,
+        *,
+        length: int | None = None,
+        timeout: float | None = None,
+        retries: int = 0,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+    ) -> FileDataset:
+        """A dataset whose paths are made in Rust, item by item, from
+        ``template`` and one value per item in each of ``columns``, as
+        :meth:`HttpDataset.from_template` makes URLs.
+
+        Strs are written as they are, but a value holding ``/``, ``\\`` or NUL,
+        or equal to ``.`` or ``..``, raises ``ValueError``, and an item whose
+        values make a ``.`` or ``..`` path component with the text around them
+        fails: a value cannot leave the template's directory. Other options are
+        those of :class:`FileDataset`.
+        """
+        ...
+
+class ObjectStoreDataset(RustDataset):
+    """One object per item: key ``keys[i]`` under the store and prefix of ``url``
+    (``s3://bucket/prefix``, ``gs://``, ``az://``, ``https://``).
+
+    Credentials and settings come from the environment (``AWS_*``, ``GOOGLE_*``,
+    ``AZURE_*``), then from ``options`` (``object_store`` keys such as
+    ``aws_region`` or ``allow_http``; an unknown key raises ``ValueError``, and
+    so does ``timeout``: use the ``timeout`` argument). A ``url`` with a
+    password, a query or a fragment raises ``ValueError``: credentials go in
+    ``options``.
+
+    The store retries a request itself: 5xx statuses, 429, 408, connection
+    errors and timeouts, up to ``retries`` times, waiting about ``backoff *
+    2**n`` seconds (with jitter, at most ``max_backoff``), within 3 minutes of
+    the first attempt. Each request must complete within ``timeout`` seconds
+    (``None``: the store's default, 30 s).
+    """
+
+    def __init__(
+        self,
+        url: str,
+        keys: Iterable[str],
+        *,
+        options: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+        retries: int = 3,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+    ) -> None: ...
+    @staticmethod
+    def from_template(
+        url: str,
+        template: str,
+        columns: Mapping[str, Sequence[int] | Sequence[str] | Any] | None = None,
+        *,
+        length: int | None = None,
+        options: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+        retries: int = 3,
+        backoff: float = 0.1,
+        max_backoff: float = 5.0,
+        max_bytes: int = 64 << 20,
+    ) -> ObjectStoreDataset:
+        """A dataset whose keys, relative to the prefix of ``url``, are made in
+        Rust, item by item, from ``template`` and one value per item in each of
+        ``columns``, as :meth:`HttpDataset.from_template` makes URLs.
+
+        Strs are written as they are, but a value must be a valid key part (not
+        empty, ``.`` or ``..``, without ``/`` or control characters), else
+        ``ValueError``. Other options are those of :class:`ObjectStoreDataset`.
+        """
+        ...
+
 class PyDataloaderIter:
     """Iterator over one epoch of a :class:`PyDataloader`.
 
@@ -78,7 +293,10 @@ class PyDataloader:
     Parameters
     ----------
     dataset:
-        A :class:`PyDataset` instance (map-style, random-access).
+        The source of the items: a :class:`PyDataset`, a :class:`PyAsyncDataset`
+        or a Rust dataset (:class:`HttpDataset`, :class:`FileDataset`,
+        :class:`ObjectStoreDataset`). Async and Rust datasets always load
+        ``num_workers`` (at least one) batches at once.
     batch_size:
         How many samples to include in each batch. Default: ``1``.
     shuffle:
@@ -93,8 +311,8 @@ class PyDataloader:
         ``0`` (default) processes batches on the calling thread.
     collate_fn:
         A callable ``(list[sample]) -> batch`` that merges individual samples
-        into a single batch object.  When ``None`` (default) each batch is a
-        plain ``list`` of samples.
+        (after *transform*) into a single batch object.  When ``None``
+        (default) each batch is a plain ``list`` of samples.
     drop_last:
         If ``True``, drop the last batch when the dataset size is not divisible
         by *batch_size*. Default: ``False``.
@@ -115,6 +333,24 @@ class PyDataloader:
         item_concurrency`` items are in flight. Default: ``1``.
     items_in_parallel:
         Deprecated name of *item_concurrency*; emits ``DeprecationWarning``.
+    runtime_threads:
+        Async and Rust datasets only: worker threads of the loader's tokio
+        runtime, which receives responses, runs TLS and copies bodies. Between
+        ``1`` and ``1024``; one thread can drive many requests in flight.
+        Default: ``None``, one per CPU available to the process (affinity and
+        cgroup quota included). ``ValueError`` with a :class:`PyDataset`.
+    transform:
+        A callable ``(index, sample) -> sample`` applied to every item once
+        fetched, before *collate_fn*: decoding, augmentation. ``index`` is the
+        item's dataset index, as the sampler drew it; wrap a one-argument
+        callable such as a torchvision ``Compose``: ``lambda i, x: compose(x)``.
+        It runs on the loader's threads (on the calling thread
+        for a :class:`PyDataset` with ``num_workers=0`` and
+        ``item_concurrency=1``), holding the
+        interpreter only for the call; items of a batch are transformed in
+        parallel with ``item_concurrency > 1``, and as they arrive for async
+        and Rust datasets. An exception it raises fails its batch and keeps
+        its type. Default: ``None``, items as fetched.
 
     Example
     -------
@@ -122,11 +358,28 @@ class PyDataloader:
     >>> for epoch in range(10):
     ...     for batch in loader:
     ...         train(batch)
+
+    Tiles fetched in Rust, decoded on the loader's threads, with their coordinates:
+
+    >>> tiles = HttpDataset.from_template(
+    ...     "https://images.example/slide/tile?x={x}&y={y}&size=224", {"x": xs, "y": ys}
+    ... )
+    >>> coords = np.stack([xs, ys], axis=1)
+    >>> loader = PyDataloader(
+    ...     tiles,
+    ...     batch_size=64,
+    ...     num_workers=4,
+    ...     item_concurrency=16,
+    ...     transform=lambda i, png: (decode(png), coords[i]),
+    ...     collate_fn=lambda items: tuple(map(np.stack, zip(*items))),
+    ... )
+    >>> for images, tile_coords in loader:
+    ...     predict(images, tile_coords)
     """
 
     def __init__(
         self,
-        dataset: PyDataset,
+        dataset: PyDataset | PyAsyncDataset | RustDataset,
         batch_size: int = 1,
         prefetch_depth: int = 2,
         shuffle: bool = False,
@@ -137,6 +390,8 @@ class PyDataloader:
         seed: int | None = None,
         item_concurrency: int = 1,
         items_in_parallel: int | None = None,
+        runtime_threads: int | None = None,
+        transform: Callable[[int, Any], Any] | None = None,
     ) -> None: ...
     def __iter__(self) -> PyDataloaderIter:
         """Start a new epoch and return an iterator over batches."""
