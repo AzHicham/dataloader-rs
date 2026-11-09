@@ -194,13 +194,13 @@ impl HttpDatasetBuilder {
     /// ```no_run
     /// use dataloader_rs::dataset::{Column, HttpDataset};
     ///
-    /// // 34 000 tiles of 224 px, 200 per row.
+    /// // 34,000 tiles of 224 px, 200 per row.
     /// let xs: Vec<u64> = (0..34_000).map(|i| i % 200 * 224).collect();
     /// let ys: Vec<u64> = (0..34_000).map(|i| i / 200 * 224).collect();
     /// let dataset = HttpDataset::builder().url_template(
-    ///     "http://imgsrv.internal/slides/{slide}/tile?x={x}&y={y}&w=224&h=224&f=png",
+    ///     "http://tiles.internal/images/{image}/tile?x={x}&y={y}&size=224",
     ///     [
-    ///         ("slide", Column::from(vec!["s 1.svs"; xs.len()])),
+    ///         ("image", Column::from(vec!["image 1.tif"; xs.len()])),
     ///         ("x", Column::from(xs)),
     ///         ("y", Column::from(ys)),
     ///     ],

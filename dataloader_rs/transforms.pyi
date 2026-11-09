@@ -93,8 +93,8 @@ def PadTo(
     anchor: str = "top_left",
 ) -> Transform:
     """Pad with ``fill`` (default 0) up to ``width x height``, never cropping.
-    ``anchor="top_left"`` pads right and bottom: prime_dx's
-    ``ConstantFill2d((width, height), fill)``; ``"center"`` pads evenly."""
+    ``anchor="top_left"`` pads at the right and bottom; ``"center"`` pads
+    evenly."""
     ...
 
 def Resize(
