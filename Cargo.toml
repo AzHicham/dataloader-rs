@@ -192,6 +192,11 @@ name    = "bench_first_batch"
 harness = false
 
 [[bench]]
+name              = "bench_image"
+harness           = false
+required-features = ["image"]
+
+[[bench]]
 name              = "bench_async"
 harness           = false
 required-features = ["http"]
