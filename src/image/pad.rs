@@ -1,5 +1,5 @@
-//! [`Pad`] (torchvision's, with its four modes) and [`PadTo`] (up to a fixed size, as
-//! prime_dx's `ConstantFill2d`).
+//! [`Pad`] (torchvision's, with its four modes) and [`PadTo`] (up to a fixed size, at the right
+//! and bottom by default).
 
 use super::buffer::{invalid, sample_count, too_large, with_capacity};
 use super::{Image, Sample};
@@ -93,7 +93,7 @@ impl<T: Sample> Transform<Image<T>> for Pad {
 /// Where [`PadTo`] puts the image in the padded one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Anchor {
-    /// Padding only right and bottom, as prime_dx's `ConstantFill2d`.
+    /// Padding only at the right and bottom.
     #[default]
     TopLeft,
     /// Padding split evenly, the extra pixel right or bottom.
@@ -101,8 +101,8 @@ pub enum Anchor {
 }
 
 /// Pad with a constant up to `width × height`, never cropping: a side already that long or
-/// longer is left as it is. With the default top-left anchor this is prime_dx's
-/// `ConstantFill2d`, `np.pad(img, ((0, H - h), (0, W - w), (0, 0)))`.
+/// longer is left as it is. With the default top-left anchor this is
+/// `np.pad(img, ((0, H - h), (0, W - w), (0, 0)))`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PadTo {
     width: usize,

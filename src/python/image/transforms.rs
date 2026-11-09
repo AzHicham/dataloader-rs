@@ -198,7 +198,7 @@ pub(crate) fn pad(
 }
 
 /// Pad with `fill` up to `width × height`, never cropping. `anchor="top_left"` pads right and
-/// bottom, as prime_dx's `ConstantFill2d((width, height), fill)`; `"center"` evenly.
+/// bottom; `"center"` pads evenly.
 #[pyfunction(name = "PadTo")]
 #[pyo3(signature = (width, height, fill=None, anchor="top_left"))]
 pub(crate) fn pad_to(
