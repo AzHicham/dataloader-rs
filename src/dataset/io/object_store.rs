@@ -524,7 +524,7 @@ mod tests {
     use super::{ObjectStoreDataset, retry_config};
     use crate::{
         DataLoader,
-        dataset::{AsyncDataset, Column, FetchError, Retry, test_server::TestServer},
+        dataset::{AsyncDataset, Column, FetchError, Retry, io::test_server::TestServer},
     };
 
     fn block_on<F: Future>(future: F) -> F::Output {

@@ -37,13 +37,13 @@ Contents:
 
 | Piece | Role | Code |
 |---|---|---|
-| `Dataset` | `get(index)`, `len()`; `get_batch(indices)` defaults to `get` per index | `src/dataset/mod.rs` |
+| `Dataset` | `get(index)`, `len()`; `get_batch(indices)` defaults to `get` per index | `src/dataset/sync.rs` |
 | `AsyncDataset` | the same with `get` returning a future (feature `async`); `HttpDataset`, `FileDataset`, `ObjectStoreDataset` | `src/dataset/` |
 | `Transform<In>` | per-item CPU work `apply(index, item)`, a loader setting (`builder.transform(t)`, default `Identity`); closures, `then` | `src/transform.rs` |
 | `Sampler` | the index sequence of one epoch (`indices(dataset_len)`), and its length | `src/sampler/` |
 | `BatchSampler` | cuts the indices into `batch_size` chunks, honours `drop_last` | `src/sampler/batch_sampler.rs` |
 | `Collator<Item>` | merges a batch's `Vec<Item>` into one `Batch` value | `src/collator/` |
-| `DataLoader` | owns the pieces and the settings; `iter()` starts an epoch | `src/loader/core.rs` |
+| `DataLoader` | owns the pieces and the settings; `iter()` starts an epoch | `src/loader/dataloader.rs` |
 | `SyncSource`, `AsyncSource` | the dataset as the loader holds it (`builder` / `builder_async`), behind the sealed `LoaderSource`; each starts its own kind of epoch | `src/loader/source.rs` |
 | `DataLoaderIter` | yields `Result<Batch>` in epoch order | `src/loader/iter.rs` |
 
@@ -187,7 +187,7 @@ Sizing: `num_workers × item_concurrency` is the number of requests in flight; `
 is the CPU for network receive, TLS and body copies (one thread drives many requests); the
 loader's pool is the CPU for transforms and collation.
 
-The built-in datasets (`src/dataset/`) share two pieces. Where item `i` lives
+The built-in datasets (`src/dataset/io/`) share two pieces. Where item `i` lives
 (`Locations<L>`): a list parsed when the dataset is built, a `Template` parsed once whose
 location is made and parsed when the item is fetched, or a function of the index. A template
 writes string values per target (`Escape`): percent-encoded in URLs, as they are in paths and

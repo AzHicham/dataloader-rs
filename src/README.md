@@ -3,7 +3,7 @@
 | Path | What | Guide |
 |---|---|---|
 | `lib.rs` | crate docs and the top-level re-exports | |
-| `dataset/` | the sources: the `Dataset` trait (map-style), `IterableDataset`; feature `async`: `AsyncDataset`, `FileDataset`, `FetchError`, and what the built-in datasets share, `Retry` (`retry.rs`), `Column` and the template (`template/`), the list / template / function of locations (`location.rs`); `http`: `HttpDataset`; `object-store`: `ObjectStoreDataset` | below |
+| `dataset/` | the sources: `sync.rs`, the `Dataset` trait (map-style) and `IterableDataset`; `asynchronous.rs` (feature `async`), `AsyncDataset`; `io/`, the built-in async datasets: `FileDataset`, `FetchError`, and what they share, `Retry` (`retry.rs`), `Column` and the template (`template/`), the list / template / function of locations (`location.rs`); `http`: `HttpDataset`; `object-store`: `ObjectStoreDataset` | below |
 | `transform.rs` | `Transform`: per-item CPU work the loader applies, with the item's index; `Identity`; closures are transforms, `then` chains them | |
 | `error.rs` | `Error` (`Box<dyn Error + Send + Sync>`) and `Result<T>` | below |
 | `sampler/` | `Sampler`, `SequentialSampler`, `RandomSampler`, `DistributedSampler`, `BatchSampler` | [sampler/README.md](sampler/README.md) |

@@ -7,7 +7,8 @@ use crate::loader::source::AsyncSource;
 use crate::{
     collator::{Collator, VecCollator},
     loader::{
-        core::{DataLoader, LoaderPool, ThreadMain},
+        dataloader::DataLoader,
+        pool::{LoaderPool, ThreadMain},
         source::LoaderSource,
     },
     sampler::{BatchSampler, Sampler, SequentialSampler},

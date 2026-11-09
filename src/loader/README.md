@@ -9,12 +9,15 @@ returns `D` or `A`.
 | File | What |
 |---|---|
 | `builder.rs` | `DataLoaderBuilder`: settings, `sampler` / `transform` / `collator` (which change the loader's type), `build` |
-| `core.rs` | `DataLoader`: `iter`, `len`, `batch_len`, accessors; `&mut DataLoader` is `IntoIterator` |
-| `source.rs` | the sealed `LoaderSource` trait, `SyncSource` and `AsyncSource`: each starts its own kind of epoch and sizes the pool |
-| `iter.rs` | `DataLoaderIter`; `SyncEpoch`: the direct path, and the parallel core (reorder buffer, drop) |
-| `worker.rs` | `process_batch` (fetch + transform + collate one batch) and `Epoch`: batch tasks, the claim window |
-| `core.rs` (`LoaderPool`) | the loader's rayon pool, rebuilt after `fork()` |
-| `async_epoch.rs` | feature `async`: the loader's tokio runtime and `AsyncEpoch`: the driver task, batch tasks, the bounded channel ([ARCHITECTURE.md, 3.7](../../ARCHITECTURE.md#37-async-datasets-builder_async)) |
+| `dataloader.rs` | `DataLoader`: `iter`, `len`, `batch_len`, accessors; `&mut DataLoader` is `IntoIterator` |
+| `source/` | the sealed `LoaderSource` trait (`loader_source.rs`, `sealed.rs`), `SyncSource` (`sync.rs`) and `AsyncSource` (`asynchronous.rs`): each starts its own kind of epoch and sizes the pool (`threads.rs`); `EpochSettings` (`settings.rs`) |
+| `iter.rs` | `DataLoaderIter`, over the epoch of either source |
+| `pool.rs` | `LoaderPool`: the loader's rayon pool, rebuilt after `fork()` |
+| `sync/epoch.rs` | `SyncEpoch`: the direct path, or batch tasks on the pool |
+| `sync/worker.rs` | `process_batch` (fetch + transform + collate one batch) and `Epoch`: batch tasks, the claim window, item lanes |
+| `sync/reorder.rs` | `ParallelCore`: the reorder buffer, fork check, drop |
+| `asynchronous/epoch.rs` | feature `async`: `AsyncEpoch`: the driver task, batch tasks, the bounded channel ([ARCHITECTURE.md, 3.7](../../ARCHITECTURE.md#37-async-datasets-builder_async)) |
+| `asynchronous/runtime.rs` | feature `async`: the loader's tokio runtime, its own (`runtime_threads`) or the caller's (`runtime`) |
 
 ## Building and iterating
 

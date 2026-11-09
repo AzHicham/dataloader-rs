@@ -1,18 +1,18 @@
 use pyo3::exceptions::{PyDeprecationWarning, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::{PyTraverseError, PyVisit, intern};
+use pyo3::{PyTraverseError, PyVisit};
 
 use crate::collator::VecCollator;
 use crate::dataset::AsyncDataset;
 use crate::loader::{
     AsyncSource, DataLoader, DataLoaderBuilder, LoaderSource, MAX_RUNTIME_THREADS, SyncSource,
 };
-use crate::python::async_dataset::{PyAsyncDatasetBase, PyAsyncItems};
 use crate::python::collator::PyCollator;
-use crate::python::dataset::{Fetcher, PyDataset, PyDatasetBase, len_py};
+use crate::python::dataset::{
+    DatasetKind, Fetcher, PyAsyncItems, PyDataset, RustSource, dataset_kind, len_py,
+};
 use crate::python::iterator::{AsyncIter, PyDataloaderIter, PyIterInner};
 use crate::python::pool::{attach_global_pool, run_attached, track};
-use crate::python::rust_dataset::{PyRustDataset, RustSource};
 use crate::python::sampler::PySampler;
 use crate::python::transform::PyTransform;
 use crate::sampler::{RandomSampler, SequentialSampler};
@@ -92,101 +92,28 @@ impl Options {
     }
 }
 
-/// Whether `dataset.<name>` exists and is an `async def` function.
-fn is_async_method(dataset: &Bound<'_, PyAny>, name: &str) -> PyResult<Option<bool>> {
-    let py = dataset.py();
-    match dataset.getattr_opt(name)? {
-        Some(method) if method.is_truthy()? => {
-            let inspect = py.import(intern!(py, "inspect"))?;
-            let is_async = inspect
-                .call_method1(intern!(py, "iscoroutinefunction"), (method,))?
-                .is_truthy()?;
-            Ok(Some(is_async))
-        }
-        _ => Ok(None),
-    }
-}
-
-/// Check `dataset` against its base class and pick the loader for it.
+/// Pick the loader for `dataset`'s kind.
 fn core_for(py: Python<'_>, dataset: &Bound<'_, PyAny>, options: Options) -> PyResult<Core> {
-    if let Ok(rust) = dataset.cast::<PyRustDataset>() {
-        return Ok(Core::Rust {
-            loader: options.build_async(rust.get().source()),
+    match dataset_kind(dataset)? {
+        DatasetKind::Rust(source) => Ok(Core::Rust {
+            loader: options.build_async(source),
             dataset: dataset.clone().unbind(),
-        });
-    }
-    let is_sync = dataset.is_instance_of::<PyDatasetBase>();
-    let is_async = dataset.is_instance_of::<PyAsyncDatasetBase>();
-    let kind = match (is_sync, is_async) {
-        (true, true) => {
-            return Err(PyTypeError::new_err(
-                "a dataset subclasses PyDataset or PyAsyncDataset, not both",
-            ));
+        }),
+        DatasetKind::Sync(_) if options.runtime_threads.is_some() => Err(PyValueError::new_err(
+            "runtime_threads only applies to async datasets \
+             (PyAsyncDataset, HttpDataset, FileDataset, ObjectStoreDataset)",
+        )),
+        DatasetKind::Sync(sync) => Ok(Core::Sync(options.build(DataLoader::builder(sync)))),
+        DatasetKind::Async { batched, aclose } => {
+            let items = PyAsyncItems::new(py, dataset, batched, aclose)?;
+            // Built before the loader, so that its threads attach once.
+            attach_global_pool(py);
+            Ok(Core::Async {
+                loader: options.build_async(items),
+                dataset: dataset.clone().unbind(),
+            })
         }
-        (true, false) => "PyDataset",
-        (false, true) => "PyAsyncDataset",
-        (false, false) => {
-            return Err(PyTypeError::new_err(format!(
-                "dataset must be a PyDataset, a PyAsyncDataset or a Rust dataset \
-                 (HttpDataset, FileDataset, ObjectStoreDataset), not {}",
-                dataset.get_type().name()?
-            )));
-        }
-    };
-    let ty = dataset.get_type();
-    let overrides_len = match is_sync {
-        true => !ty.getattr(intern!(py, "__len__"))?.is(&py
-            .get_type::<PyDatasetBase>()
-            .getattr(intern!(py, "__len__"))?),
-        false => ty.hasattr(intern!(py, "__len__"))?,
-    };
-    if !overrides_len {
-        return Err(PyTypeError::new_err(format!(
-            "{kind} subclasses must define __len__"
-        )));
     }
-    let getitem = is_async_method(dataset, "__getitem__")?;
-    let getitems = is_async_method(dataset, "__getitems__")?;
-    if is_sync {
-        if getitem == Some(true) || getitems == Some(true) {
-            return Err(PyTypeError::new_err(
-                "PyDataset.__getitem__ / __getitems__ must not be async; \
-                 subclass PyAsyncDataset for async def methods",
-            ));
-        }
-        if options.runtime_threads.is_some() {
-            return Err(PyValueError::new_err(
-                "runtime_threads only applies to async datasets \
-                 (PyAsyncDataset, HttpDataset, FileDataset, ObjectStoreDataset)",
-            ));
-        }
-        let dataset: PyDataset = dataset.cast::<PyDatasetBase>()?.clone().unbind();
-        return Ok(Core::Sync(options.build(DataLoader::builder(dataset))));
-    }
-    if getitem == Some(false) || getitems == Some(false) {
-        return Err(PyTypeError::new_err(
-            "PyAsyncDataset.__getitem__ / __getitems__ must be async def; \
-             subclass PyDataset for plain methods",
-        ));
-    }
-    if getitem.is_none() {
-        return Err(PyTypeError::new_err(
-            "PyAsyncDataset subclasses must define async def __getitem__",
-        ));
-    }
-    let aclose = is_async_method(dataset, "aclose")?;
-    if aclose == Some(false) {
-        return Err(PyTypeError::new_err(
-            "PyAsyncDataset.aclose must be async def",
-        ));
-    }
-    let items = PyAsyncItems::new(py, dataset, getitems.is_some(), aclose.is_some())?;
-    // Built before the loader, so that its threads attach once.
-    attach_global_pool(py);
-    Ok(Core::Async {
-        loader: options.build_async(items),
-        dataset: dataset.clone().unbind(),
-    })
 }
 
 /// Start an epoch of an async loader.

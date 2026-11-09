@@ -1,17 +1,18 @@
 #![doc = include_str!("README.md")]
 
 #[cfg(feature = "async")]
-mod async_epoch;
+mod asynchronous;
 mod builder;
-mod core;
+mod dataloader;
 mod iter;
+mod pool;
 mod source;
-mod worker;
+mod sync;
 
 #[cfg(feature = "async")]
-pub use async_epoch::MAX_RUNTIME_THREADS;
+pub use asynchronous::MAX_RUNTIME_THREADS;
 pub use builder::DataLoaderBuilder;
-pub use core::DataLoader;
+pub use dataloader::DataLoader;
 pub use iter::DataLoaderIter;
 #[cfg(feature = "async")]
 pub use source::AsyncSource;
