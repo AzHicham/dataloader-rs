@@ -200,3 +200,42 @@ required-features = ["image"]
 name              = "bench_async"
 harness           = false
 required-features = ["http"]
+
+# ── Examples (examples/README.md) ─────────────────────────────────────────────
+
+[[example]]
+name = "basic"
+path = "examples/rust/basic.rs"
+
+[[example]]
+name = "collators"
+path = "examples/rust/collators.rs"
+
+[[example]]
+name              = "async_dataset"
+path              = "examples/rust/async_dataset.rs"
+required-features = ["async"]
+
+[[example]]
+name              = "http_dataset"
+path              = "examples/rust/http_dataset.rs"
+required-features = ["http"]
+
+[[example]]
+name              = "files_and_objects"
+path              = "examples/rust/files_and_objects.rs"
+required-features = ["object-store"]
+
+[[example]]
+name              = "image_ops"
+path              = "examples/rust/image_ops.rs"
+required-features = ["image"]
+
+[[example]]
+name              = "tiles_by_coordinates"
+path              = "examples/rust/tiles_by_coordinates.rs"
+required-features = ["http", "image"]
+
+[[example]]
+name = "stress_safety"
+path = "examples/rust/stress_safety.rs"
