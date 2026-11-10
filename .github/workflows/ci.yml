@@ -42,10 +42,10 @@ jobs:
 
       - run: prek run --all-files --show-diff-on-failure
 
-  # ── Rust tests (MSRV + latest stable) ────────────────────────────────────
+  # ── Rust tests (MSRV + latest stable, Linux and macOS arm64) ─────────────
   test-rust:
     name: Rust tests (${{ matrix.name }})
-    runs-on: ubuntu-26.04
+    runs-on: ${{ matrix.os || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +54,9 @@ jobs:
             toolchain: "1.95"
           - name: "stable"
             toolchain: stable
+          - name: "stable, macOS arm64"
+            toolchain: stable
+            os: macos-15
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,7 +67,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          key: ${{ matrix.toolchain }}
+          key: ${{ matrix.toolchain }}-${{ runner.os }}
 
       # --all-features builds pyo3, which links libpython. Pin the interpreter
       # instead of using whatever the runner image ships: PYO3_PYTHON also makes
@@ -76,11 +79,28 @@ jobs:
         with:
           python-version: "3.15"
 
+      # tch's download-libtorch looks for a PyPI wheel name that PyTorch does not
+      # publish for macOS arm64, so tch links the libtorch of the torch wheel
+      # instead. Keep the version equal to tch's libtorch (torch-sys
+      # TORCH_VERSION) and to the torch pin in pyproject.toml. The test binaries
+      # find libtorch and libpython through DYLD_LIBRARY_PATH.
+      - name: Install libtorch from the torch wheel (macOS)
+        if: runner.os == 'macOS'
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          "$PYTHON" -m pip install torch==2.15.0
+          LIBTORCH="$("$PYTHON" -c 'import pathlib, torch; print(pathlib.Path(torch.__file__).parent)')"
+          LIBPYTHON="$("$PYTHON" -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+          echo "LIBTORCH=$LIBTORCH" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$LIBTORCH/lib:$LIBPYTHON" >> "$GITHUB_ENV"
+
       # On latest stable the rust-version field is irrelevant — strip it so
       # Cargo never rejects a dep update because of a stale MSRV pin.
+      # (-i.bak works with both GNU and BSD sed.)
       - name: Remove rust-version pin (stable only)
         if: matrix.toolchain == 'stable'
-        run: sed -i '/^rust-version/d' Cargo.toml
+        run: sed -i.bak '/^rust-version/d' Cargo.toml && rm Cargo.toml.bak
 
       - name: cargo test
         env:
@@ -88,9 +108,10 @@ jobs:
         run: cargo test --all-features
 
   # ── Python tests (3.11 · 3.12 · 3.13 · 3.14 · 3.15 · 3.14t · 3.15t) ──────
+  # ── plus 3.12 on macOS arm64 ─────────────────────────────────────────────
   test-python:
-    name: Python tests (${{ matrix.python }})
-    runs-on: ubuntu-26.04
+    name: Python tests (${{ matrix.python }}${{ matrix.os && format(', {0}', matrix.os) || '' }})
+    runs-on: ${{ matrix.os || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +125,8 @@ jobs:
           - python: "3.15"
           - python: "3.14t"
           - python: "3.15t"
+          - python: "3.12"
+            os: macos-15
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -112,7 +135,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          key: python-${{ matrix.python }}
+          key: python-${{ matrix.python }}-${{ runner.os }}
 
       # setup-uv understands the `t` suffix and installs the free-threaded build.
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
