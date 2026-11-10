@@ -112,7 +112,7 @@ default-features = false
 optional         = true
 
 [dependencies.tch]
-version          = "0.26"
+version          = "0.27"
 default-features = false
 optional         = true
 
@@ -143,7 +143,7 @@ default-features = false
 features         = ["cargo_bench_support"]
 
 [dev-dependencies.tch]
-version          = "0.26"
+version          = "0.27"
 default-features = false
 features         = ["download-libtorch"]
 
