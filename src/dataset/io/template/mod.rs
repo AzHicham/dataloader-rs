@@ -1,5 +1,7 @@
 mod column;
 mod escape;
+#[cfg(test)]
+mod proptests;
 mod render;
 mod syntax;
 

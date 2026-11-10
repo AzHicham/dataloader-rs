@@ -165,6 +165,12 @@ version          = "0.26"
 default-features = false
 features         = ["ring", "tls12"]
 
+# Property tests of the location templates.
+[dev-dependencies.proptest]
+version          = "1"
+default-features = false
+features         = ["std"]
+
 # bench_real_world pins glibc's malloc thresholds (mallopt).
 [dev-dependencies.libc]
 version          = "0.2"
