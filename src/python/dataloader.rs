@@ -386,3 +386,86 @@ impl PyDataloader {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::io::Cursor;
+    use std::path::PathBuf;
+    use std::process;
+
+    use image::{ImageFormat, Rgb, RgbImage};
+    use pyo3::Python;
+
+    use crate::collator::{BatchLayout, ImageCollator};
+    use crate::dataset::FileDataset;
+    use crate::image::{Decode, ToFloat};
+    use crate::loader::DataLoader;
+    use crate::python::collator::{PyBatch, PyCollator};
+    use crate::python::dataset::RustSource;
+    use crate::python::image::{Batch, ImageCollate, Op};
+    use crate::python::pool::run_attached;
+    use crate::python::transform::PyTransform;
+
+    const N: usize = 22;
+
+    /// `N` 4 x 3 RGB PNG files, file `i` filled with the value `i`.
+    fn pngs() -> Vec<PathBuf> {
+        let dir = std::env::temp_dir().join(format!("dlrs-native-path-{}", process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        (0..N)
+            .map(|i| {
+                let mut png = Cursor::new(Vec::new());
+                RgbImage::from_pixel(4, 3, Rgb([i as u8; 3]))
+                    .write_to(&mut png, ImageFormat::Png)
+                    .unwrap();
+                let path = dir.join(format!("{i}.png"));
+                fs::write(&path, png.into_inner()).unwrap();
+                path
+            })
+            .collect()
+    }
+
+    /// A Rust dataset, the Rust transforms and an `ImageCollator` run without the interpreter:
+    /// nothing in this test binary initializes Python, so a task that attached would get the
+    /// "shutting down" error of `pool::attach` (or a panic) instead of a batch.
+    #[test]
+    fn the_rust_path_runs_without_the_interpreter() {
+        assert!(
+            Python::try_attach(|_| ()).is_none(),
+            "the test needs an interpreter that is not initialized"
+        );
+        let ops = [
+            Op::Decode(Decode::default()),
+            Op::ToRgb,
+            Op::ToFloat(ToFloat::default()),
+            Op::ToChw,
+        ];
+        let collate = ImageCollate::new(ImageCollator::new(BatchLayout::Nchw), None);
+        for item_concurrency in [1, 4] {
+            let mut loader = DataLoader::builder_async(RustSource::File(FileDataset::new(pngs())))
+                .batch_size(4)
+                .num_workers(2)
+                .item_concurrency(item_concurrency)
+                .thread_main(run_attached)
+                .transform(PyTransform::Native(ops.clone().into()))
+                .collator(PyCollator::Images(collate.clone()))
+                .build();
+            let mut seen = 0;
+            for (b, batch) in loader.iter().enumerate() {
+                let batch = batch.unwrap_or_else(|e| panic!("batch {b}: {e}"));
+                let PyBatch::Images(Batch::F32(batch)) = batch else {
+                    panic!("batch {b} is not a float32 ImageBatch");
+                };
+                let [n, c, h, w] = batch.shape();
+                assert_eq!([c, h, w], [3, 3, 4]);
+                for (i, item) in batch.data().chunks(c * h * w).enumerate() {
+                    let value = (b * 4 + i) as f32 / 255.0;
+                    assert!(item.iter().all(|&x| x == value), "item {i} of batch {b}");
+                }
+                seen += n;
+            }
+            assert_eq!(seen, N);
+        }
+    }
+}

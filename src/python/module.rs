@@ -28,7 +28,6 @@ fn dataloader_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyFileDataset>()?;
     m.add_class::<PyObjectStoreDataset>()?;
     m.add_function(wrap_pyfunction!(pool::keep_pools_alive, m)?)?;
-    m.add_function(wrap_pyfunction!(pool::attach_count, m)?)?;
     m.add_class::<PyImage>()?;
     m.add_class::<PyImageBatch>()?;
     m.add_class::<PyImageCollator>()?;

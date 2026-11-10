@@ -1,15 +1,13 @@
 """``PyDataloader(return_indices=True)``: each batch comes as ``(batch, indices)``, the
 dataset indices of its items in the order the sampler drew them, for every kind of dataset
-and collator; and the Rust-only path never attaches to the interpreter per item."""
+and collator, the Rust transforms and a Python transform included."""
 
 import asyncio
-import gc
 import struct
 import zlib
 
 import numpy as np
 import pytest
-from dataloader_rs.dataloader_rs import _attach_count
 
 from dataloader_rs import (
     FileDataset,
@@ -171,10 +169,10 @@ def test_without_return_indices_batches_are_unchanged():
 
 
 @pytest.mark.parametrize("item_concurrency", [1, 4])
-def test_the_rust_path_never_attaches_per_item(files, item_concurrency):
-    """A Rust dataset, the Rust transforms and an ``ImageCollator``: items are fetched,
-    decoded and collated without the interpreter; only ``__next__`` builds Python objects,
-    once per batch. A Python transform on the same loader attaches for every item."""
+def test_the_rust_path_and_a_python_transform(files, item_concurrency):
+    """A Rust dataset, the Rust transforms and an ``ImageCollator``, then the same transforms
+    called from a Python function: each batch matches its indices. That the Rust path runs
+    without the interpreter is tested in Rust (``src/python/dataloader.rs``)."""
     rust = T.Compose([T.Decode(), T.ToRgb(), T.ToFloat(), T.ToChw()])
 
     def loader(transform):
@@ -190,8 +188,6 @@ def test_the_rust_path_never_attaches_per_item(files, item_concurrency):
         )
 
     native = loader(rust)
-    gc.collect()  # no epoch of an earlier test is left running
-    before = _attach_count()
     seen = []
     for batch, indices in native:
         assert isinstance(batch, ImageBatch)
@@ -200,10 +196,7 @@ def test_the_rust_path_never_attaches_per_item(files, item_concurrency):
             np.asarray(batch).reshape(len(indices), -1).max(axis=1), np.array(indices) / 255
         )
         seen += indices
-    assert _attach_count() == before
     assert sorted(seen) == list(range(N))
 
     python = loader(lambda _index, data: rust(data))
-    before = _attach_count()
     assert sum(len(indices) for _batch, indices in python) == N
-    assert _attach_count() - before >= N

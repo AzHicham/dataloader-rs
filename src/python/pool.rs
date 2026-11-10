@@ -7,7 +7,7 @@
 //! loop detached, so attaching from a task only re-activates their thread
 //! state.
 
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once, PoisonError, Weak};
 use std::thread;
 
@@ -35,21 +35,9 @@ pub(crate) fn attach<R, E>(f: impl for<'py> FnOnce(Python<'py>) -> Result<R, E>)
 where
     E: From<PyErr>,
 {
-    ATTACHES.fetch_add(1, Ordering::Relaxed);
     Python::try_attach(f).unwrap_or_else(|| {
         Err(PyRuntimeError::new_err("the Python interpreter is shutting down").into())
     })
-}
-
-/// Calls of [`attach`] since the module was loaded.
-static ATTACHES: AtomicUsize = AtomicUsize::new(0);
-
-/// How many times the loaders' tasks attached to the interpreter: tests check that a Rust
-/// dataset with the Rust transforms and an `ImageCollator` never does.
-#[pyfunction]
-#[pyo3(name = "_attach_count")]
-pub(crate) fn attach_count() -> usize {
-    ATTACHES.load(Ordering::Relaxed)
 }
 
 /// The pools of the loaders this process created, for [`keep_pools_alive`].
