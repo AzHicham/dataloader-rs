@@ -1,3 +1,43 @@
+## [0.3.0](https://github.com/AzHicham/dataloader-rs/compare/0.2.0...0.3.0) (2026-11-10)
+
+### Features
+
+* **collator:** image collator ([03a61f8](https://github.com/AzHicham/dataloader-rs/commit/03a61f8fffed28da8aeb6d0c07da16e4468cf611))
+* **dataset:** FileDataset and HttpDataset ([f6c4bcd](https://github.com/AzHicham/dataloader-rs/commit/f6c4bcd2745ef2f75eadc7fa06648217d39e8de0))
+* **dataset:** ObjectStoreDataset ([aa40385](https://github.com/AzHicham/dataloader-rs/commit/aa40385874f31a4f1acbcc91c97e269fcd09a926))
+* **image:** crop, pad, resize, flip, rotate ([7b1d7ab](https://github.com/AzHicham/dataloader-rs/commit/7b1d7abdbb1a491f68190d6c79b29cd5fbe20899))
+* **image:** decode and color conversion ([868de7a](https://github.com/AzHicham/dataloader-rs/commit/868de7a567c5b591d5a6462d3e8d8edd8607a9e4))
+* **image:** float conversion, normalize and layout ([b4a5cba](https://github.com/AzHicham/dataloader-rs/commit/b4a5cbaca0c9d844b4f6567ae2d96edad1dff9a0))
+* **loader:** AsyncDataset and DataLoader::builder_async ([f7ddb15](https://github.com/AzHicham/dataloader-rs/commit/f7ddb152222fc2b2a07050d9513c17b10a0baf66))
+* **loader:** iter_with_indices ([7c75852](https://github.com/AzHicham/dataloader-rs/commit/7c758524313081fb0907aaf04fa9cffd5086c418))
+* **loader:** per-item transform ([8552cbd](https://github.com/AzHicham/dataloader-rs/commit/8552cbd46f44b4ff523720b2f45c0e649a74216f))
+* **python:** image transforms and zero-copy batches ([774b828](https://github.com/AzHicham/dataloader-rs/commit/774b8281f4885b7c716f1db8619b03c40c151b68))
+* **python:** PyAsyncDataset and Rust datasets in DataLoader ([ab89847](https://github.com/AzHicham/dataloader-rs/commit/ab89847091ae5af091e6236f3d0f576bbf33d0a9))
+* **python:** return_indices ([a1fa4fc](https://github.com/AzHicham/dataloader-rs/commit/a1fa4fc815ed07ef3f242650c23bbf7f84fe293e))
+
+### Bug Fixes
+
+* **deps:** update tch to 0.27 (libtorch 2.15) ([272065e](https://github.com/AzHicham/dataloader-rs/commit/272065e113740e22763a5d26c66e3a0d7bc654a7))
+* **python:** dropping an iterator waits for its batches in flight ([d8decab](https://github.com/AzHicham/dataloader-rs/commit/d8decabc6b91ff94c2023936bee7e85bba122cc6))
+* refuse %2e dot segments made by URL template values ([7dbc739](https://github.com/AzHicham/dataloader-rs/commit/7dbc739107a72079a188b781e707ad79996c51a3))
+
+### Documentation
+
+* async datasets and transforms ([3e8ea79](https://github.com/AzHicham/dataloader-rs/commit/3e8ea79481a9235e6a5941b98ffb67ea110173ca))
+* **examples:** python examples ([acb2322](https://github.com/AzHicham/dataloader-rs/commit/acb2322cb75c7ad04b4c55cc47a3dcd528692b2c))
+* **examples:** rust and python examples folders ([8fa5b21](https://github.com/AzHicham/dataloader-rs/commit/8fa5b21526ea49da83245d9da3705d95bd0b0b1c))
+* generic wording in API docs ([b549c1a](https://github.com/AzHicham/dataloader-rs/commit/b549c1a179418ae6870097ede820e2556a23b8a3))
+* image transforms ([79cab5c](https://github.com/AzHicham/dataloader-rs/commit/79cab5ce89230ff45cc65c2c078674facac7bf2c))
+* plain-English pass on module READMEs ([5412a9d](https://github.com/AzHicham/dataloader-rs/commit/5412a9d2455aa1b6b08c172e7b7efe0adc07dd69))
+* return_indices in the tiles example ([94fbd21](https://github.com/AzHicham/dataloader-rs/commit/94fbd21185bf9ff62f5c2b1e451b9cc24aafd8ec))
+* rework ARCHITECTURE ([1e4ce81](https://github.com/AzHicham/dataloader-rs/commit/1e4ce811359fcb2e02ccaaaa3caab1056a992b08))
+* rework README ([784a72e](https://github.com/AzHicham/dataloader-rs/commit/784a72e067dac52b3809cf881e6b021610274841))
+* shorter BENCH with charts ([e2dfd31](https://github.com/AzHicham/dataloader-rs/commit/e2dfd310d1cafbb52f5c44221cc4a10ee2f1c30b))
+
+### CI/CD
+
+* run the Rust and Python tests on macOS arm64 ([efe836d](https://github.com/AzHicham/dataloader-rs/commit/efe836d6a2b8eb717a514f0866fd7fd70a8048d3))
+
 ## [0.2.0](https://github.com/AzHicham/dataloader-rs/compare/0.1.0...0.2.0) (2026-10-26)
 
 ### Features
