@@ -19,7 +19,7 @@ const MAX_COLUMNS: usize = 64;
 const MAX_TEMPLATE_BYTES: usize = 8 << 10;
 
 /// Longest location a template may make, in bytes, values written.
-const MAX_LOCATION_BYTES: usize = 64 << 10;
+pub(super) const MAX_LOCATION_BYTES: usize = 64 << 10;
 
 /// Most items of a template dataset (2³²).
 const MAX_ITEMS: u64 = 1 << 32;
@@ -45,7 +45,7 @@ pub(crate) struct Template {
     with_values: Vec<bool>,
     len: usize,
     /// The longest location, in bytes: one allocation per location.
-    capacity: usize,
+    pub(super) capacity: usize,
 }
 
 impl Template {
