@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794260506954,
+  "lastUpdate": 1794303053946,
   "repoUrl": "https://github.com/AzHicham/dataloader-rs",
   "entries": {
     "Rust benchmarks": [
@@ -5957,6 +5957,408 @@ window.BENCHMARK_DATA = {
             "name": "sampler/random/100000",
             "value": 394310,
             "range": "± 8042",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "committer": {
+            "email": "hicham.azimani-ext@wearewaiv.com",
+            "name": "Hicham Azimani",
+            "username": "AzHicham"
+          },
+          "distinct": true,
+          "id": "716c21c09759d766595a34566a9358068ad4c5bd",
+          "message": "test: property tests of the location templates\n\nproptest (dev-dependency) checks the URL, path and object key templates\nwith hostile values: any Unicode, `/`, `\\`, `?`, `#`, `&`, `%`, `%2e`,\nbraces, spaces, control characters, empty and very long strings.\n\n- URL values cannot add a path segment, a query parameter or a\n  fragment: the parsed URL has the template's shape, the parser keeps\n  the text as it is, and each component decodes back to its value.\n- A value in the host cannot move it out of the template's domain.\n- Values next to the template's `.`, `%` or `%2e` cannot make a dot\n  segment.\n- Path values stay in their own component and key values are one valid\n  object_store key part, unless refused, and they are refused exactly\n  when they hold a separator, NUL or a control character (keys) or are\n  `.`, `..` or an empty key part.\n- Any template text is parsed or refused, never a panic; parsing the\n  text of any pieces gives the pieces back; unknown, unused, reserved\n  and duplicate names are errors, and only they are.\n- Locations never exceed the capacity computed at parse time, itself\n  at most 64 KiB.\n\nproptest-regressions keeps the seed of the %2e case fixed in the\nprevious commit.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-10T09:22:41Z",
+          "tree_id": "f3ebc96eb804bd9be83c21e865da360b2a2f6eae",
+          "url": "https://github.com/AzHicham/dataloader-rs/commit/716c21c09759d766595a34566a9358068ad4c5bd"
+        },
+        "date": 1794303052968,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "async_http/futures/w1_c64",
+            "value": 110897624,
+            "range": "± 1466335",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w1_c64",
+            "value": 113397236,
+            "range": "± 1493605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/futures/w2_c32",
+            "value": 106709769,
+            "range": "± 1804377",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w2_c32",
+            "value": 110796259,
+            "range": "± 6027234",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/futures/w4_c16",
+            "value": 103042742,
+            "range": "± 1355430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w4_c16",
+            "value": 124270526,
+            "range": "± 17028654",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/futures/w8_c1",
+            "value": 734409379,
+            "range": "± 5311864",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "async_http/threads/w8_c1",
+            "value": 733042853,
+            "range": "± 4595397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1",
+            "value": 161535,
+            "range": "± 3182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/8",
+            "value": 46028,
+            "range": "± 243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/32",
+            "value": 23382,
+            "range": "± 100",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/128",
+            "value": 11718,
+            "range": "± 48",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/512",
+            "value": 7119,
+            "range": "± 48",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/1024",
+            "value": 6054,
+            "range": "± 369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/sequential/bs/4096",
+            "value": 4860,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1",
+            "value": 1211324,
+            "range": "± 91942",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/8",
+            "value": 140120,
+            "range": "± 3056",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/32",
+            "value": 44452,
+            "range": "± 1520",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/128",
+            "value": 26556,
+            "range": "± 1094",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/512",
+            "value": 20114,
+            "range": "± 573",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/1024",
+            "value": 22045,
+            "range": "± 571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch_size/parallel/bs/4096",
+            "value": 14266,
+            "range": "± 384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items1",
+            "value": 4993491,
+            "range": "± 20314",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items1",
+            "value": 5020125,
+            "range": "± 19086",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items2",
+            "value": 2562803,
+            "range": "± 4932",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w0_items4",
+            "value": 1317953,
+            "range": "± 32423",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "first_batch/w1_items4",
+            "value": 1367931,
+            "range": "± 68596",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_item/decode_pad_float_normalize",
+            "value": 662483,
+            "range": "± 3347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_item/decode",
+            "value": 431595,
+            "range": "± 1217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_collate/f32_64x3x224x224/NCHW_buffers0",
+            "value": 20894853,
+            "range": "± 891535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_collate/f32_64x3x224x224/NCHW_buffers4",
+            "value": 3535106,
+            "range": "± 135702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_collate/f32_64x3x224x224/NHWC_buffers0",
+            "value": 25068862,
+            "range": "± 182255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_loader/png_224_f32_nchw/w1_buffers0",
+            "value": 365112514,
+            "range": "± 1054729",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_loader/png_224_f32_nchw/w1_buffers8",
+            "value": 243444706,
+            "range": "± 3490807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_loader/png_224_f32_nchw/w4_buffers0",
+            "value": 254859929,
+            "range": "± 3488810",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "image_loader/png_224_f32_nchw/w4_buffers8",
+            "value": 206980212,
+            "range": "± 1997354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w1_items1",
+            "value": 20025350,
+            "range": "± 33855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w1_items2",
+            "value": 10086896,
+            "range": "± 8986",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w1_items4",
+            "value": 5234790,
+            "range": "± 183215",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w2_items2",
+            "value": 5310648,
+            "range": "± 329506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "item_concurrency/w4_items1",
+            "value": 10071723,
+            "range": "± 13377",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/0",
+            "value": 35043352,
+            "range": "± 20899",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/1",
+            "value": 35154268,
+            "range": "± 153661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/2",
+            "value": 17621625,
+            "range": "± 50164",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "num_workers/workers/4",
+            "value": 9143463,
+            "range": "± 323820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/sequential",
+            "value": 14958616,
+            "range": "± 29298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/1",
+            "value": 5655819,
+            "range": "± 9189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/2",
+            "value": 5655527,
+            "range": "± 34395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/4",
+            "value": 5652389,
+            "range": "± 20866",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "prefetch_depth/depth/8",
+            "value": 5653097,
+            "range": "± 3461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/0",
+            "value": 42726157,
+            "range": "± 89658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/1",
+            "value": 44627080,
+            "range": "± 424580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/2",
+            "value": 22851915,
+            "range": "± 386695",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/local_files/num_workers/4",
+            "value": 15832286,
+            "range": "± 79322",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/4",
+            "value": 264631199,
+            "range": "± 98337",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/16",
+            "value": 80880155,
+            "range": "± 2899742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "real_world/remote_2ms/threads/64",
+            "value": 20221862,
+            "range": "± 500294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/1000",
+            "value": 2628,
+            "range": "± 34",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/1000",
+            "value": 4248,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/10000",
+            "value": 21619,
+            "range": "± 950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/10000",
+            "value": 40385,
+            "range": "± 338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/sequential/100000",
+            "value": 220664,
+            "range": "± 2199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "sampler/random/100000",
+            "value": 395871,
+            "range": "± 7144",
             "unit": "ns/iter"
           }
         ]
