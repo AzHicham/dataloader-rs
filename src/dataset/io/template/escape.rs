@@ -1,6 +1,16 @@
 //! [`Escape`]: how a template writes a string value for each kind of location, and which
 //! values it refuses.
 
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+
+/// Bytes percent-encoded in a URL value: all but the RFC 3986 unreserved ones,
+/// `A-Z a-z 0-9 - . _ ~`.
+const URL_COMPONENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
 /// How string values are written into a location; integers are always written in decimal.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Escape {
@@ -58,9 +68,8 @@ impl Escape {
     /// The length of `value` once written.
     pub(super) fn len(self, value: &str) -> usize {
         match self {
-            Self::Url => value.bytes().fold(0usize, |len, byte| {
-                len.saturating_add(if is_unreserved(byte) { 1 } else { 3 })
-            }),
+            Self::Url => utf8_percent_encode(value, URL_COMPONENT)
+                .fold(0usize, |len, piece| len.saturating_add(piece.len())),
             Self::Path | Self::Key => value.len(),
         }
     }
@@ -68,27 +77,8 @@ impl Escape {
     /// Writes `value` onto `out`.
     pub(super) fn write(self, value: &str, out: &mut String) {
         match self {
-            Self::Url => percent_encode(value, out),
+            Self::Url => out.extend(utf8_percent_encode(value, URL_COMPONENT)),
             Self::Path | Self::Key => out.push_str(value),
-        }
-    }
-}
-
-/// Bytes kept as they are in an encoded value (RFC 3986 unreserved).
-fn is_unreserved(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
-}
-
-/// Percent-encodes `value` as a URL component onto `out`.
-fn percent_encode(value: &str, out: &mut String) {
-    const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    for byte in value.bytes() {
-        if is_unreserved(byte) {
-            out.push(char::from(byte));
-        } else {
-            out.push('%');
-            out.push(char::from(HEX[usize::from(byte >> 4)]));
-            out.push(char::from(HEX[usize::from(byte & 0xf)]));
         }
     }
 }

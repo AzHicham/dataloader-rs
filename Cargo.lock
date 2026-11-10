@@ -460,6 +460,7 @@ dependencies = [
  "libc",
  "ndarray 0.17.2",
  "object_store",
+ "percent-encoding",
  "pyo3",
  "rayon",
  "reqwest",
