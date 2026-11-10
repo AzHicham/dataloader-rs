@@ -42,6 +42,11 @@ fn same<'a, T: Sample, L: Layout>(
 }
 
 impl ImageCollate {
+    /// `collator`'s settings, checking that items are of sample type `dtype` if set.
+    pub(crate) fn new(collator: ImageCollator, dtype: Option<&'static str>) -> Self {
+        Self { collator, dtype }
+    }
+
     /// Collate the images of `values`.
     pub(crate) fn collate(&self, values: &[&Value]) -> Result<Batch> {
         let Some(first) = values.first() else {
@@ -186,10 +191,7 @@ impl PyImageCollator {
             }
         };
         Ok(Self {
-            collate: ImageCollate {
-                collator: ImageCollator::new(layout).reuse_buffers(buffers),
-                dtype,
-            },
+            collate: ImageCollate::new(ImageCollator::new(layout).reuse_buffers(buffers), dtype),
         })
     }
 
