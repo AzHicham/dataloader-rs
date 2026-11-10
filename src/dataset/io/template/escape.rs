@@ -65,6 +65,17 @@ impl Escape {
         }
     }
 
+    /// Why a path component of a location, holding a value, is refused, if it is: as
+    /// [`refuse_component`](Self::refuse_component), and in a URL also the spellings of `.`
+    /// and `..` with `%2e` (any case), which URL parsers resolve as dot segments too. A value
+    /// written next to the template's `%` or `%2e` can make one.
+    pub(super) fn refuse_location_component(self, component: &str) -> Option<&'static str> {
+        if self == Self::Url && is_url_dot_segment(component) {
+            return Some("would be resolved as a path segment");
+        }
+        self.refuse_component(component)
+    }
+
     /// The length of `value` once written.
     pub(super) fn len(self, value: &str) -> usize {
         match self {
@@ -81,6 +92,14 @@ impl Escape {
             Self::Path | Self::Key => out.push_str(value),
         }
     }
+}
+
+/// Whether a URL parser reads `component` as a `.` or `..` segment (URL Standard, single-dot
+/// and double-dot URL path segments).
+fn is_url_dot_segment(component: &str) -> bool {
+    [".", "%2e", "..", ".%2e", "%2e.", "%2e%2e"]
+        .iter()
+        .any(|dots| component.eq_ignore_ascii_case(dots))
 }
 
 #[cfg(test)]
@@ -105,6 +124,18 @@ mod tests {
         for value in [".", ".."] {
             assert!(Escape::Url.refuse(value).is_some(), "{value}");
         }
+        // A value is encoded, so "%2e" is a harmless value; as a component, it is a dot.
+        assert_eq!(Escape::Url.refuse("%2e"), None);
+        for component in ["%2e", "%2E", ".%2e", "%2E.", "%2e%2E"] {
+            assert!(
+                Escape::Url.refuse_location_component(component).is_some(),
+                "{component}"
+            );
+        }
+        for component in ["%2e%2e%2e", "...", "%2f", "x%2e"] {
+            assert_eq!(Escape::Url.refuse_location_component(component), None);
+        }
+        assert_eq!(Escape::Path.refuse_location_component("%2e%2e"), None);
     }
 
     #[test]

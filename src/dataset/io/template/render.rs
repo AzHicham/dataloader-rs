@@ -138,8 +138,8 @@ impl Template {
     }
 
     /// The location of item `index`, which must be below [`len`](Self::len). Fails if values
-    /// next to each other or to the template's text make a `.` or `..` path component (or an
-    /// empty key part).
+    /// next to each other or to the template's text make a `.` or `..` path component (also
+    /// spelled with `%2e` in a URL), or an empty key part.
     pub(crate) fn render(&self, index: usize) -> Result<String> {
         let mut location = String::with_capacity(self.capacity);
         for segment in &self.segments {
@@ -158,7 +158,7 @@ impl Template {
             if !with_value {
                 continue;
             }
-            if let Some(reason) = self.escape.refuse_component(component) {
+            if let Some(reason) = self.escape.refuse_location_component(component) {
                 return Err(format!("item {index}: path component {component:?} {reason}").into());
             }
         }
@@ -353,5 +353,13 @@ mod tests {
         let t = t.unwrap();
         assert!(t.render(0).is_err());
         assert_eq!(t.render(1).unwrap(), "http://h/a/..x/b");
+        // Next to the template's `%` and `%2e`, "2e" makes `%2e%2e`, which URL parsers read
+        // as `..`.
+        let hex = Column::from(vec!["2e", "2f"]);
+        let t = Template::new("http://h/a/%{s}%2e/b", vec![("s", hex)], None, Escape::Url);
+        let t = t.unwrap();
+        let error = t.render(0).unwrap_err().to_string();
+        assert!(error.contains("path component \"%2e%2e\""), "{error}");
+        assert_eq!(t.render(1).unwrap(), "http://h/a/%2f%2e/b");
     }
 }
