@@ -235,15 +235,15 @@ a free buffer would block the pool threads that the batches being held need.
 
 **Built-in datasets** (`src/dataset/io/`) share two pieces. `Locations` says where item `i` is: a
 list parsed when the dataset is built, a function of the index, or a `Template` parsed once whose
-location is made only when the item is fetched. A template writes string values according to
-the target (`Escape`): percent-encoded in URLs, and as they are in paths and object keys, where a
-value containing `/` (or `\` or NUL in a path) or equal to `.` or `..` is refused when the dataset
-is built, and an item whose values would make a `.` or `..` path component fails. `Retry` says
-when to try again: `Retry::run` loops with exponential backoff and random jitter, and each
-dataset classifies its own failures as transient or not (HTTP statuses and transport errors,
-file I/O error kinds, its own per-attempt time-out). `ObjectStoreDataset` instead turns its
-`Retry` into the `RetryConfig` of the store it opens, which retries by itself, so no second loop
-runs on top.
+location is made only when the item is fetched. A template writes string values according to the
+target (`Escape`): percent-encoded in URLs, and as they are in paths and object keys, where a value
+containing `/` (or `\` or NUL in a path) or equal to `.` or `..` is refused when the dataset is
+built, and an item whose values would make a `.` or `..` path component (in a URL, also spelled with
+`%2e`) fails. `Retry` says when to try again: `Retry::run` loops with exponential backoff and random
+jitter, and each dataset classifies its own failures as transient or not (HTTP statuses and
+transport errors, file I/O error kinds, its own per-attempt time-out). `ObjectStoreDataset` instead
+turns its `Retry` into the `RetryConfig` of the store it opens, which retries by itself, so no
+second loop runs on top.
 
 ## 4. Failures and early exits
 
